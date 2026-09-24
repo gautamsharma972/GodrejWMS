@@ -2046,6 +2046,23 @@ h2 {
     color: #92400e;
 }
 
+.pullout-status-bar.rejected {
+    border-color: #fecaca;
+    background:
+        linear-gradient(135deg, rgba(254, 242, 242, 0.98), rgba(255, 255, 255, 0.98)),
+        radial-gradient(circle at 100% 0%, rgba(220, 38, 38, 0.10), transparent 34%);
+}
+
+.pullout-status-bar.rejected .info-bar-icon {
+    border-color: #fecaca;
+    color: #b91c1c;
+}
+
+.pullout-status-bar.rejected .status-pill {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
 @media (max-width: 760px) {
     .putaway-info-bar {
         grid-template-columns: auto minmax(0, 1fr);

@@ -352,6 +352,45 @@ public class PalletAllocationServiceTests
     }
 
     [Fact]
+    public async Task SubmitInwardAsync_AllocatesByMaterialCodeThenPkm_NotUploadOrder()
+    {
+        var db = TestDbContextFactory.Create();
+        db.Racks.Add(BuildRack("A", columns: 1, levels: 4, capacityBoxes: 10));
+
+        Material NewMaterial(long code, string design) => new()
+        {
+            MaterialNumber = code,
+            Description = $"MATERIAL {code}",
+            DesignType = design,
+            PackSize = 24,
+            GrossWeightKg = 0.5m,
+            LengthMm = 100,
+            WidthMm = 100,
+            HeightMm = 100,
+            PalletCapacityBoxes = 10,
+            SeasonId = SeasonIds.Rainy
+        };
+
+        var low = NewMaterial(40000001, "ZDESIGN");
+        var high = NewMaterial(40000002, "ADESIGN");
+        db.Materials.AddRange(low, high);
+        await db.SaveChangesAsync();
+
+        var sut = new SubmitInwardHandler(db, new PalletAllocationService(db, new TestClock()), new TestClock(), new TestCurrentUser());
+
+        // Sheet order is deliberately the reverse of the intended allocation order.
+        var result = await sut.Handle(new SubmitInwardCommand([
+            new SubmitInwardLine(high.MaterialNumber, 10, "JUN|2026"),
+            new SubmitInwardLine(low.MaterialNumber, 10, "JUL|2026"),
+            new SubmitInwardLine(low.MaterialNumber, 10, "JUN|2026")]), CancellationToken.None);
+
+        // Material code first (the lower code wins even though its design sorts later), then PKM oldest first.
+        Assert.Equal(
+            [(40000001L, "JUN|2026", "A-01-01"), (40000001L, "JUL|2026", "A-01-02"), (40000002L, "JUN|2026", "A-01-03")],
+            result.Lines.Select(l => (l.MaterialNumber, l.MfgMonthLabel, l.AllocatedTo.Single().LocationCode)).ToArray());
+    }
+
+    [Fact]
     public async Task AllocateAsync_ConsolidatesInAnchorRack_BeforeSpillingToNextRack()
     {
         var (db, material, rackA, _) = SeedTwoRackWarehouse(capacityBoxes: 40, levels: 3);
@@ -572,10 +611,10 @@ public class PalletAllocationServiceTests
     }
 
     [Fact]
-    public async Task AllocateAsync_PrefersLowerLevelAcrossColumns_ForHeavyMaterial()
+    public async Task AllocateAsync_FillsColumnBottomToTop_BeforeNextColumn_EvenForHeavyMaterial()
     {
         var db = TestDbContextFactory.Create();
-        var rack = BuildRack("A", columns: 2, levels: 2, capacityBoxes: 10);
+        var rack = BuildRack("A", columns: 3, levels: 3, capacityBoxes: 10);
         db.Racks.Add(rack);
 
         var material = new Material
@@ -584,27 +623,28 @@ public class PalletAllocationServiceTests
             Description = "HEAVY TEST MATERIAL",
             DesignType = "XOLDH",
             PackSize = 24,
-            GrossWeightKg = 5, // BoxWeightKg = 120, a strong level-preference signal
+            GrossWeightKg = 5, // BoxWeightKg = 120: weight must not push fills level-major
             LengthMm = 100,
             WidthMm = 100,
             HeightMm = 100,
             PalletCapacityBoxes = 10,
             SeasonId = SeasonIds.Rainy
         };
-        material.RecalculateDerivedFields(); // populates BoxWeightKg = GrossWeightKg * PackSize = 120
+        material.RecalculateDerivedFields();
         db.Materials.Add(material);
         await db.SaveChangesAsync();
 
         var sut = new PalletAllocationService(db, new TestClock());
 
-        // Plain column-major order would fill A-01-01 then A-01-02 (both column 1) before ever
-        // touching column 2. Weight instead groups by level across both columns first.
-        var result = await sut.AllocateAsync(material.Id, 15, mfgMonth: 201001);
+        // 45 boxes = 4.5 locations: the whole of column 1 (A-01-01, A-01-02, A-01-03) must fill
+        // bottom to top before column 2 is touched (A-02-01 then A-02-02), never A-01-01, A-02-01, A-03-01.
+        var result = await sut.AllocateAsync(material.Id, 45, mfgMonth: 201001);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
-        Assert.Contains(result.Lines, l => l.LocationCode == "A-01-01" && l.QuantityBoxes == 10);
-        Assert.Contains(result.Lines, l => l.LocationCode == "A-02-01" && l.QuantityBoxes == 5);
-        Assert.DoesNotContain(result.Lines, l => l.LocationCode == "A-01-02");
+        Assert.Equal(
+            ["A-01-01", "A-01-02", "A-01-03", "A-02-01", "A-02-02"],
+            result.Lines.Select(l => l.LocationCode).ToArray());
+        Assert.Equal([10m, 10m, 10m, 10m, 5m], result.Lines.Select(l => l.QuantityBoxes).ToArray());
     }
 
     [Fact]

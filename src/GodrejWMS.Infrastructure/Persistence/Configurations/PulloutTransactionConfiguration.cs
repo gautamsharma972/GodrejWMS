@@ -15,6 +15,9 @@ public class PulloutTransactionConfiguration : IEntityTypeConfiguration<PulloutT
         builder.HasIndex(t => new { t.WarehouseId, t.CreatedAt });
         builder.HasOne(t => t.Warehouse).WithMany().HasForeignKey(t => t.WarehouseId).OnDelete(DeleteBehavior.Restrict);
         builder.Property(t => t.ReferenceNumber).HasMaxLength(40).IsRequired();
+        builder.Property(t => t.RejectedByUserId).HasMaxLength(450);
+        builder.Property(t => t.RejectedByUserName).HasMaxLength(256);
+        builder.Property(t => t.RejectionReason).HasMaxLength(500);
         builder.Property(t => t.CreatedByUserId).HasMaxLength(450);
         builder.Property(t => t.UpdatedByUserId).HasMaxLength(450);
 

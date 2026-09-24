@@ -17,9 +17,10 @@ namespace GodrejWMS.Infrastructure.Services;
 ///
 /// Within a tier, positions are ranked lexicographically, most to least significant: zone/velocity
 /// fit (<see cref="ScoreLocation"/>), then Design Code proximity (prefer a rack already holding the
-/// same Design Code), then weight (<see cref="WeightLevelRank"/> — heavier boxes favor lower
-/// levels), then the physical Rack -> Column -> Level fill sequence. This is deliberately
-/// independent of <see cref="PalletPosition.DistancePriority"/>, which stays level-major and keeps
+/// same Design Code), then the physical Rack -> Column -> Level fill sequence: a column is filled
+/// from Level 1 upward (A-01-01, A-01-02, ...) before moving to the next column. Box weight
+/// deliberately does not reorder levels - doing so made fills level-major across the whole rack
+/// (A-01-01, A-02-01, A-03-01, ...). This is deliberately independent of <see cref="PalletPosition.DistancePriority"/>, which stays level-major and keeps
 /// driving Pullout's separate FIFO picking order - fill order and pick order are different
 /// concerns and are allowed to differ.
 ///
@@ -122,7 +123,6 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
                 .Where(p => !p.StockBatches.Any() && !HasAnyReservation(p.Id, pendingReservations) && !reservedByPosition.ContainsKey(p.Id))
                 .OrderBy(p => ScoreLocation(p, material, activeSeasonId, mfgMonth, oldestMfgMonth))
                 .ThenByDescending(p => racksWithSameDesignType.Contains(p.RackId))
-                .ThenBy(p => WeightLevelRank(material, p.Level))
                 .ThenBy(p => p.Rack.Code)
                 .ThenBy(p => p.Column)
                 .ThenBy(p => p.Level))
@@ -220,7 +220,6 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
             var rackCandidates = candidatePositions
                 .Where(p => p.RackId == rackId && IsConsolidationEligible(p, materialId, pendingReservations))
                 .OrderBy(p => ScoreLocation(p, material, activeSeasonId, incomingMfgMonth, oldestMfgMonth))
-                .ThenBy(p => WeightLevelRank(material, p.Level))
                 .ThenBy(p => p.Column)
                 .ThenBy(p => p.Level);
 
@@ -331,17 +330,12 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
             return "Near existing stock of the same Design Code";
         }
 
-        if (material.BoxWeightKg > 0 && position.Level == 1)
-        {
-            return "Lower level selected for box weight";
-        }
-
         if (oldestMfgMonth.HasValue && incomingMfgMonth > oldestMfgMonth.Value)
         {
             return "Empty location selected after preserving older stock priority";
         }
 
-        return "Best empty location by rack/column/level fill sequence";
+        return "Next in fill sequence (column by column, bottom to top)";
     }
 
     /// <summary>
@@ -391,13 +385,6 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
 
         return score;
     }
-
-    /// <summary>
-    /// Weight/level tie-break rank: heavier boxes steer toward lower levels (Level * BoxWeightKg
-    /// grows with both), while a zero/negligible weight is a no-op that leaves the Rack -&gt;
-    /// Column -&gt; Level tie-break that follows it fully in charge.
-    /// </summary>
-    private static decimal WeightLevelRank(Material material, int level) => material.BoxWeightKg * level;
 
     /// <summary>
     /// Racks that already hold stock or a pending reservation of a material sharing this

@@ -61,6 +61,7 @@
                     <option value="">All confirmations</option>
                     <option value="false">Not confirmed</option>
                     <option value="true">Confirmed</option>
+                    <option value="rejected">Rejected</option>
                 </select>
             </div>
             @if (_history is not null)
@@ -103,7 +104,7 @@
                                 <td><span class="status-pill @AllocationClass(item.Status)">@item.Status</span></td>
                                 <td class="text-end">@item.LineCount</td>
                                 <td class="text-end fw-semibold">@item.TotalQuantityBoxes.ToString("N0")</td>
-                                <td><span class="status-pill @(item.IsConfirmed ? "success" : "warning")">@(item.IsConfirmed ? "Confirmed" : "Not confirmed")</span></td>
+                                <td><span class="status-pill @ConfirmationClass(item)">@ConfirmationLabel(item)</span></td>
                                 <td class="table-actions">
                                     <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {item.ReferenceNumber}")" aria-label="@($"View {item.ReferenceNumber}")" href="@($"/pullout/{item.Id}")">
                                         <i class="bi bi-eye" aria-hidden="true"></i>
@@ -168,7 +169,8 @@
             SortDescending: _historySortDescending,
             PageNumber: page,
             PageSize: pageSize,
-            IsConfirmed: bool.TryParse(_confirmationFilter, out var confirmed) ? confirmed : null);
+            IsConfirmed: bool.TryParse(_confirmationFilter, out var confirmed) ? confirmed : null,
+            IsRejected: _confirmationFilter == "rejected" ? true : null);
 
     private async Task OnHistorySearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadHistoryPage(1);
 
@@ -215,7 +217,7 @@
             Csv(h.ReferenceNumber),
             Csv(h.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")),
             Csv(h.Status.ToString()),
-            Csv(h.IsConfirmed ? "Confirmed" : "Not confirmed"),
+            Csv(ConfirmationLabel(h)),
             h.LineCount.ToString(),
             h.TotalQuantityBoxes.ToString("0.###")));
         var csv = "Reference,Created,Status,Confirmation,Lines,Allocated Boxes\r\n" + string.Join("\r\n", rows);
@@ -231,6 +233,12 @@
         var escaped = value.Replace("\"", "\"\"");
         return escaped.Contains(',') || escaped.Contains('"') || escaped.Contains('\n') ? $"\"{escaped}\"" : escaped;
     }
+
+    private static string ConfirmationLabel(PulloutHistoryDto item) =>
+        item.IsRejected ? "Rejected" : item.IsConfirmed ? "Confirmed" : "Not confirmed";
+
+    private static string ConfirmationClass(PulloutHistoryDto item) =>
+        item.IsRejected ? "danger" : item.IsConfirmed ? "success" : "warning";
 
     private static string AllocationClass(AllocationStatus status) => status switch
     {

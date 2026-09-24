@@ -20,6 +20,9 @@ x86/
 Logs/
 *.log
 
+## Local database backups
+backups/
+
 ## User secrets / local config overrides
 appsettings.*.local.json
 *.pfx

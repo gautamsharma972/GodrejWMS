@@ -208,6 +208,71 @@ public class PulloutAllocationServiceTests
         Assert.Equal(AllocationStatus.Failed, result.Status);
         Assert.Equal(0, result.PickedQuantityBoxes);
     }
+
+    private static async Task<(AppDbContext Db, Material Material, Dictionary<string, PalletPosition> Positions)> SeedRackAsync(int columns, int levels)
+    {
+        var db = TestDbContextFactory.Create();
+        var rack = new Rack { Code = "A", Columns = columns, Levels = levels };
+        var positions = new Dictionary<string, PalletPosition>();
+        for (var column = 1; column <= columns; column++)
+        {
+            for (var level = 1; level <= levels; level++)
+            {
+                var code = $"A-{column:00}-{level:00}";
+                // Level-major distance priority, exactly as real racks are generated: this must NOT drive pick order.
+                var position = new PalletPosition { Column = column, Level = level, LocationCode = code, CapacityBoxes = 40, DistancePriority = ((level - 1) * 10) + column };
+                rack.PalletPositions.Add(position);
+                positions[code] = position;
+            }
+        }
+
+        db.Racks.Add(rack);
+        var material = new Material { MaterialNumber = 123, Description = "Test", DesignType = "X", SeasonId = SeasonIds.Rainy };
+        db.Materials.Add(material);
+        await db.SaveChangesAsync();
+        return (db, material, positions);
+    }
+
+    [Fact]
+    public async Task AllocateAsync_DrainsColumnBottomToTop_BeforeNextColumn_WithinOnePkm()
+    {
+        var (db, material, positions) = await SeedRackAsync(columns: 3, levels: 3);
+        foreach (var code in new[] { "A-01-01", "A-01-02", "A-01-03", "A-02-01", "A-02-02", "A-03-01" })
+        {
+            db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions[code].Id, MfgMonth = 202606, QuantityBoxes = 10 });
+        }
+
+        await db.SaveChangesAsync();
+
+        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 45, preview: true);
+
+        // Level-major (DistancePriority) would give A-01-01, A-02-01, A-03-01, A-01-02, ...
+        Assert.Equal(AllocationStatus.Fulfilled, result.Status);
+        Assert.Equal(
+            ["A-01-01", "A-01-02", "A-01-03", "A-02-01", "A-02-02"],
+            result.Picks.Select(p => p.LocationCode).ToArray());
+        Assert.Equal([10m, 10m, 10m, 10m, 5m], result.Picks.Select(p => p.QuantityBoxes).ToArray());
+    }
+
+    [Fact]
+    public async Task AllocateAsync_ExhaustsOldestPkmFirst_ThenMovesToNextPkm_EachInColumnOrder()
+    {
+        var (db, material, positions) = await SeedRackAsync(columns: 2, levels: 2);
+        // The newer PKM sits in the "earlier" locations, so location order alone would pick it first.
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-01-01"].Id, MfgMonth = 202609, QuantityBoxes = 10 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-01-02"].Id, MfgMonth = 202609, QuantityBoxes = 10 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-02-01"].Id, MfgMonth = 202606, QuantityBoxes = 10 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-02-02"].Id, MfgMonth = 202606, QuantityBoxes = 10 });
+        await db.SaveChangesAsync();
+
+        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 35, preview: true);
+
+        Assert.Equal(AllocationStatus.Fulfilled, result.Status);
+        Assert.Equal(
+            [(202606, "A-02-01"), (202606, "A-02-02"), (202609, "A-01-01"), (202609, "A-01-02")],
+            result.Picks.Select(p => (p.MfgMonth, p.LocationCode)).ToArray());
+        Assert.Equal([10m, 10m, 10m, 5m], result.Picks.Select(p => p.QuantityBoxes).ToArray());
+    }
 }
 
 file sealed class PulloutClock : GodrejWMS.Application.Common.Interfaces.IDateTimeProvider

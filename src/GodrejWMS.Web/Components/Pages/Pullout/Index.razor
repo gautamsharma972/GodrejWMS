@@ -135,7 +135,7 @@
         </div>
         <div class="info-bar-content">
             <h2>Picking Logic</h2>
-            <p>Only good stock in active good locations is pickable; the system drains the oldest PKM first, then nearer/easier locations.</p>
+            <p>Only good stock in active good locations is pickable; the system drains the oldest PKM first, then works through locations column by column, bottom to top (A-01-01, A-01-02, ...).</p>
         </div>
         <span class="status-pill success">FIFO by PKM</span>
     </div>
@@ -153,7 +153,7 @@
             </div>
             <div class="info-bar-content">
                 <h2>Pick result generated</h2>
-                <p>Reference @_result.ReferenceNumber — @(_confirmed ? "Confirmed. Inventory updated." : "Awaiting confirmation. Inventory has not been updated.")</p>
+                <p>Reference @_result.ReferenceNumber — @(_rejected ? "Rejected. Inventory was not changed." : _confirmed ? "Confirmed. Inventory updated." : "Awaiting confirmation. Inventory has not been updated.")</p>
             </div>
             <button type="button" class="btn btn-primary" @onclick="OpenResultModal">
                 <i class="bi bi-eye" aria-hidden="true"></i>
@@ -178,9 +178,45 @@
                 </div>
 
                 <div class="slide-over-body">
-                    <div class="alert @(_confirmed ? "alert-success" : "alert-info")" role="status">
-                        @(_confirmed ? "Pullout confirmed. Inventory updated." : "Saved in Pullout History for later. Review the proposed picks, then click Confirm Pullout to update inventory.")
-                    </div>
+                    @if (_rejected)
+                    {
+                        <div class="alert alert-danger" role="status">
+                            <strong>This pullout was rejected.</strong>
+                            <div>Reason: @_rejectedReason. Inventory was not changed.</div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert @(_confirmed ? "alert-success" : "alert-info")" role="status">
+                            @(_confirmed ? "Pullout confirmed. Inventory updated." : "Saved in Pullout History for later. Review the proposed picks, then click Confirm Pullout to update inventory.")
+                        </div>
+                    }
+                    @if (_showRejectPanel && !_rejected && !_confirmed)
+                    {
+                        <div class="panel mb-3">
+                            <div class="panel-header">
+                                <div>
+                                    <h2 class="panel-title">Reject this pullout</h2>
+                                    <p class="panel-subtitle">The request is closed and can't be refreshed or confirmed. Inventory is not affected. This can't be undone.</p>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                @if (!string.IsNullOrWhiteSpace(_rejectError))
+                                {
+                                    <div class="alert alert-danger mb-3">@_rejectError</div>
+                                }
+                                <label class="form-label">Reason for rejection <span class="text-danger">*</span></label>
+                                <input class="form-control" placeholder="e.g. Raised in error, order cancelled"
+                                       @bind="_rejectReason" @bind:event="oninput" />
+                                <div class="slide-over-footer px-0">
+                                    <button type="button" class="btn btn-outline-secondary" @onclick="ToggleRejectPanel">Cancel</button>
+                                    <button type="button" class="btn btn-danger" disabled="@(_rejecting || string.IsNullOrWhiteSpace(_rejectReason))" @onclick="RejectPulloutAsync">
+                                        @(_rejecting ? "Rejecting..." : "Confirm Rejection")
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
                     @if (!string.IsNullOrEmpty(_error))
                     {
                         <div class="alert alert-danger" role="alert">@_error</div>
@@ -260,10 +296,14 @@
 
                 <div class="slide-over-footer">
                     <button type="button" class="btn btn-outline-secondary" @onclick="CloseResultModal">Close</button>
-                    @if (!_confirmed)
+                    @if (!_confirmed && !_rejected)
                     {
                         <a class="btn btn-outline-secondary" href="/pullout/history">Saved Pullouts</a>
-                        <button type="button" class="btn btn-primary" @onclick="ConfirmAsync" disabled="@(_submitting || !_result.Lines.Any(l => l.PickedQuantityBoxes > 0))">
+                        <button type="button" class="btn btn-outline-danger" @onclick="ToggleRejectPanel" disabled="@(_submitting || _rejecting)">
+                            <i class="bi bi-x-circle" aria-hidden="true"></i>
+                            Reject Pullout
+                        </button>
+                        <button type="button" class="btn btn-primary" @onclick="ConfirmAsync" disabled="@(_submitting || _rejecting || !_result.Lines.Any(l => l.PickedQuantityBoxes > 0))">
                             @(_submitting ? "Confirming…" : "Confirm Pullout")
                         </button>
                     }
@@ -284,6 +324,12 @@
     private int? _activeMaterialLineIndex;
     private bool _submitting;
     private bool _confirmed;
+    private bool _rejected;
+    private string _rejectedReason = string.Empty;
+    private bool _showRejectPanel;
+    private bool _rejecting;
+    private string _rejectReason = string.Empty;
+    private string? _rejectError;
     private string? _error;
     private PulloutResultDto? _result;
     private string _statusFilter = string.Empty;
@@ -323,6 +369,8 @@
     {
         if (_submitting) return;
         _confirmed = false;
+        _rejected = false;
+        _showRejectPanel = false;
         _error = null;
         _result = null;
         var validLines = _lines.Where(l => l.MaterialCode > 0 && l.QuantityBoxes > 0).ToList();
@@ -358,6 +406,8 @@
     {
         if (_submitting) return;
         _confirmed = false;
+        _rejected = false;
+        _showRejectPanel = false;
         _error = null;
         _result = null;
         _submitting = true;
@@ -382,9 +432,41 @@
         }
     }
 
+    private void ToggleRejectPanel()
+    {
+        _showRejectPanel = !_showRejectPanel;
+        _rejectReason = string.Empty;
+        _rejectError = null;
+    }
+
+    private async Task RejectPulloutAsync()
+    {
+        if (_result is null || _confirmed || _rejected || string.IsNullOrWhiteSpace(_rejectReason)) return;
+
+        _rejecting = true;
+        _rejectError = null;
+        try
+        {
+            await Mediator.Send(new RejectPulloutCommand(_result.ReferenceNumber, _rejectReason));
+            _rejectedReason = _rejectReason.Trim();
+            _rejected = true;
+            _showRejectPanel = false;
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Pullout rejected. Inventory was not changed.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Pullout rejection failed");
+            _rejectError = ex.Message;
+        }
+        finally
+        {
+            _rejecting = false;
+        }
+    }
+
     private async Task ConfirmAsync()
     {
-        if (_result is null || _confirmed || _submitting) return;
+        if (_result is null || _confirmed || _rejected || _submitting) return;
         _submitting = true;
         _error = null;
         try

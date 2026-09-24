@@ -216,7 +216,7 @@
             target: '[data-tour="pullout-logic"]',
             placement: 'top',
             title: 'How picks are chosen',
-            body: 'Only good stock in active good locations is pickable. The oldest PKM is drained first (FIFO), then nearer and easier locations.'
+            body: 'Only good stock in active good locations is pickable. The oldest PKM is drained first (FIFO); within a PKM a column is emptied from the bottom up (A-01-01, A-01-02, ...) before the next column.'
         },
         {
             id: 'pullout-after',

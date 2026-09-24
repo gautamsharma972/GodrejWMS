@@ -3,7 +3,11 @@
 @using GodrejWMS.Application.Features.Pullout.Dtos
 @using GodrejWMS.Application.Features.Pullout.Queries
 @using GodrejWMS.Application.Features.Pullout.Commands
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Features.StockMaster.Dtos
 @inject IMediator Mediator
+@inject IExcelService ExcelService
+@inject IJSRuntime JsRuntime
 
 <PageTitle>Pullout Detail - Godrej WMS</PageTitle>
 
@@ -39,25 +43,77 @@
             </div>
         </div>
 
-        <div class="putaway-info-bar pullout-status-bar @(_detail.IsConfirmed ? "confirmed" : "pending")" role="status">
+        <div class="putaway-info-bar pullout-status-bar @(_detail.IsRejected ? "rejected" : _detail.IsConfirmed ? "confirmed" : "pending")" role="status">
             <div class="info-bar-icon">
-                <i class="bi @(_detail.IsConfirmed ? "bi-check2-circle" : "bi-clock-history")" aria-hidden="true"></i>
+                <i class="bi @(_detail.IsRejected ? "bi-x-circle" : _detail.IsConfirmed ? "bi-check2-circle" : "bi-clock-history")" aria-hidden="true"></i>
             </div>
             <div class="info-bar-content">
-                <h2>@(_detail.IsConfirmed ? "Pullout confirmed" : "Confirmation pending")</h2>
-                <p>@(_detail.IsConfirmed ? "Inventory has been updated with the confirmed pick quantities." : "This pullout is saved for later. Inventory will update only after confirmation.")</p>
+                <h2>@(_detail.IsRejected ? "Pullout rejected" : _detail.IsConfirmed ? "Pullout confirmed" : "Confirmation pending")</h2>
+                @if (_detail.IsRejected)
+                {
+                    <p>
+                        Reason: @_detail.RejectionReason
+                        <span class="text-muted">
+                            - @(_detail.RejectedByUserName ?? "Unknown user")@(_detail.RejectedAt.HasValue ? ", " + _detail.RejectedAt.Value.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt") : string.Empty).
+                            Inventory was not changed.
+                        </span>
+                    </p>
+                }
+                else
+                {
+                    <p>@(_detail.IsConfirmed ? "Inventory has been updated with the confirmed pick quantities." : "This pullout is saved for later. Inventory will update only after confirmation.")</p>
+                }
             </div>
-            <span class="status-pill @(_detail.IsConfirmed ? "success" : "warning")">@(_detail.IsConfirmed ? "Inventory updated" : "Not confirmed")</span>
+            <span class="status-pill @(_detail.IsRejected ? "danger" : _detail.IsConfirmed ? "success" : "warning")">@(_detail.IsRejected ? "Rejected" : _detail.IsConfirmed ? "Inventory updated" : "Not confirmed")</span>
         </div>
         @if (!string.IsNullOrEmpty(_error))
         {
             <div class="alert alert-danger" role="alert">@_error</div>
         }
-        @if (!_detail.IsConfirmed)
+        @if (!_detail.IsRejected)
         {
             <div class="toolbar-group mb-4">
-                <button class="btn btn-outline-primary" @onclick="() => SaveAsync(false)" disabled="@_saving">Refresh Picks</button>
-                <button class="btn btn-primary" @onclick="() => SaveAsync(true)" disabled="@(_saving || !_detail.Lines.Any(l => l.PickedQuantityBoxes > 0))">@(_saving ? "Saving…" : "Confirm Pullout")</button>
+                @if (!_detail.IsConfirmed)
+                {
+                    <button class="btn btn-outline-primary" @onclick="() => SaveAsync(false)" disabled="@(_saving || _rejecting)">Refresh Picks</button>
+                    <button class="btn btn-primary" @onclick="() => SaveAsync(true)" disabled="@(_saving || _rejecting || !_detail.Lines.Any(l => l.PickedQuantityBoxes > 0))">@(_saving ? "Saving…" : "Confirm Pullout")</button>
+                    <button type="button" class="btn btn-outline-danger" @onclick="ToggleRejectPanel" disabled="@(_saving || _rejecting)">
+                        <i class="bi bi-x-circle" aria-hidden="true"></i>
+                        Reject Pullout
+                    </button>
+                }
+                <button type="button" class="btn btn-outline-secondary" @onclick="DownloadExcelAsync" disabled="@(!_detail.Lines.Any(l => l.Picks.Count > 0))"
+                        title="Download the pick list as Excel@(_detail.IsConfirmed ? string.Empty : " (before confirming)")">
+                    <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                    Download Excel
+                </button>
+            </div>
+        }
+
+        @if (_showRejectPanel && !_detail.IsRejected)
+        {
+            <div class="panel mb-4">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">Reject this pullout</h2>
+                        <p class="panel-subtitle">The request is closed and can't be refreshed or confirmed. Inventory is not affected. This can't be undone.</p>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    @if (!string.IsNullOrWhiteSpace(_rejectError))
+                    {
+                        <div class="alert alert-danger mb-3">@_rejectError</div>
+                    }
+                    <label class="form-label">Reason for rejection <span class="text-danger">*</span></label>
+                    <input class="form-control" placeholder="e.g. Raised in error, order cancelled"
+                           @bind="_rejectReason" @bind:event="oninput" />
+                    <div class="slide-over-footer px-0">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="ToggleRejectPanel">Cancel</button>
+                        <button type="button" class="btn btn-danger" disabled="@(_rejecting || string.IsNullOrWhiteSpace(_rejectReason))" @onclick="RejectPulloutAsync">
+                            @(_rejecting ? "Rejecting..." : "Confirm Rejection")
+                        </button>
+                    </div>
+                </div>
             </div>
         }
 
@@ -158,10 +214,62 @@
     private bool _loading = true;
     private string? _error;
     private bool _saving;
+    private bool _showRejectPanel;
+    private bool _rejecting;
+    private string _rejectReason = string.Empty;
+    private string? _rejectError;
+
+    private async Task DownloadExcelAsync()
+    {
+        if (_detail is null) return;
+
+        // Same pick list as the Pick Result panel on the entry screen: one row per pick.
+        var rows = _detail.Lines
+            .SelectMany(l => l.Picks.Select(p => new StockMasterRowDto(
+                l.MaterialNumber, l.MaterialDescription, string.Empty, p.QuantityBoxes, p.MfgMonthLabel, p.LocationCode)))
+            .ToList();
+
+        var bytes = ExcelService.WritePulloutDownload(rows);
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"pullout-{_detail.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private void ToggleRejectPanel()
+    {
+        _showRejectPanel = !_showRejectPanel;
+        _rejectReason = string.Empty;
+        _rejectError = null;
+    }
+
+    private async Task RejectPulloutAsync()
+    {
+        if (_detail is null || _detail.IsConfirmed || _detail.IsRejected || string.IsNullOrWhiteSpace(_rejectReason))
+        {
+            return;
+        }
+
+        _rejecting = true;
+        _rejectError = null;
+        try
+        {
+            await Mediator.Send(new RejectPulloutCommand(_detail.ReferenceNumber, _rejectReason));
+            _detail = await Mediator.Send(new GetPulloutDetailQuery(TransactionId));
+            _showRejectPanel = false;
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Pullout rejected. Inventory was not changed.");
+        }
+        catch (Exception ex)
+        {
+            _rejectError = ex.Message;
+        }
+        finally
+        {
+            _rejecting = false;
+        }
+    }
 
     private async Task SaveAsync(bool confirm)
     {
-        if (_detail is null || _detail.IsConfirmed || _saving) return;
+        if (_detail is null || _detail.IsConfirmed || _detail.IsRejected || _saving) return;
         _saving = true;
         _error = null;
         try

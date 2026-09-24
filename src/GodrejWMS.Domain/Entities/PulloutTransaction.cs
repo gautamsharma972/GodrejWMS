@@ -16,6 +16,16 @@ public class PulloutTransaction : AuditableEntity
     public string? ConfirmedByUserName { get; set; }
     public string ReferenceNumber { get; set; } = string.Empty;
     public bool IsConfirmed { get; set; } = true;
+
+    /// <summary>
+    /// True when a saved (not yet confirmed) pullout was rejected instead. A rejected pullout never
+    /// touched inventory and can no longer be refreshed or confirmed.
+    /// </summary>
+    public bool IsRejected { get; set; }
+    public DateTimeOffset? RejectedAt { get; set; }
+    public string? RejectedByUserId { get; set; }
+    public string? RejectedByUserName { get; set; }
+    public string? RejectionReason { get; set; }
     public string? PreviewJson { get; set; }
     public int RowVersion { get; set; }
 

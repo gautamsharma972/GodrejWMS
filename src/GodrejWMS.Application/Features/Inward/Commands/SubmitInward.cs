@@ -55,7 +55,18 @@ public sealed class SubmitInwardHandler(
         db.InwardTransactions.Add(transaction);
         var resultLines = new List<InwardLineResultDto>();
 
-        foreach (var line in request.Lines)
+        // Allocate in a deterministic order instead of the upload/entry order: by material code,
+        // then design type, then PKM (oldest first). Later lines see earlier lines' reservations,
+        // so this keeps a material's lines (and materials of one design) together in the rack
+        // no matter how the sheet happened to be sorted. OrderBy is stable, so identical lines
+        // keep their entered order.
+        var orderedLines = request.Lines
+            .OrderBy(l => l.MaterialCode)
+            .ThenBy(l => materialsByCode.TryGetValue(l.MaterialCode, out var m) ? m.DesignType : string.Empty, StringComparer.Ordinal)
+            .ThenBy(l => MfgMonthParser.TryParse(l.MfgMonthText, out var pkm) ? pkm : int.MaxValue)
+            .ToList();
+
+        foreach (var line in orderedLines)
         {
             if (!materialsByCode.TryGetValue(line.MaterialCode, out var material))
             {

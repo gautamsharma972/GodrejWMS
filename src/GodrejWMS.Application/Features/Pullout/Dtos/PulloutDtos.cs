@@ -28,7 +28,8 @@ public sealed record PulloutHistoryDto(
     int LineCount,
     decimal TotalQuantityBoxes,
     AllocationStatus Status,
-    bool IsConfirmed = true);
+    bool IsConfirmed = true,
+    bool IsRejected = false);
 
 public sealed record PulloutDetailLineDto(
     long MaterialNumber,
@@ -44,4 +45,8 @@ public sealed record PulloutDetailDto(
     string ReferenceNumber,
     DateTimeOffset CreatedAt,
     IReadOnlyList<PulloutDetailLineDto> Lines,
-    bool IsConfirmed = true);
+    bool IsConfirmed = true,
+    bool IsRejected = false,
+    DateTimeOffset? RejectedAt = null,
+    string? RejectedByUserName = null,
+    string? RejectionReason = null);

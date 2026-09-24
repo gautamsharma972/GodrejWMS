@@ -47,6 +47,8 @@ public sealed class SubmitPulloutHandler(
                 ?? throw new InvalidOperationException("Saved pullout was not found.");
             // Reload the header so a long-lived Blazor scope sees confirmations from other sessions.
             await db.Entry(transaction).ReloadAsync(cancellationToken);
+            if (transaction.IsRejected)
+                throw new InvalidOperationException("This pullout was rejected and can no longer be refreshed or confirmed.");
             if (transaction.IsConfirmed)
                 throw new InvalidOperationException("This pullout has already been confirmed.");
             savedPreview = JsonSerializer.Deserialize<PulloutResultDto>(transaction.PreviewJson!)!;

@@ -16,7 +16,8 @@ public sealed record GetPulloutHistoryQuery(
     bool SortDescending = true,
     int PageNumber = 1,
     int PageSize = 20,
-    bool? IsConfirmed = null) : IRequest<PaginatedList<PulloutHistoryDto>>;
+    bool? IsConfirmed = null,
+    bool? IsRejected = null) : IRequest<PaginatedList<PulloutHistoryDto>>;
 
 public sealed class GetPulloutHistoryHandler(IApplicationDbContext db)
     : IRequestHandler<GetPulloutHistoryQuery, PaginatedList<PulloutHistoryDto>>
@@ -24,8 +25,13 @@ public sealed class GetPulloutHistoryHandler(IApplicationDbContext db)
     public Task<PaginatedList<PulloutHistoryDto>> Handle(GetPulloutHistoryQuery request, CancellationToken cancellationToken)
     {
         var transactions = db.PulloutTransactions.AsNoTracking();
+        // "Not confirmed" means still pending: a rejected pullout is neither confirmed nor pending.
         if (request.IsConfirmed.HasValue)
-            transactions = transactions.Where(t => t.IsConfirmed == request.IsConfirmed.Value);
+            transactions = request.IsConfirmed.Value
+                ? transactions.Where(t => t.IsConfirmed)
+                : transactions.Where(t => !t.IsConfirmed && !t.IsRejected);
+        if (request.IsRejected == true)
+            transactions = transactions.Where(t => t.IsRejected);
 
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
@@ -75,7 +81,8 @@ public sealed class GetPulloutHistoryHandler(IApplicationDbContext db)
                 t.Lines.Count,
                 t.Lines.Sum(l => (decimal?)l.PickedQuantityBoxes) ?? 0m,
                 (AllocationStatus)(t.Lines.Max(l => (int?)l.Status) ?? (int)AllocationStatus.Failed),
-                t.IsConfirmed));
+                t.IsConfirmed,
+                t.IsRejected));
 
         return PaginatedList<PulloutHistoryDto>.CreateAsync(query, request.PageNumber, request.PageSize);
     }

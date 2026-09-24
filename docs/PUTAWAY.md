@@ -25,8 +25,8 @@ below) were not touched.
   `PreferredZoneTypeId` from a soft scoring nudge into a hard eligibility gate (§5).
 
 **Infrastructure**
-- `Services/PalletAllocationService.cs` — put-away engine: Design Code proximity, weight-based
-  level preference, and the Rack→Column→Level fill sequence added; the old level-major
+- `Services/PalletAllocationService.cs` — put-away engine: Design Code proximity and the
+  Rack→Column→Level fill sequence (a column fills bottom to top before the next column) added; the old level-major
   `DistancePriority`-driven scoring and velocity-based level heuristic removed from this engine
   (Pullout's own use of `DistancePriority` is untouched — see §5). Candidate positions are now
   also filtered to a material's required zone up front, before any tier runs, when
@@ -164,15 +164,20 @@ Within Tier 2/3, candidates are then ranked lexicographically (most to least sig
 2. **Design Code proximity** *(new)* — prefer a rack that already holds a different SKU sharing
    this material's Design Code (never the same location — that would violate no-mixing, which is
    enforced upstream by the candidate filter itself, not by this ranking).
-3. **Weight** *(new)* — `Level × BoxWeightKg`; heavier boxes are steered toward lower levels. Zero
-   weight is a true no-op.
-4. **Rack → Column → Level** *(new)* — the base "fill this bay top-to-bottom, then the next bay"
-   sequence. This replaces `PalletPosition.DistancePriority` for put-away purposes specifically.
+3. **Rack → Column → Level** — the base fill sequence: within a rack, fill one column from
+   Level 1 upward (A-01-01, A-01-02, A-01-03, ...) and only then move to the next column
+   (A-02-01, A-02-02, ...). Codes are Rack-Column-Level, and Level 1 is the bottom of the rack.
+   This replaces `PalletPosition.DistancePriority` for put-away purposes specifically.
    `DistancePriority` is level-major (tuned for Pullout's FIFO pick order — a picker working
    levels across all columns before climbing) and is unrelated to how a rack should be *filled*
-   (bay-by-bay). The two are deliberately allowed to differ; `PulloutAllocationService` is
-   untouched and still drives picking off `DistancePriority`.
-5. Fine tie-breaks (unchanged): a small penalty for choosing an empty spot when this SKU has older
+   (column by column, bottom to top). The two are deliberately allowed to differ;
+   `PulloutAllocationService` originally drove picking off `DistancePriority`; it now follows the column-by-column order too (see §16).
+
+   *Box weight no longer reorders levels.* An earlier version ranked `Level × BoxWeightKg`
+   ahead of Column, which made every weighted material fill level-major across the whole rack
+   (A-01-01, A-02-01, A-03-01, ...) instead of column by column. It was removed so the fill
+   sequence above is strictly followed.
+4. Fine tie-breaks (unchanged): a small penalty for choosing an empty spot when this SKU has older
    unallocated stock elsewhere, and a small penalty for non-Rack location types.
 
 **Concurrency at reservation time.** `SubmitInwardHandler` increments `PalletPosition.RowVersion`
@@ -218,8 +223,7 @@ inventing new roles the rest of the app doesn't have.
 `tests/GodrejWMS.Infrastructure.Tests/`:
 - `PalletAllocationServiceTests.cs` (20 tests total) — 6 added across this work: preferred-zone
   soft tiebreak, column-then-level fill for a weight-neutral material (reproduces the spec's own
-  380-box/pallet-size-40 example exactly), weight overriding plain column order for a heavy
-  material, Design Code proximity for a brand-new SKU, hard zone eligibility never using any other
+  380-box/pallet-size-40 example exactly), a heavy material still filling a column bottom to top before the next column, Design Code proximity for a brand-new SKU, hard zone eligibility never using any other
   zone even when it would score far better, and hard zone eligibility returning `Failed` (not
   silently falling back) when no capacity exists in the required zone; 1 existing test's
   expectation updated to match the new (still-correct) ordering now that the old velocity-level
@@ -291,7 +295,7 @@ code review instead.
   specific material opt into treating it as a hard constraint, but every material is still soft
   (nudge-only) by default.
 - Barcode scanning is out of scope by explicit decision (§6).
-- The relative priority weighting between Design Code proximity, weight, and the base traversal
+- The relative priority weighting between Design Code proximity and the base traversal
   sequence is a reasoned engineering choice (documented inline in `PalletAllocationService`), not
   something validated against real warehouse throughput data — it satisfies the spec's own worked
   examples and priority ordering, but the exact numbers are a judgment call.
@@ -343,3 +347,44 @@ updated); the audit-facing `AllocationReason` text now distinguishes a hard-requ
 ("This SKU's required zone") from a soft-preferred one ("Preferred zone for this SKU").
 
 Full solution after this pass: 51/51 tests, clean build.
+
+## 14. Fill-order correction (column by column, bottom to top)
+
+A put-away for a weighted material filled level-major across the rack (A-01-01, A-02-01,
+A-03-01, ...), because the weight tie-break (`Level × BoxWeightKg`) was ranked ahead of Column.
+Every seeded material has a box weight, so in practice every put-away behaved this way. The weight
+tie-break was removed from both the empty-location ranking and the same-rack consolidation
+ranking in `PalletAllocationService`, so the sequence is now Rack → Column → Level: A-01-01,
+A-01-02, A-01-03, ... then A-02-01, A-02-02, ... The put-away reason shown for such placements now
+reads "Next in fill sequence (column by column, bottom to top)".
+
+Not changed: the
+manual "change put-away location" list is still sorted by `DistancePriority`.
+Existing reservations are not re-ordered; only new allocations follow the corrected order.
+`AllocateAsync_FillsColumnBottomToTop_BeforeNextColumn_EvenForHeavyMaterial` guards the sequence.
+
+## 15. Lines are allocated in sorted order, not upload order
+
+`SubmitInwardHandler` no longer allocates lines in the order they were uploaded or typed. It sorts
+them first by material code, then by design type, then by PKM (oldest first), and allocates in that
+order. Later lines see the reservations of earlier ones, so this keeps a material's PKM lines and
+neighbouring materials together in the rack regardless of how the sheet was arranged. The sort is
+stable, so identical lines keep their entered order, and the allocation result lists lines in the
+sorted order. It applies to both Excel upload and manual entry (both submit through the same
+command). `SubmitInwardAsync_AllocatesByMaterialCodeThenPkm_NotUploadOrder` covers it.
+
+Because a material code has exactly one design type, "code then design" orders lines by code; design
+only matters as a tie-break. Grouping by design first (all materials of one design together, then by
+code) would be a one-line change to the sort key.
+
+## 16. Pullout picks follow FIFO, then column by column, bottom to top
+
+`PulloutAllocationService` used to order picks by PKM and then `PalletPosition.DistancePriority`,
+which is level-major (A-01-01, A-02-01, A-03-01, ...). It now orders by PKM (oldest first), then
+Rack → Column → Level, so within one PKM a column is emptied from Level 1 upward (A-01-01,
+A-01-02, A-01-03, ...) before the next column, mirroring the put-away fill order in §14. When a
+PKM runs out the pick moves on to the next PKM and starts again from the first location that
+holds it. `DistancePriority` is no longer used for picking. Saved (pending) pullouts keep the picks
+they were saved with; use Refresh Picks on the pullout to recompute them in the new order.
+`AllocateAsync_DrainsColumnBottomToTop_BeforeNextColumn_WithinOnePkm` and
+`AllocateAsync_ExhaustsOldestPkmFirst_ThenMovesToNextPkm_EachInColumnOrder` cover it.

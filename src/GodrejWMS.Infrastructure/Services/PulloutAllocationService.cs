@@ -6,8 +6,10 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Infrastructure.Services;
 
 /// <summary>
-/// FIFO pick engine: drains the oldest manufacturing month first. Only good stock in active
-/// good locations is pickable; damage, expired, and hold stock remain isolated.
+/// FIFO pick engine: drains the oldest manufacturing month first, and within a PKM works through
+/// locations in Rack -> Column -> Level order - a column is emptied from Level 1 upward
+/// (A-01-01, A-01-02, ...) before moving to the next column - mirroring the put-away fill order.
+/// Only good stock in active good locations is pickable; damage, expired, and hold stock remain isolated.
 /// </summary>
 public class PulloutAllocationService(IApplicationDbContext db) : IPulloutAllocationService
 {
@@ -31,7 +33,8 @@ public class PulloutAllocationService(IApplicationDbContext db) : IPulloutAlloca
                 && b.PalletPosition.LocationSubtypeId == LocationSubtypeIds.Good)
             .Include(b => b.PalletPosition)
             .OrderBy(b => b.MfgMonth)
-            .ThenBy(b => b.PalletPosition.DistancePriority)
+            .ThenBy(b => b.PalletPosition.Rack.Code)
+            .ThenBy(b => b.PalletPosition.Column)
             .ThenBy(b => b.PalletPosition.Level)
             .ThenBy(b => b.PalletPosition.LocationCode)
             .ToListAsync(cancellationToken);

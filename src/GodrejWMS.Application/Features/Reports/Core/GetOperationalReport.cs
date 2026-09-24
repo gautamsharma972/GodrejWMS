@@ -148,9 +148,9 @@ public sealed class GetOperationalReportHandler(
         Sku = l.Material.MaterialNumber, Description = l.Material.Description, Design = l.Material.DesignType,
         Quantity = l.PickedQuantityBoxes, Requested = l.RequestedQuantityBoxes,
         Completed = l.PulloutTransaction.IsConfirmed ? l.PickedQuantityBoxes : 0,
-        Pending = l.RequestedQuantityBoxes - (l.PulloutTransaction.IsConfirmed ? l.PickedQuantityBoxes : 0),
+        Pending = l.PulloutTransaction.IsRejected ? 0 : l.RequestedQuantityBoxes - (l.PulloutTransaction.IsConfirmed ? l.PickedQuantityBoxes : 0),
         Available = l.PickedQuantityBoxes,
-        Status = !l.PulloutTransaction.IsConfirmed ? "Not confirmed" : l.Status == Domain.Enums.AllocationStatus.Fulfilled ? "Fulfilled" : l.Status == Domain.Enums.AllocationStatus.Partial ? "Partial" : "Failed",
+        Status = l.PulloutTransaction.IsRejected ? "Rejected" : !l.PulloutTransaction.IsConfirmed ? "Not confirmed" : l.Status == Domain.Enums.AllocationStatus.Fulfilled ? "Fulfilled" : l.Status == Domain.Enums.AllocationStatus.Partial ? "Partial" : "Failed",
         User = l.PulloutTransaction.ConfirmedByUserName ?? "", UserId = l.PulloutTransaction.ConfirmedByUserId ?? "", Reason = l.Remarks ?? ""
     });
 
