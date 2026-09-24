@@ -1,0 +1,47 @@
+namespace GodrejWMS.Application.Features.Materials.Dtos;
+
+public sealed record MaterialDto(
+    int Id,
+    long MaterialNumber,
+    string Description,
+    string DesignType,
+    string? CharacteristicValue,
+    int PackSize,
+    decimal MrpPrice,
+    decimal LengthMm,
+    decimal WidthMm,
+    decimal HeightMm,
+    decimal VolumeMm3,
+    decimal NetWeightKg,
+    decimal GrossWeightKg,
+    decimal BoxWeightKg,
+    int PalletCapacityBoxes,
+    decimal PalletWeightKg,
+    int MovementTypeId,
+    string MovementTypeCode,
+    string MovementTypeName,
+    int SeasonId,
+    string SeasonCode,
+    string SeasonName,
+    int? PreferredZoneTypeId,
+    string? PreferredZoneTypeName,
+    bool RequirePreferredZone,
+    bool IsActive);
+
+/// <summary>One parsed row from a MaterialMaster Excel import, before it is validated/persisted.</summary>
+public sealed record MaterialImportRow(
+    long MaterialNumber,
+    string Description,
+    string DesignType,
+    string? CharacteristicValue,
+    int PackSize,
+    decimal MrpPrice,
+    decimal LengthMm,
+    decimal WidthMm,
+    decimal HeightMm,
+    decimal NetWeightKg,
+    decimal GrossWeightKg,
+    int PalletCapacityBoxes,
+    string MovementTypeCode,
+    string SeasonCode,
+    int RowNumber);

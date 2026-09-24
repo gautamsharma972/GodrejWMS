@@ -1,0 +1,251 @@
+@page "/inward/history"
+@attribute [Authorize(Roles = "Admin,Operator,Supervisor")]
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Features.Inward.Dtos
+@using GodrejWMS.Application.Features.Inward.Queries
+@using GodrejWMS.Domain.Enums
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Inward History - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Goods Receipt Audit</div>
+            <h1>Inward History</h1>
+            <p class="page-kicker">Search, filter, export, and review goods receipt transactions recorded by the system.</p>
+        </div>
+        <div class="toolbar-group">
+            <a class="btn btn-outline-secondary" href="/inward">
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                Inward Entry
+            </a>
+        </div>
+    </div>
+
+    <div class="panel history-register">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Inward Transaction Register</h2>
+                <p class="panel-subtitle">Latest goods receipt transactions with allocation status and put-away totals.</p>
+            </div>
+            <div class="toolbar-group">
+                <button class="btn btn-sm btn-outline-primary" @onclick="ExportHistoryAsync" disabled="@(_history is null || _history.TotalCount == 0)">
+                    <i class="bi bi-download" aria-hidden="true"></i>
+                    Export CSV
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => LoadHistoryPage(_historyPageNumber)">
+                    <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                    Refresh
+                </button>
+            </div>
+        </div>
+        <div class="toolbar-panel panel-toolbar history-toolbar">
+            <div class="toolbar-group">
+                <div class="input-group search-control">
+                    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                    <input class="form-control" placeholder="Search reference, material, or description"
+                           @bind="_historySearch" @bind:event="oninput" @onkeyup="OnHistorySearchKeyUp" />
+                </div>
+                <input class="form-control filter-control" type="date" title="From date" value="@_historyFrom" @onchange="OnHistoryFromChanged" />
+                <input class="form-control filter-control" type="date" title="To date" value="@_historyTo" @onchange="OnHistoryToChanged" />
+                <select class="form-select filter-control" value="@_historyStatusFilter" @onchange="OnHistoryStatusChanged">
+                    <option value="">All statuses</option>
+                    @foreach (var status in Enum.GetValues<AllocationStatus>())
+                    {
+                        <option value="@status">@status</option>
+                    }
+                </select>
+            </div>
+            @if (_history is not null)
+            {
+                <span class="sync-chip">@_history.TotalCount.ToString("N0") records</span>
+            }
+        </div>
+        @if (_history is null)
+        {
+            <div class="loading-panel">
+                <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                Loading history...
+            </div>
+        }
+        else if (_history.Items.Count == 0)
+        {
+            <div class="empty-state">No inward transactions recorded yet.</div>
+        }
+        else
+        {
+            <div class="table-responsive history-table-wrap">
+                <table class="table table-hover align-middle mb-0 history-table inward-history-table">
+                    <thead>
+                        <tr>
+                            <th><button class="sort-button" @onclick='@(() => SortHistoryBy("reference"))'>Reference <i class='bi @HistorySortIcon("reference")'></i></button></th>
+                            <th><button class="sort-button" @onclick='@(() => SortHistoryBy("created"))'>Created <i class='bi @HistorySortIcon("created")'></i></button></th>
+                            <th><button class="sort-button" @onclick='@(() => SortHistoryBy("status"))'>Status <i class='bi @HistorySortIcon("status")'></i></button></th>
+                            <th>Put-away</th>
+                            <th class="text-end"><button class="sort-button" @onclick='@(() => SortHistoryBy("lines"))'>Lines <i class='bi @HistorySortIcon("lines")'></i></button></th>
+                            <th class="text-end"><button class="sort-button" @onclick='@(() => SortHistoryBy("quantity"))'>Allocated Boxes <i class='bi @HistorySortIcon("quantity")'></i></button></th>
+                            <th class="table-actions">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _history.Items)
+                        {
+                            <tr>
+                                <td><a class="record-code history-reference" href="@($"/inward/{item.Id}")">@item.ReferenceNumber</a></td>
+                                <td class="history-created">@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
+                                <td><span class="status-pill @AllocationClass(item.Status)">@item.Status</span></td>
+                                <td>
+                                    @if (item.IsRejected)
+                                    {
+                                        <span class="status-pill danger">Rejected</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="status-pill @(item.IsConfirmed ? "success" : "warning")">@(item.IsConfirmed ? "Confirmed" : "Reserved")</span>
+                                    }
+                                </td>
+                                <td class="text-end">@item.LineCount</td>
+                                <td class="text-end fw-semibold">@item.TotalQuantityBoxes.ToString("N0")</td>
+                                <td class="table-actions">
+                                    <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {item.ReferenceNumber}")" aria-label="@($"View {item.ReferenceNumber}")" href="@($"/inward/{item.Id}")">
+                                        <i class="bi bi-eye" aria-hidden="true"></i>
+                                    </a>
+                                    @if (!item.IsConfirmed && !item.IsRejected)
+                                    {
+                                        <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"Putaway {item.ReferenceNumber}")" aria-label="@($"Putaway {item.ReferenceNumber}")" href="@($"/inward/{item.Id}/putaway")">
+                                            <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
+                                        </a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+        }
+    </div>
+
+    @if (_history is not null && _history.Items.Count > 0)
+    {
+        <nav class="pagination-bar history-pagination" aria-label="Inward history pagination">
+            <ul class="pagination mb-0">
+                <li class="page-item @(_history.HasPreviousPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadHistoryPage(_historyPageNumber - 1)">Previous</button>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Page @_history.PageNumber of @Math.Max(1, _history.TotalPages)</span></li>
+                <li class="page-item @(_history.HasNextPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadHistoryPage(_historyPageNumber + 1)">Next</button>
+                </li>
+            </ul>
+        </nav>
+    }
+</div>
+
+@code {
+    private PaginatedList<InwardHistoryDto>? _history;
+    private int _historyPageNumber = 1;
+    private string _historySearch = string.Empty;
+    private string _historyStatusFilter = string.Empty;
+    private string _historyFrom = string.Empty;
+    private string _historyTo = string.Empty;
+    private string _historySortBy = "created";
+    private bool _historySortDescending = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadHistoryPage(1);
+    }
+
+    private async Task LoadHistoryPage(int page)
+    {
+        if (page < 1) return;
+
+        _historyPageNumber = page;
+        _history = await Mediator.Send(CreateHistoryQuery(page, 10));
+    }
+
+    private GetInwardHistoryQuery CreateHistoryQuery(int page, int pageSize) =>
+        new(
+            Search: _historySearch,
+            From: ParseDate(_historyFrom),
+            To: ParseDate(_historyTo)?.AddDays(1),
+            Status: Enum.TryParse<AllocationStatus>(_historyStatusFilter, out var status) ? status : null,
+            SortBy: _historySortBy,
+            SortDescending: _historySortDescending,
+            PageNumber: page,
+            PageSize: pageSize);
+
+    private async Task OnHistorySearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadHistoryPage(1);
+
+    private async Task OnHistoryFromChanged(ChangeEventArgs e)
+    {
+        _historyFrom = e.Value?.ToString() ?? string.Empty;
+        await LoadHistoryPage(1);
+    }
+
+    private async Task OnHistoryToChanged(ChangeEventArgs e)
+    {
+        _historyTo = e.Value?.ToString() ?? string.Empty;
+        await LoadHistoryPage(1);
+    }
+
+    private async Task OnHistoryStatusChanged(ChangeEventArgs e)
+    {
+        _historyStatusFilter = e.Value?.ToString() ?? string.Empty;
+        await LoadHistoryPage(1);
+    }
+
+    private async Task SortHistoryBy(string column)
+    {
+        if (_historySortBy == column)
+        {
+            _historySortDescending = !_historySortDescending;
+        }
+        else
+        {
+            _historySortBy = column;
+            _historySortDescending = column is "created";
+        }
+
+        await LoadHistoryPage(1);
+    }
+
+    private string HistorySortIcon(string column) =>
+        _historySortBy == column ? (_historySortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
+
+    private async Task ExportHistoryAsync()
+    {
+        var page = await Mediator.Send(CreateHistoryQuery(1, 10000));
+        var rows = page.Items.Select(h => string.Join(",",
+            Csv(h.ReferenceNumber),
+            Csv(h.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")),
+            Csv(h.Status.ToString()),
+            Csv(h.IsRejected ? "Rejected" : h.IsConfirmed ? "Confirmed" : "Reserved"),
+            h.LineCount.ToString(),
+            h.TotalQuantityBoxes.ToString("0.###")));
+        var csv = "Reference,Created,Status,Put-away,Lines,Allocated Boxes\r\n" + string.Join("\r\n", rows);
+        var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(csv));
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "inward-history.csv", base64, "text/csv");
+    }
+
+    private static DateTimeOffset? ParseDate(string value) =>
+        DateTime.TryParse(value, out var date) ? new DateTimeOffset(date) : null;
+
+    private static string Csv(string value)
+    {
+        var escaped = value.Replace("\"", "\"\"");
+        return escaped.Contains(',') || escaped.Contains('"') || escaped.Contains('\n') ? $"\"{escaped}\"" : escaped;
+    }
+
+    private static string AllocationClass(AllocationStatus status) => status switch
+    {
+        AllocationStatus.Fulfilled => "success",
+        AllocationStatus.Partial => "warning",
+        _ => "danger"
+    };
+}
+
+

@@ -1,0 +1,240 @@
+@page "/reports/movement"
+@attribute [Authorize(Roles = "Admin,Supervisor")]
+@using GodrejWMS.Application.Features.Reports.Dtos
+@using GodrejWMS.Application.Features.Reports.Queries
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Movement Reports - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Reports</div>
+            <h1>Movement Reports</h1>
+            <p class="page-kicker">Reason breakdown, user activity, and location churn for completed Inventory Movements.</p>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="btn-group" role="group" aria-label="Report tabs">
+                <button type="button" class="btn @(_activeTab == ReportTab.Reasons ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchTab(ReportTab.Reasons)'>
+                    Reasons Breakdown
+                </button>
+                <button type="button" class="btn @(_activeTab == ReportTab.Users ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchTab(ReportTab.Users)'>
+                    Activity by User
+                </button>
+                <button type="button" class="btn @(_activeTab == ReportTab.Locations ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchTab(ReportTab.Locations)'>
+                    Location Churn
+                </button>
+            </div>
+            <div class="toolbar-group">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ExportCsvAsync" disabled="@_loading">
+                    <i class="bi bi-download" aria-hidden="true"></i>
+                    Export CSV
+                </button>
+            </div>
+        </div>
+
+        <div class="toolbar-panel panel-toolbar">
+            <div class="toolbar-group">
+                <input class="form-control filter-control" type="date" title="From date" value="@_fromDate" @onchange="OnFromChanged" />
+                <input class="form-control filter-control" type="date" title="To date" value="@_toDate" @onchange="OnToChanged" />
+            </div>
+            @if (!_loading)
+            {
+                <span class="sync-chip">@RowCount row(s)</span>
+            }
+        </div>
+
+        @if (_loading)
+        {
+            <div class="loading-panel">
+                <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                Loading report...
+            </div>
+        }
+        else if (RowCount == 0)
+        {
+            <div class="empty-state">No movements recorded in this date range.</div>
+        }
+        else if (_activeTab == ReportTab.Reasons)
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Reason</th>
+                            <th class="text-end">Movements</th>
+                            <th class="text-end">Total Boxes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _reasonRows)
+                        {
+                            <tr>
+                                <td><ReportValueBadge Kind="reason" Value="@row.ReasonCode" /> @row.ReasonName</td>
+                                <td class="text-end">@row.MovementCount.ToString("N0")</td>
+                                <td class="text-end fw-semibold">@row.TotalQuantityBoxes.ToString("0.###")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (_activeTab == ReportTab.Users)
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th class="text-end">Movements</th>
+                            <th class="text-end">Total Boxes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _userRows)
+                        {
+                            <tr>
+                                <td>@row.UserName</td>
+                                <td class="text-end">@row.MovementCount.ToString("N0")</td>
+                                <td class="text-end fw-semibold">@row.TotalQuantityBoxes.ToString("0.###")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Location</th>
+                            <th class="text-end">Moves Out</th>
+                            <th class="text-end">Moves In</th>
+                            <th class="text-end">Total Moves</th>
+                            <th class="text-end">Boxes Out</th>
+                            <th class="text-end">Boxes In</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _locationRows)
+                        {
+                            <tr>
+                                <td><ReportValueBadge Kind="location" Value="@row.LocationCode" /></td>
+                                <td class="text-end">@row.MovesOut.ToString("N0")</td>
+                                <td class="text-end">@row.MovesIn.ToString("N0")</td>
+                                <td class="text-end fw-semibold">@row.TotalMoves.ToString("N0")</td>
+                                <td class="text-end">@row.QuantityMovedOut.ToString("0.###")</td>
+                                <td class="text-end">@row.QuantityMovedIn.ToString("0.###")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private enum ReportTab { Reasons, Users, Locations }
+
+    private ReportTab _activeTab = ReportTab.Reasons;
+    private bool _loading = true;
+    private string _fromDate = string.Empty;
+    private string _toDate = string.Empty;
+
+    private IReadOnlyList<MovementReasonBreakdownRowDto> _reasonRows = [];
+    private IReadOnlyList<MovementUserActivityRowDto> _userRows = [];
+    private IReadOnlyList<MovementLocationChurnRowDto> _locationRows = [];
+
+    private int RowCount => _activeTab switch
+    {
+        ReportTab.Reasons => _reasonRows.Count,
+        ReportTab.Users => _userRows.Count,
+        _ => _locationRows.Count
+    };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task SwitchTab(ReportTab tab)
+    {
+        _activeTab = tab;
+        await LoadAsync();
+    }
+
+    private async Task OnFromChanged(ChangeEventArgs e)
+    {
+        _fromDate = e.Value?.ToString() ?? string.Empty;
+        await LoadAsync();
+    }
+
+    private async Task OnToChanged(ChangeEventArgs e)
+    {
+        _toDate = e.Value?.ToString() ?? string.Empty;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var from = ParseDate(_fromDate)?.ToDateTime(TimeOnly.MinValue);
+        var to = ParseDate(_toDate)?.ToDateTime(TimeOnly.MaxValue);
+
+        switch (_activeTab)
+        {
+            case ReportTab.Reasons:
+                _reasonRows = await Mediator.Send(new GetMovementReasonsBreakdownQuery(from, to));
+                break;
+            case ReportTab.Users:
+                _userRows = await Mediator.Send(new GetMovementActivityByUserQuery(from, to));
+                break;
+            default:
+                _locationRows = await Mediator.Send(new GetMovementLocationChurnQuery(from, to));
+                break;
+        }
+
+        _loading = false;
+    }
+
+    private async Task ExportCsvAsync()
+    {
+        string csv;
+        string fileName;
+
+        switch (_activeTab)
+        {
+            case ReportTab.Reasons:
+                fileName = "movement-reasons-breakdown.csv";
+                csv = "Reason Code,Reason Name,Movements,Total Boxes\r\n" + string.Join("\r\n", _reasonRows.Select(r =>
+                    string.Join(",", Csv(r.ReasonCode), Csv(r.ReasonName), r.MovementCount.ToString(), r.TotalQuantityBoxes.ToString("0.###"))));
+                break;
+            case ReportTab.Users:
+                fileName = "movement-activity-by-user.csv";
+                csv = "User,Movements,Total Boxes\r\n" + string.Join("\r\n", _userRows.Select(r =>
+                    string.Join(",", Csv(r.UserName), r.MovementCount.ToString(), r.TotalQuantityBoxes.ToString("0.###"))));
+                break;
+            default:
+                fileName = "movement-location-churn.csv";
+                csv = "Location,Moves Out,Moves In,Total Moves,Boxes Out,Boxes In\r\n" + string.Join("\r\n", _locationRows.Select(r =>
+                    string.Join(",", Csv(r.LocationCode), r.MovesOut.ToString(), r.MovesIn.ToString(), r.TotalMoves.ToString(), r.QuantityMovedOut.ToString("0.###"), r.QuantityMovedIn.ToString("0.###"))));
+                break;
+        }
+
+        var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(csv));
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", fileName, base64, "text/csv");
+    }
+
+    private static DateOnly? ParseDate(string value) =>
+        DateOnly.TryParse(value, out var date) ? date : null;
+
+    private static string Csv(string value)
+    {
+        var escaped = value.Replace("\"", "\"\"");
+        return escaped.Contains(',') || escaped.Contains('"') || escaped.Contains('\n') ? $"\"{escaped}\"" : escaped;
+    }
+}

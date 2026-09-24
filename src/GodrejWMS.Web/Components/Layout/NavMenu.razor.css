@@ -1,0 +1,208 @@
+.brand-panel {
+    min-height: 72px;
+    display: flex;
+    align-items: center;
+    padding: 0.95rem 1rem;
+    border-bottom: 1px solid var(--wms-border);
+}
+
+.navbar-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.8rem;
+    color: var(--wms-ink);
+    text-decoration: none;
+}
+
+.brand-mark {
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #fff;
+    font-weight: 800;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.2);
+}
+
+.brand-name,
+.brand-subtitle {
+    display: block;
+}
+
+.brand-name {
+    font-size: 1rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.brand-subtitle {
+    margin-top: 0.15rem;
+    color: var(--wms-muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+}
+
+.navbar-toggler {
+    appearance: none;
+    cursor: pointer;
+    width: 42px;
+    height: 42px;
+    color: var(--wms-ink);
+    position: absolute;
+    top: 0.95rem;
+    right: 1rem;
+    border: 1px solid var(--wms-border);
+    border-radius: 8px;
+    background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%2830,41,59,.78%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.4rem #f8fafc;
+}
+
+.navbar-toggler:checked {
+    background-color: #eff6ff;
+}
+
+.nav-scrollable {
+    display: none;
+    padding: 0.8rem;
+}
+
+.navbar-toggler:checked ~ .nav-scrollable {
+    display: block;
+}
+
+.nav-section-label {
+    color: #708199;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    margin: 1rem 0 0.45rem;
+    padding: 0 0.7rem;
+    text-transform: uppercase;
+}
+
+.nav-item {
+    margin-bottom: 0.25rem;
+}
+
+.nav-item ::deep .nav-link {
+    width: 100%;
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: #334155;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0.62rem 0.75rem;
+    font-size: 0.92rem;
+    font-weight: 650;
+    line-height: 1.2;
+    text-decoration: none;
+}
+
+.nav-item ::deep .nav-link i {
+    width: 1.2rem;
+    color: #64748b;
+    font-size: 1rem;
+}
+
+.nav-item ::deep a.active {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+}
+
+.nav-item ::deep a.active i {
+    color: #2563eb;
+}
+
+.nav-item ::deep .nav-link:hover,
+.nav-item ::deep .nav-link:focus-visible {
+    background: #f8fafc;
+    color: #0f172a;
+}
+
+.nav-spacer {
+    height: 2rem;
+}
+
+@media (min-width: 861px) {
+    .navbar-toggler {
+        display: none;
+    }
+
+    .nav-scrollable {
+        display: block;
+        height: calc(100vh - 72px);
+        overflow-y: auto;
+    }
+}
+.nav-group {
+    margin-bottom: 0.15rem;
+}
+
+.nav-parent {
+    width: 100%;
+    border: 1px solid transparent;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+}
+
+.nav-parent.active {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+}
+
+.nav-parent.active i:first-child {
+    color: #2563eb;
+}
+
+.nav-chevron {
+    margin-left: auto;
+    color: #64748b;
+    font-size: 0.72rem;
+    transition: transform 160ms ease, color 160ms ease;
+}
+
+.nav-parent:hover .nav-chevron,
+.nav-parent.active .nav-chevron {
+    color: #2563eb;
+}
+
+.nav-chevron.expanded {
+    transform: rotate(180deg);
+}
+
+.nav-submenu {
+    position: relative;
+    display: none;
+    gap: 0.25rem;
+    margin: 0.25rem 0 0.35rem 1.15rem;
+    padding-left: 0.65rem;
+}
+
+.nav-submenu.expanded {
+    display: grid;
+}
+
+.nav-submenu::before {
+    position: absolute;
+    top: 0.25rem;
+    bottom: 0.25rem;
+    left: 0;
+    width: 1px;
+    background: #cbd5e1;
+    content: "";
+}
+
+.nav-subitem .nav-link {
+    min-height: 38px;
+    padding-left: 0.85rem;
+    font-size: 0.9rem;
+}
+

@@ -1,0 +1,495 @@
+@page "/racks/{RackId:int}/layout"
+@attribute [Authorize]
+@using GodrejWMS.Application.Features.Racks.Commands
+@using GodrejWMS.Application.Features.Racks.Dtos
+@using GodrejWMS.Application.Features.Racks.Queries
+@using GodrejWMS.Application.Features.LocationSubtypes.Dtos
+@using GodrejWMS.Application.Features.LocationSubtypes.Queries
+@using GodrejWMS.Application.Features.ZoneTypes.Dtos
+@using GodrejWMS.Application.Features.ZoneTypes.Queries
+@using GodrejWMS.Application.Features.LocationTypes.Dtos
+@using GodrejWMS.Application.Features.LocationTypes.Queries
+@using GodrejWMS.Domain.Entities
+@inject IMediator Mediator
+
+<PageTitle>Rack Layout - Godrej WMS</PageTitle>
+
+@if (_layout is null)
+{
+    <div class="loading-panel">
+        <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+        Loading rack layout...
+    </div>
+}
+else
+{
+    <div class="page-shell">
+        <div class="page-header">
+            <div>
+                <div class="eyebrow">Pallet Map</div>
+                <h1>Rack @_layout.RackCode</h1>
+                <p class="page-kicker">Ground level 1 is shown at the bottom. Each location can hold 2 pallets of 40 boxes by default.</p>
+            </div>
+            <a class="btn btn-outline-secondary" href="racks">
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                Back to Racks
+            </a>
+        </div>
+
+        <div class="transaction-grid">
+            <div class="rack-layout-panel rack-layout-3d">
+                <div class="toolbar-panel panel-toolbar rack-map-toolbar">
+                    <div class="toolbar-group">
+                        <div class="input-group search-control">
+                            <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                            <input class="form-control" placeholder="Search location, label, SKU, or description" @bind="_rackSearch" @bind:event="oninput" />
+                        </div>
+                        <select class="form-select filter-control" @bind="_occupancyFilter">
+                            <option value="">All positions</option>
+                            <option value="empty">Empty</option>
+                            <option value="partial">Partially filled</option>
+                            <option value="full">Full</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                        <label class="form-check rack-heatmap-toggle">
+                            <input class="form-check-input" type="checkbox" @bind="_heatmapMode" />
+                            <span class="form-check-label">Heatmap</span>
+                        </label>
+                    </div>
+                    <span class="sync-chip">@FilteredPositionCount() / @_layout.Positions.Count position(s)</span>
+                </div>
+                <div class="rack-viewport @(_heatmapMode ? "heatmap-mode" : null)">
+                    <div class="rack-frame" style="@($"--rack-columns:{_layout.Columns};")">
+                        @for (var level = _layout.Levels; level >= 1; level--)
+                        {
+                            <div class="rack-level-3d">
+                                <div class="rack-level-label">Level @level</div>
+                                <div class="rack-bay-row">
+                                    @foreach (var pos in _layout.Positions.Where(p => p.Level == level).OrderBy(p => p.Column))
+                                    {
+                                        <button type="button"
+                                                class="pallet-cell-3d @CellStateClass(pos) @(_selected?.Id == pos.Id ? "selected" : "") @(!pos.IsActive ? "inactive" : "") @(MatchesRackFilters(pos) ? "" : "filtered-out") @(_rackSearch.Length > 0 && MatchesRackSearch(pos) ? "search-hit" : "")"
+                                                title="@($"{pos.LocationCode} - {pos.LocationSubtypeName}, {pos.OccupiedBoxes:0.###}/{pos.CapacityBoxes} boxes")"
+                                                @onclick="() => SelectPosition(pos)">
+                                            <span class="rack-cell-top"></span>
+                                            <span class="rack-cell-face">
+                                                <span class="rack-cell-code">@pos.LocationCode</span>
+                                                @if (!string.IsNullOrEmpty(pos.FlatLabel))
+                                                {
+                                                    <span class="rack-cell-label">@pos.FlatLabel</span>
+                                                }
+                                                <span class="rack-cell-meter">
+                                                    <span style="@($"width:{OccupancyPercent(pos):0.##}%;")"></span>
+                                                </span>
+                                                <span class="rack-cell-meta">@($"{pos.OccupiedBoxes:0.###}/{pos.CapacityBoxes} boxes")</span>
+                                            </span>
+                                            <span class="rack-cell-side"></span>
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="legend-row">
+                    <span><span class="legend-swatch cell-empty"></span> Empty</span>
+                    <span><span class="legend-swatch cell-partial"></span> Partially filled</span>
+                    <span><span class="legend-swatch cell-full"></span> Full</span>
+                    <span><span class="legend-swatch cell-selected"></span> Selected</span>
+                </div>
+            </div>
+
+            <aside class="panel position-detail-panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">Position Details</h2>
+                        <p class="panel-subtitle">Select a location to inspect or update location master settings.</p>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    @if (_selected is null)
+                    {
+                        <div class="empty-inline">Select a pallet position to view details.</div>
+                    }
+                    else
+                    {
+                        <div class="position-detail-shell">
+                            <div class="position-summary-card">
+                                <div class="position-summary-top">
+                                    <div>
+                                        <div class="eyebrow">Location</div>
+                                        <h2>@_selected.LocationCode</h2>
+                                    </div>
+                                    <span class="status-pill @(_selected.IsActive ? "success" : "inactive")">@(_selected.IsActive ? "Active" : "Inactive")</span>
+                                </div>
+
+                                <div class="position-tag-row">
+                                    <span class="status-pill info">@_selected.LocationTypeName</span>
+                                    <span class="status-pill @SubtypeClass(_selected.LocationSubtypeCode)">@_selected.LocationSubtypeName</span>
+                                    <span class="status-pill @ZoneClass(_selected.ZoneTypeCode)">@_selected.ZoneTypeName</span>
+                                </div>
+
+                                <div class="position-progress-block">
+                                    <div>
+                                        <span>Occupied</span>
+                                        <strong>@_selected.OccupiedBoxes.ToString("0.###") / @_selected.CapacityBoxes boxes</strong>
+                                    </div>
+                                    <span>@OccupancyPercent(_selected).ToString("0.#")%</span>
+                                </div>
+                                <div class="position-progress-track">
+                                    <span style="@($"width:{OccupancyPercent(_selected):0.##}%")"></span>
+                                </div>
+                            </div>
+
+                            <div class="position-metric-grid">
+                                <div class="position-metric">
+                                    <span>Capacity</span>
+                                    <strong>@_selected.CapacityBoxes</strong>
+                                </div>
+                                <div class="position-metric">
+                                    <span>Occupied</span>
+                                    <strong>@_selected.OccupiedBoxes.ToString("0.###")</strong>
+                                </div>
+                                <div class="position-metric success">
+                                    <span>Free</span>
+                                    <strong>@_selected.FreeBoxes.ToString("0.###")</strong>
+                                </div>
+                                <div class="position-metric">
+                                    <span>Priority</span>
+                                    <strong>@_selected.DistancePriority</strong>
+                                </div>
+                                <div class="position-metric">
+                                    <span>Pallets</span>
+                                    <strong>@_selected.MaxPallets</strong>
+                                </div>
+                                <div class="position-metric">
+                                    <span>Boxes / pallet</span>
+                                    <strong>@_selected.BoxesPerPallet</strong>
+                                </div>
+                            </div>
+
+                            <section class="position-section">
+                                <div class="position-section-header">
+                                    <div>
+                                        <div class="eyebrow">SKU Stock</div>
+                                        <h3>Placed SKUs</h3>
+                                    </div>
+                                    <span class="status-pill info">@_selected.Stock.Count item(s)</span>
+                                </div>
+
+                                @if (_selected.Stock.Count == 0)
+                                {
+                                    <div class="empty-inline">No SKU stock placed in this pallet position.</div>
+                                }
+                                else
+                                {
+                                    <div class="sku-stock-list">
+                                        @foreach (var stock in _selected.Stock)
+                                        {
+                                            <article class="sku-stock-card">
+                                                <div class="sku-stock-card-header">
+                                                    <span class="sku-code-chip">@stock.MaterialNumber</span>
+                                                    <span class="status-pill @SubtypeClass(stock.StockSubtypeCode)">@stock.StockSubtypeName</span>
+                                                </div>
+                                                <h4>@stock.MaterialDescription</h4>
+                                                <div class="sku-stock-meta">
+                                                    <div>
+                                                        <span>Design Type</span>
+                                                        <strong>@stock.DesignType</strong>
+                                                    </div>
+                                                    <div>
+                                                        <span>PKM</span>
+                                                        <strong>@stock.MfgMonthLabel</strong>
+                                                    </div>
+                                                    <div>
+                                                        <span>Boxes</span>
+                                                        <strong>@stock.QuantityBoxes.ToString("0.###")</strong>
+                                                    </div>
+                                                </div>
+                                            </article>
+                                        }
+                                    </div>
+                                }
+                            </section>
+
+                            <section class="position-section position-label-section">
+                                <div>
+                                    <div class="eyebrow">Physical Label</div>
+                                    <div class="position-label-value">@(!string.IsNullOrWhiteSpace(_selected.FlatLabel) ? _selected.FlatLabel : "Not assigned")</div>
+                                </div>
+                                <AuthorizeView Roles="Admin" Context="adminContext">
+                                    <button type="button" class="btn btn-outline-secondary" @onclick="OpenLabelEditor">
+                                        <i class="bi bi-pencil-square" aria-hidden="true"></i>
+                                        Edit Location
+                                    </button>
+                                </AuthorizeView>
+                            </section>
+                        </div>
+                    }
+                </div>
+            </aside>
+        </div>
+        @if (_showLabelForm && _selected is not null)
+        {
+            <div class="slide-over-backdrop" role="presentation" @onclick="CloseLabelEditor">
+                <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="label-drawer-title" @onclick:stopPropagation="true">
+                    <div class="slide-over-header">
+                        <div>
+                            <div class="eyebrow">Location Master</div>
+                            <h2 class="slide-over-title" id="label-drawer-title">Edit Location @_selected.LocationCode</h2>
+                            <p class="slide-over-subtitle">Update location type, stock subtype, zone priority, and physical capacity. Distance priority is shown for reference.</p>
+                        </div>
+                        <button type="button" class="slide-over-close" title="Close" aria-label="Close label editor" @onclick="CloseLabelEditor">
+                            <i class="bi bi-x-lg" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <EditForm Model="_labelForm" FormName="pallet-label-form" OnValidSubmit="SaveLabelAsync" class="slide-over-form">
+                        <div class="slide-over-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Location Code</label>
+                                    <input class="form-control" value="@_selected.LocationCode" readonly />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Flat physical label</label>
+                                    <InputText class="form-control" @bind-Value="_labelForm.FlatLabel" placeholder="e.g. A1" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Location Type</label>
+                                    <InputSelect class="form-select" @bind-Value="_labelForm.LocationTypeId">
+                                        @foreach (var value in LocationTypeOptions(_labelForm.LocationTypeId))
+                                        {
+                                            <option value="@value.Id">@value.DisplayName</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Location Subtype</label>
+                                    <InputSelect class="form-select" @bind-Value="_labelForm.LocationSubtypeId">
+                                        @foreach (var value in SubtypeOptions(_labelForm.LocationSubtypeId))
+                                        {
+                                            <option value="@value.Id">@value.DisplayName</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Zone Type</label>
+                                    <InputSelect class="form-select" @bind-Value="_labelForm.ZoneTypeId">
+                                        @foreach (var value in ZoneOptions(_labelForm.ZoneTypeId))
+                                        {
+                                            <option value="@value.Id">@value.DisplayName</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Distance Priority</label>
+                                    <input class="form-control" value="@_labelForm.DistancePriority" readonly />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Max Pallets</label>
+                                    <InputNumber class="form-control" @bind-Value="_labelForm.MaxPallets" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Boxes Per Pallet</label>
+                                    <InputNumber class="form-control" @bind-Value="_labelForm.BoxesPerPallet" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Active</label>
+                                    <div class="form-check mt-2">
+                                        <InputCheckbox class="form-check-input" @bind-Value="_labelForm.IsActive" />
+                                        <span class="form-check-label">Put-away and picking allowed</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="slide-over-footer">
+                            <button type="button" class="btn btn-outline-secondary" @onclick="CloseLabelEditor">Cancel</button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check2" aria-hidden="true"></i>
+                                Save Location
+                            </button>
+                        </div>
+                    </EditForm>
+                </section>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int RackId { get; set; }
+
+    private RackLayoutDto? _layout;
+    private PalletPositionDto? _selected;
+    private LabelFormModel _labelForm = new();
+    private bool _showLabelForm;
+    private string _rackSearch = string.Empty;
+    private string _occupancyFilter = string.Empty;
+    private bool _heatmapMode;
+    private IReadOnlyList<LocationSubtypeDto> _locationSubtypes = [];
+    private IReadOnlyList<ZoneTypeDto> _zoneTypes = [];
+    private IReadOnlyList<LocationTypeDto> _locationTypes = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locationSubtypes = await Mediator.Send(new GetLocationSubtypesQuery());
+        _zoneTypes = await Mediator.Send(new GetZoneTypesQuery());
+        _locationTypes = await Mediator.Send(new GetLocationTypesQuery());
+        await LoadAsync();
+    }
+
+    private IEnumerable<LocationSubtypeDto> SubtypeOptions(int? currentId = null) =>
+        _locationSubtypes
+            .Where(s => s.IsActive || s.Id == currentId)
+            .OrderBy(s => s.SortOrder)
+            .ThenBy(s => s.DisplayName);
+
+    private IEnumerable<ZoneTypeDto> ZoneOptions(int? currentId = null) =>
+        _zoneTypes
+            .Where(z => z.IsActive || z.Id == currentId)
+            .OrderBy(z => z.SortOrder)
+            .ThenBy(z => z.DisplayName);
+
+    private IEnumerable<LocationTypeDto> LocationTypeOptions(int? currentId = null) =>
+        _locationTypes
+            .Where(l => l.IsActive || l.Id == currentId)
+            .OrderBy(l => l.SortOrder)
+            .ThenBy(l => l.DisplayName);
+
+    private async Task LoadAsync()
+    {
+        _layout = await Mediator.Send(new GetRackLayoutQuery(RackId));
+    }
+
+    private void SelectPosition(PalletPositionDto pos)
+    {
+        _selected = pos;
+        _labelForm = CreateLabelForm(pos);
+        _showLabelForm = false;
+    }
+
+
+    private void OpenLabelEditor()
+    {
+        if (_selected is null) return;
+
+        _labelForm = CreateLabelForm(_selected);
+        _showLabelForm = true;
+    }
+
+    private void CloseLabelEditor()
+    {
+        _showLabelForm = false;
+    }
+
+    private async Task SaveLabelAsync()
+    {
+        if (_selected is null) return;
+
+        await Mediator.Send(new UpdatePalletPositionLabelCommand(
+            _selected.Id,
+            _labelForm.FlatLabel,
+            _labelForm.LocationTypeId,
+            _labelForm.LocationSubtypeId,
+            _labelForm.ZoneTypeId,
+            _labelForm.DistancePriority,
+            _labelForm.MaxPallets,
+            _labelForm.BoxesPerPallet,
+            _labelForm.IsActive));
+        await LoadAsync();
+        _selected = _layout!.Positions.FirstOrDefault(p => p.Id == _selected.Id);
+        _showLabelForm = false;
+    }
+
+    private static LabelFormModel CreateLabelForm(PalletPositionDto position) => new()
+    {
+        FlatLabel = position.FlatLabel,
+        LocationTypeId = position.LocationTypeId,
+        LocationSubtypeId = position.LocationSubtypeId,
+        ZoneTypeId = position.ZoneTypeId,
+        DistancePriority = position.DistancePriority,
+        MaxPallets = position.MaxPallets,
+        BoxesPerPallet = position.BoxesPerPallet,
+        IsActive = position.IsActive
+    };
+
+    private string CellStateClass(PalletPositionDto position)
+    {
+        if (!_heatmapMode)
+        {
+            return position.IsFull ? "cell-full" : position.OccupiedBoxes > 0 ? "cell-partial" : "cell-empty";
+        }
+
+        var percent = OccupancyPercent(position);
+        return percent >= 90 ? "cell-full" : percent >= 40 ? "cell-partial" : "cell-empty";
+    }
+
+    private int FilteredPositionCount() =>
+        _layout?.Positions.Count(MatchesRackFilters) ?? 0;
+
+    private bool MatchesRackFilters(PalletPositionDto position)
+    {
+        var matchesOccupancy = _occupancyFilter switch
+        {
+            "empty" => position.OccupiedBoxes <= 0 && position.IsActive,
+            "partial" => position.OccupiedBoxes > 0 && !position.IsFull,
+            "full" => position.IsFull,
+            "inactive" => !position.IsActive,
+            _ => true
+        };
+
+        return matchesOccupancy && MatchesRackSearch(position);
+    }
+
+    private bool MatchesRackSearch(PalletPositionDto position)
+    {
+        if (string.IsNullOrWhiteSpace(_rackSearch))
+        {
+            return true;
+        }
+
+        var term = _rackSearch.Trim();
+        return position.LocationCode.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            (position.FlatLabel?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            position.Stock.Any(s =>
+                s.MaterialNumber.ToString().Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                s.MaterialDescription.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string ZoneClass(string code) => code switch
+    {
+        "Fast" => "fast",
+        "DispatchNear" => "info",
+        "Seasonal" => "warning",
+        _ => "slate"
+    };
+
+    private static string SubtypeClass(string code) => code switch
+    {
+        "Good" => "success",
+        "Damage" => "danger",
+        "Expire" => "warning",
+        "Hold" => "violet",
+        _ => "slate"
+    };
+
+    private static decimal OccupancyPercent(PalletPositionDto position) =>
+        position.CapacityBoxes <= 0 ? 0 : Math.Clamp(position.OccupiedBoxes / position.CapacityBoxes * 100, 0, 100);
+
+    private class LabelFormModel
+    {
+        public string? FlatLabel { get; set; }
+        public int LocationTypeId { get; set; } = LocationTypeIds.Rack;
+        public int LocationSubtypeId { get; set; } = LocationSubtypeIds.Good;
+        public int ZoneTypeId { get; set; } = ZoneTypeIds.Reserve;
+        public int DistancePriority { get; set; } = 100;
+        public int MaxPallets { get; set; } = 2;
+        public int BoxesPerPallet { get; set; } = 40;
+        public bool IsActive { get; set; } = true;
+    }
+}
+
+
+
+

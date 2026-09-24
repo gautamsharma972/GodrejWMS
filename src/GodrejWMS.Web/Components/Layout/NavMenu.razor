@@ -1,0 +1,266 @@
+@inject NavigationManager NavManager
+
+<div class="brand-panel" data-tour="brand">
+    <a class="navbar-brand" href="" aria-label="Godrej WMS" data-bs-title="Godrej WMS" data-bs-toggle="tooltip" data-bs-placement="right">
+        <span class="brand-mark">G</span>
+        <span>
+            <span class="brand-name">Godrej WMS</span>
+            <span class="brand-subtitle">Enterprise Warehouse</span>
+        </span>
+    </a>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable">
+    <nav class="nav flex-column">
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-section-label">Operate</div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="" Match="NavLinkMatch.All" aria-label="Dashboard" data-tour="nav-dashboard"data-bs-title="Dashboard" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-speedometer2" aria-hidden="true"></i> <span class="nav-link-text">Dashboard</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="inventory-master" aria-label="Inventory Master" data-tour="nav-inventory-master"data-bs-title="Inventory Master" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-database-check" aria-hidden="true"></i> <span class="nav-link-text">Inventory Master</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="racks" aria-label="Racks & Pallets" data-tour="nav-racks"data-bs-title="Racks & Pallets" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> <span class="nav-link-text">Racks &amp; Pallets</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="locations" aria-label="Location Master" data-tour="nav-locations"data-bs-title="Location Master" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-geo-alt" aria-hidden="true"></i> <span class="nav-link-text">Location Master</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="materials" aria-label="Materials" data-tour="nav-materials"data-bs-title="Materials" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-boxes" aria-hidden="true"></i> <span class="nav-link-text">Materials</span>
+                    </NavLink>
+                </div>
+
+                <div class="nav-section-label">Master Data</div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="design-types" aria-label="Design Types" data-tour="nav-master-data"data-bs-title="Design Types" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-tags" aria-hidden="true"></i> <span class="nav-link-text">Design Types</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="season-mapping" aria-label="Season Mapping" data-bs-title="Season Mapping" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-calendar-range" aria-hidden="true"></i> <span class="nav-link-text">Season Mapping</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="location-subtypes" aria-label="Location Subtypes" data-bs-title="Location Subtypes" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-tags" aria-hidden="true"></i> <span class="nav-link-text">Location Subtypes</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="sku-movement-types" aria-label="SKU Movement Types" data-bs-title="SKU Movement Types" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-speedometer2" aria-hidden="true"></i> <span class="nav-link-text">SKU Movement Types</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="zone-types" aria-label="Zone Types" data-bs-title="Zone Types" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-bullseye" aria-hidden="true"></i> <span class="nav-link-text">Zone Types</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="location-types" aria-label="Location Types" data-bs-title="Location Types" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-diagram-3" aria-hidden="true"></i> <span class="nav-link-text">Location Types</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="seasons" aria-label="Seasons" data-bs-title="Seasons" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-cloud-sun" aria-hidden="true"></i> <span class="nav-link-text">Seasons</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="audit-trail" aria-label="Audit Trail" data-bs-title="Audit Trail" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-clipboard-data" aria-hidden="true"></i> <span class="nav-link-text">Audit Trail</span>
+                    </NavLink>
+                </div>
+
+                <AuthorizeView Roles="Admin,Operator,Supervisor" Context="transactionsLabelContext">
+                    <div class="nav-section-label">Transactions</div>
+                </AuthorizeView>
+
+                <AuthorizeView Roles="Admin,Operator" Context="opsContext">
+                    <div class="nav-item nav-group">
+                        <button type="button"
+                                class="nav-link nav-parent @(IsInwardSection() ? "active" : string.Empty)"
+                                aria-label="Inward" data-tour="nav-inward" data-bs-title="Inward"
+                                data-bs-toggle="tooltip"
+                                data-bs-placement="right"
+                                aria-expanded="@IsInwardMenuOpen"
+                                @onclick="ToggleInwardMenu"
+                                @onclick:stopPropagation="true">
+                            <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
+                            <span class="nav-link-text">Inward</span>
+                            <i class="bi bi-chevron-down nav-chevron @(IsInwardMenuOpen ? "expanded" : string.Empty)" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <div class="nav-submenu @(IsInwardMenuOpen ? "expanded" : null)">
+                        <div class="nav-item nav-subitem">
+                            <NavLink class="nav-link" href="inward" Match="NavLinkMatch.All" aria-label="Inward Entry" data-bs-title="Inward Entry" data-bs-toggle="tooltip" data-bs-placement="right">
+                                <i class="bi bi-pencil-square" aria-hidden="true"></i> <span class="nav-link-text">Entry</span>
+                            </NavLink>
+                        </div>
+                        <div class="nav-item nav-subitem">
+                            <NavLink class="nav-link" href="inward/history" aria-label="Inward History" data-bs-title="Inward History" data-bs-toggle="tooltip" data-bs-placement="right">
+                                <i class="bi bi-clock-history" aria-hidden="true"></i> <span class="nav-link-text">History</span>
+                            </NavLink>
+                        </div>
+                    </div>
+                    <div class="nav-item nav-group">
+                        <button type="button"
+                                class="nav-link nav-parent @(IsPulloutSection() ? "active" : string.Empty)"
+                                aria-label="Pullout"
+                                data-tour="nav-pullout"
+                                data-bs-title="Pullout"
+                                data-bs-toggle="tooltip"
+                                data-bs-placement="right"
+                                aria-expanded="@IsPulloutMenuOpen"
+                                @onclick="TogglePulloutMenu"
+                                @onclick:stopPropagation="true">
+                            <i class="bi bi-box-arrow-up" aria-hidden="true"></i>
+                            <span class="nav-link-text">Pullout</span>
+                            <i class="bi bi-chevron-down nav-chevron @(IsPulloutMenuOpen ? "expanded" : string.Empty)" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <div class="nav-submenu @(IsPulloutMenuOpen ? "expanded" : null)">
+                        <div class="nav-item nav-subitem">
+                            <NavLink class="nav-link" href="pullout" Match="NavLinkMatch.All" aria-label="Pullout Entry" data-bs-title="Pullout Entry" data-bs-toggle="tooltip" data-bs-placement="right">
+                                <i class="bi bi-pencil-square" aria-hidden="true"></i> <span class="nav-link-text">Entry</span>
+                            </NavLink>
+                        </div>
+                        <div class="nav-item nav-subitem">
+                            <NavLink class="nav-link" href="pullout/history" aria-label="Pullout History" data-bs-title="Pullout History" data-bs-toggle="tooltip" data-bs-placement="right">
+                                <i class="bi bi-clock-history" aria-hidden="true"></i> <span class="nav-link-text">History</span>
+                            </NavLink>
+                        </div>
+                    </div>
+                </AuthorizeView>
+
+                <AuthorizeView Roles="Admin,Operator,Supervisor" Context="movementContext">
+                    <div class="nav-item nav-group">
+                        <button type="button"
+                                class="nav-link nav-parent @(IsInventoryMovementSection() ? "active" : string.Empty)"
+                                aria-label="Inventory Movement"
+                                data-tour="nav-movement"
+                                data-bs-title="Inventory Movement"
+                                data-bs-toggle="tooltip"
+                                data-bs-placement="right"
+                                aria-expanded="@IsInventoryMovementMenuOpen"
+                                @onclick="ToggleInventoryMovementMenu"
+                                @onclick:stopPropagation="true">
+                            <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+                            <span class="nav-link-text">Inventory Movement</span>
+                            <i class="bi bi-chevron-down nav-chevron @(IsInventoryMovementMenuOpen ? "expanded" : string.Empty)" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <div class="nav-submenu @(IsInventoryMovementMenuOpen ? "expanded" : null)">
+                        <div class="nav-item nav-subitem">
+                            <NavLink class="nav-link" href="inventory-movement/by-location" aria-label="Move by Location" data-bs-title="Move by Location" data-bs-toggle="tooltip" data-bs-placement="right">
+                                <i class="bi bi-geo-alt" aria-hidden="true"></i> <span class="nav-link-text">Move by Location</span>
+                            </NavLink>
+                        </div>
+                        <div class="nav-item nav-subitem">
+                            <NavLink class="nav-link" href="inventory-movement/by-sku" aria-label="Move by SKU" data-bs-title="Move by SKU" data-bs-toggle="tooltip" data-bs-placement="right">
+                                <i class="bi bi-upc-scan" aria-hidden="true"></i> <span class="nav-link-text">Move by SKU</span>
+                            </NavLink>
+                        </div>
+                        <div class="nav-item nav-subitem">
+                            <NavLink class="nav-link" href="inventory-movement/history" aria-label="Movement History" data-bs-title="Movement History" data-bs-toggle="tooltip" data-bs-placement="right">
+                                <i class="bi bi-clock-history" aria-hidden="true"></i> <span class="nav-link-text">History</span>
+                            </NavLink>
+                        </div>
+                    </div>
+                </AuthorizeView>
+
+                <AuthorizeView Roles="Admin,Supervisor" Context="reportsLabelContext">
+                    <div class="nav-section-label">Reports</div>
+                </AuthorizeView>
+                <AuthorizeView Roles="Admin,Supervisor" Context="reportsContext">
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="reports/operations" aria-label="Operational Reports" data-tour="nav-reports"data-bs-title="Operational Reports" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-table" aria-hidden="true"></i> <span class="nav-link-text">Operational Reports</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="reports/inward" aria-label="Inward Reports" data-bs-title="Inward Reports" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i> <span class="nav-link-text">Inward Reports</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="reports/pullout" aria-label="Pullout Reports" data-bs-title="Pullout Reports" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-box-arrow-up" aria-hidden="true"></i> <span class="nav-link-text">Pullout Reports</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="reports/inventory" aria-label="Inventory Reports" data-bs-title="Inventory Reports" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-bar-chart" aria-hidden="true"></i> <span class="nav-link-text">Inventory Reports</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="reports/movement" aria-label="Movement Reports" data-bs-title="Movement Reports" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-arrow-left-right" aria-hidden="true"></i> <span class="nav-link-text">Movement Reports</span>
+                        </NavLink>
+                    </div>
+                </AuthorizeView>
+
+                <div class="nav-spacer"></div>
+            </Authorized>
+            <NotAuthorized>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="Account/Login" aria-label="Login" data-bs-title="Login" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-shield-lock" aria-hidden="true"></i> <span class="nav-link-text">Login</span>
+                    </NavLink>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
+    </nav>
+</div>
+
+@code {
+    private bool? _inwardMenuExpanded;
+    private bool? _pulloutMenuExpanded;
+    private bool? _inventoryMovementMenuExpanded;
+
+    private bool IsInwardMenuOpen => _inwardMenuExpanded ?? IsInwardSection();
+
+    private bool IsPulloutMenuOpen => _pulloutMenuExpanded ?? IsPulloutSection();
+
+    private bool IsInventoryMovementMenuOpen => _inventoryMovementMenuExpanded ?? IsInventoryMovementSection();
+
+    private void ToggleInwardMenu() => _inwardMenuExpanded = !IsInwardMenuOpen;
+
+    private void TogglePulloutMenu() => _pulloutMenuExpanded = !IsPulloutMenuOpen;
+
+    private void ToggleInventoryMovementMenu() => _inventoryMovementMenuExpanded = !IsInventoryMovementMenuOpen;
+
+    private bool IsInwardSection()
+    {
+        var path = NavManager.ToBaseRelativePath(NavManager.Uri).Trim('/');
+        return path.Equals("inward", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("inward/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsPulloutSection()
+    {
+        var path = NavManager.ToBaseRelativePath(NavManager.Uri).Trim('/');
+        return path.Equals("pullout", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("pullout/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsInventoryMovementSection()
+    {
+        var path = NavManager.ToBaseRelativePath(NavManager.Uri).Trim('/');
+        return path.StartsWith("inventory-movement", StringComparison.OrdinalIgnoreCase);
+    }
+}
+

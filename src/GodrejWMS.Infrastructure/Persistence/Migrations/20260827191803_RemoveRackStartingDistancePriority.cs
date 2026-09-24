@@ -1,0 +1,29 @@
+﻿using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace GodrejWMS.Infrastructure.Persistence.Migrations
+{
+    /// <inheritdoc />
+    public partial class RemoveRackStartingDistancePriority : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropColumn(
+                name: "StartingDistancePriority",
+                table: "Racks");
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.AddColumn<int>(
+                name: "StartingDistancePriority",
+                table: "Racks",
+                type: "int",
+                nullable: false,
+                defaultValue: 1);
+        }
+    }
+}

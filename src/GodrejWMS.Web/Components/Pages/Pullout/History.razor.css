@@ -1,0 +1,68 @@
+.pullout-history-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.pullout-history-toolbar .toolbar-group {
+    display: flex;
+    flex: 1 1 48rem;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.pullout-history-toolbar .search-control {
+    flex: 2 1 20rem;
+}
+
+.pullout-history-toolbar .filter-control {
+    flex: 1 1 11rem;
+}
+
+.pullout-history-toolbar .sync-chip {
+    flex-shrink: 0;
+}
+
+/* Reserve space for all seven columns, including confirmation and its separate action. */
+.history-table.pullout-history-table {
+    min-width: 1100px;
+    table-layout: fixed;
+}
+
+.pullout-history-table th:first-child,
+.pullout-history-table td:first-child {
+    width: 26%;
+    overflow-wrap: anywhere;
+}
+
+.pullout-history-table th:nth-child(2),
+.pullout-history-table td:nth-child(2) {
+    width: 20%;
+}
+
+.pullout-history-table th:nth-child(3),
+.pullout-history-table td:nth-child(3) {
+    width: 10%;
+}
+
+.pullout-history-table th:nth-child(4),
+.pullout-history-table td:nth-child(4) {
+    width: 7%;
+}
+
+.pullout-history-table th:nth-child(5),
+.pullout-history-table td:nth-child(5) {
+    width: 15%;
+}
+
+.pullout-history-table th:nth-child(6),
+.pullout-history-table td:nth-child(6) {
+    width: 14%;
+    white-space: nowrap;
+}
+
+.pullout-history-table th:last-child,
+.pullout-history-table td:last-child {
+    width: 8%;
+    text-align: center;
+}

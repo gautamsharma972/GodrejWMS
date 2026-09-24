@@ -1,0 +1,350 @@
+.page {
+    min-height: 100vh;
+    display: flex;
+    background: var(--wms-bg);
+}
+
+.sidebar {
+    width: 280px;
+    min-height: 100vh;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    background:
+        radial-gradient(circle at 16% 8%, rgba(59, 130, 246, 0.12), transparent 28%),
+        radial-gradient(circle at 92% 58%, rgba(22, 163, 74, 0.08), transparent 26%),
+        linear-gradient(180deg, #ffffff 0%, #f8fbff 46%, #f3f8ff 100%);
+    border-right: 1px solid var(--wms-border);
+    color: var(--wms-ink);
+    box-shadow: 1px 0 0 rgba(15, 23, 42, 0.02);
+    z-index: 20;
+    transition: width 180ms ease;
+}
+
+.page.sidebar-collapsed .sidebar {
+    width: 88px;
+}
+
+.workspace {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.top-row {
+    min-height: 72px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.85rem 2rem;
+    background: rgba(255, 255, 255, 0.94);
+    border-bottom: 1px solid var(--wms-border);
+    backdrop-filter: blur(14px);
+}
+
+/* Execution is a long, scroll-heavy workspace. Keeping the global header in normal
+   document flow prevents it from covering the active putaway card and rack map. */
+.putaway-execution-workspace .top-row,
+.report-workspace .top-row {
+    position: relative;
+    top: auto;
+}
+
+.top-row-left {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 0;
+}
+
+.sidebar-toggle {
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    border: 1px solid var(--wms-border);
+    border-radius: 8px;
+    background: #fff;
+    color: #334155;
+    font-size: 1.15rem;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.sidebar-toggle:hover,
+.sidebar-toggle:focus-visible {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: var(--wms-primary);
+}
+
+.page.sidebar-collapsed ::deep .brand-panel {
+    justify-content: center;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+}
+
+.page.sidebar-collapsed ::deep .brand-name,
+.page.sidebar-collapsed ::deep .brand-subtitle,
+.page.sidebar-collapsed ::deep .nav-section-label,
+.page.sidebar-collapsed ::deep .nav-link-text,
+.page.sidebar-collapsed ::deep .nav-status-text {
+    display: none;
+}
+
+.page.sidebar-collapsed ::deep .navbar-brand,
+.page.sidebar-collapsed ::deep .nav-item .nav-link,
+.page.sidebar-collapsed ::deep .nav-status {
+    justify-content: center;
+}
+
+.page.sidebar-collapsed ::deep .nav-item .nav-link {
+    min-height: 46px;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.page.sidebar-collapsed ::deep .nav-item .nav-link i {
+    width: auto;
+    font-size: 1.08rem;
+}
+
+.page.sidebar-collapsed ::deep .nav-status {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* Collapsed rail has no room for an expand/collapse interaction, so submenu icons
+   (e.g. Inward > Entry/History) always show regardless of the toggle's expanded state. */
+.page.sidebar-collapsed ::deep .nav-submenu {
+    display: grid;
+    margin-left: 0;
+    padding-left: 0;
+}
+
+.page.sidebar-collapsed ::deep .nav-submenu::before {
+    display: none;
+}
+
+.page.sidebar-collapsed ::deep .nav-parent .nav-chevron {
+    display: none;
+}
+
+.top-row-title {
+    color: var(--wms-ink);
+    font-size: 1.02rem;
+    font-weight: 700;
+}
+
+.top-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.account-menu {
+    line-height: 1;
+}
+
+.account-avatar {
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--wms-border);
+    border-radius: 50%;
+    background:
+        linear-gradient(#ffffff, #ffffff) padding-box,
+        linear-gradient(135deg, rgba(37, 99, 235, 0.55), rgba(34, 197, 94, 0.28)) border-box;
+    color: #334155;
+    text-decoration: none;
+    font-size: 1.08rem;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.07);
+}
+
+.account-avatar:hover,
+.account-avatar:focus-visible,
+.account-avatar.show {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.account-avatar-sm {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 auto;
+    background: #eff6ff;
+    color: #2563eb;
+    box-shadow: none;
+}
+
+.account-dropdown {
+    width: 280px;
+    margin-top: 0.7rem;
+    border: 1px solid var(--wms-border);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 18px 45px rgba(15, 23, 42, 0.14);
+    padding: 0.45rem;
+}
+
+.account-dropdown-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 0.65rem;
+}
+
+.account-details {
+    min-width: 0;
+}
+
+.account-label,
+.account-name {
+    display: block;
+}
+
+.account-label {
+    color: var(--wms-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.account-name {
+    margin-top: 0.15rem;
+    overflow: hidden;
+    color: var(--wms-ink);
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.account-dropdown .dropdown-item {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    border-radius: 7px;
+    color: #334155;
+    font-size: 0.9rem;
+    font-weight: 650;
+}
+
+.account-dropdown .dropdown-item i {
+    width: 1rem;
+    color: #64748b;
+}
+
+.account-dropdown .dropdown-item:hover,
+.account-dropdown .dropdown-item:focus {
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.account-dropdown .dropdown-divider {
+    margin: 0.35rem 0;
+    border-color: var(--wms-border);
+}
+
+.content {
+    flex: 1;
+    padding: 1.5rem 2rem 2.5rem;
+}
+
+.report-workspace .content {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+.app-footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    padding: 0.75rem 2rem;
+    border-top: 1px solid var(--wms-border);
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--wms-muted);
+    font-size: 0.84rem;
+    font-weight: 650;
+}
+
+#blazor-error-ui {
+    color-scheme: light only;
+    background: #7f1d1d;
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
+    bottom: 0;
+    box-shadow: 0 -12px 32px rgba(15, 23, 42, 0.18);
+    box-sizing: border-box;
+    color: #fff;
+    display: none;
+    left: 0;
+    padding: 0.85rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .reload {
+    color: #fff;
+    font-weight: 700;
+    margin-left: 0.75rem;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.9rem;
+    top: 0.8rem;
+}
+
+@media (max-width: 860px) {
+    .page {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        width: 100%;
+        min-height: auto;
+        position: relative;
+    }
+
+    .page.sidebar-collapsed .sidebar {
+        width: 100%;
+    }
+
+    .top-row {
+        position: relative;
+        padding: 0.85rem 1rem;
+    }
+
+    .top-row-actions {
+        gap: 0.45rem;
+    }
+
+    .account-dropdown {
+        width: min(280px, calc(100vw - 2rem));
+    }
+
+    .content {
+        padding: 1rem;
+    }
+
+    .app-footer {
+        padding: 0.75rem 1rem;
+    }
+}

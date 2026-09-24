@@ -1,0 +1,1086 @@
+@page "/inward"
+@attribute [Authorize(Roles = "Admin,Operator,Supervisor")]
+@implements IAsyncDisposable
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Features.Inward.Commands
+@using GodrejWMS.Application.Features.Inward.Dtos
+@using GodrejWMS.Application.Features.Inward.Queries
+@using GodrejWMS.Application.Features.Materials.Dtos
+@using GodrejWMS.Application.Features.Materials.Queries
+@using GodrejWMS.Application.Features.Racks.Dtos
+@using GodrejWMS.Application.Features.Racks.Queries
+@using GodrejWMS.Domain.Enums
+@inject IMediator Mediator
+@inject IExcelService ExcelService
+@inject IJSRuntime JsRuntime
+@inject ILogger<Index> Logger
+
+<PageTitle>Inward - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Goods Receipt</div>
+            <h1>Inward Entry</h1>
+            <p class="page-kicker">Record stock arrivals and let the system allocate boxes into pallet positions automatically.</p>
+        </div>
+        <div class="header-actions">
+            <button type="button" class="tour-launch page-tour" data-tour-start="inward" title="Take a tour of this page">
+                <i class="bi bi-compass" aria-hidden="true"></i> Page tour
+            </button>
+            <span class="sync-chip"><span class="live-dot"></span> Allocation ready</span>
+        </div>
+    </div>
+
+    <div class="transaction-grid">
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">Manual Lines</h2>
+                    <p class="panel-subtitle">Select material, quantity, and PKM manufacturing period.</p>
+                </div>
+            </div>
+            <div class="panel-body line-editor-body">
+                <div class="table-responsive line-editor-table" data-tour="inward-lines">
+                    <table class="table line-table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Material Code</th>
+                                <th>Qty (boxes)</th>
+                                <th>Mfg Month</th>
+                                <th class="table-actions"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < _lines.Count; i++)
+                            {
+                                var index = i;
+                                <tr>
+                                    <td>
+                                        <div class="material-combobox">
+                                            <input class="form-control"
+                                                   autocomplete="off"
+                                                   placeholder="Search material code or description"
+                                                   @bind-value="_lines[index].MaterialCodeText"
+                                                   @bind-value:event="oninput"
+                                                   @onfocus="() => _activeMaterialLineIndex = index" />
+                                            @if (_activeMaterialLineIndex == index)
+                                            {
+                                                var matches = MaterialMatches(_lines[index].MaterialCodeText).ToList();
+                                                if (matches.Count > 0)
+                                                {
+                                                    <div class="material-menu">
+                                                        @foreach (var material in matches)
+                                                        {
+                                                            <button type="button" class="material-option" @onclick="() => SelectMaterial(index, material)">
+                                                                <span class="record-code">@material.MaterialNumber</span>
+                                                                <span>@material.Description</span>
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                }
+                                            }
+                                        </div>
+                                    </td>
+                                    <td><input class="form-control" type="number" step="0.001" @bind="_lines[index].QuantityBoxes" /></td>
+                                    <td>
+                                        <div class="mfg-picker">
+                                            <select class="form-select" title="MFG year" @bind="_lines[index].MfgYear">
+                                                @foreach (var year in YearOptions)
+                                                {
+                                                    <option value="@year">@year</option>
+                                                }
+                                            </select>
+                                            <select class="form-select" title="MFG month" @bind="_lines[index].MfgMonth">
+                                                @foreach (var month in MonthOptions)
+                                                {
+                                                    <option value="@month.Value">@month.Label</option>
+                                                }
+                                            </select>
+                                        </div>
+                                    </td>
+                                    <td class="table-actions">
+                                        <button class="btn btn-sm btn-outline-danger" title="Remove line" aria-label="Remove line" @onclick="() => _lines.RemoveAt(index)">
+                                            <i class="bi bi-x-lg" aria-hidden="true"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+
+                <div class="toolbar-group line-editor-actions" data-tour="inward-actions">
+                    <button class="btn btn-outline-secondary" @onclick="AddLine">
+                        <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                        Add Line
+                    </button>
+                    <button class="btn btn-primary" @onclick="SubmitAsync" disabled="@_submitting">
+                        <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                        Submit Inward
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">Bulk Upload</h2>
+                    <p class="panel-subtitle">Material Code, Total Stock in CFB, Mfg Month.</p>
+                </div>
+            </div>
+            <div class="panel-body upload-panel" data-tour="inward-upload">
+                <InputFile id="inward-excel-upload" OnChange="OnImportFileSelected" class="visually-hidden" />
+                <div class="bulk-upload-actions">
+                    <label class="btn btn-outline-primary" for="inward-excel-upload">
+                        <i class="bi bi-upload" aria-hidden="true"></i>
+                        Upload Excel
+                    </label>
+                    <button type="button" class="btn btn-outline-secondary" @onclick="DownloadSampleFormatAsync">
+                        <i class="bi bi-download" aria-hidden="true"></i>
+                        Sample Format
+                    </button>
+                </div>
+                <span class="text-muted small">Accepted columns: Material Code, Total Stock in CFB(qty), Mfg Year, Mfg Month. Maximum file size: 10 MB.</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="putaway-info-bar" role="status" data-tour="inward-logic">
+        <div class="info-bar-icon">
+            <i class="bi bi-info-circle" aria-hidden="true"></i>
+        </div>
+        <div class="info-bar-content">
+            <h2>Put-away Logic</h2>
+            <p>Same SKU + PKM is topped up first; empty locations are ranked by subtype, zone, distance, level, velocity, and active season.</p>
+        </div>
+        <span class="status-pill info">FIFO protected</span>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-danger mb-0">@_error</div>
+    }
+
+    @if (_result is not null)
+    {
+        <div class="result-ready-bar">
+            <div class="info-bar-icon">
+                <i class="bi bi-clipboard-check" aria-hidden="true"></i>
+            </div>
+            <div class="info-bar-content">
+                <h2>Allocation result generated</h2>
+                <p>
+                    @if (_result.IsRejected)
+                    {
+                        <text>Reference @_result.ReferenceNumber was rejected.</text>
+                    }
+                    else
+                    {
+                        <text>Reference @_result.ReferenceNumber has reserved locations pending operator confirmation.</text>
+                    }
+                </p>
+            </div>
+            <button type="button" class="btn btn-primary" @onclick="OpenResultModal">
+                <i class="bi bi-eye" aria-hidden="true"></i>
+                View Allocation Result
+            </button>
+        </div>
+    }
+
+    @if (_result is not null && _isResultModalOpen)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseResultModal">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="allocation-result-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Put-away Allocation Audit</div>
+                        <h2 id="allocation-result-title" class="slide-over-title">Allocation Result</h2>
+                        <p class="slide-over-subtitle">Reference @_result.ReferenceNumber</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close allocation result" @onclick="CloseResultModal">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+
+                <div class="slide-over-body">
+                    @if (!string.IsNullOrWhiteSpace(_confirmationMessage))
+                    {
+                        <div class="alert alert-success">@_confirmationMessage</div>
+                    }
+
+                    @if (_result.IsRejected)
+                    {
+                        <div class="alert alert-danger d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>This GRN was rejected.</strong>
+                                <div>Reason: @_rejectedReason</div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (_showRejectPanel)
+                    {
+                        <div class="panel mb-3">
+                            <div class="panel-header">
+                                <div>
+                                    <h2 class="panel-title">Reject this GRN</h2>
+                                    <p class="panel-subtitle">Releases every unconfirmed reserved location back to the pool. This can't be undone.</p>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                @if (!string.IsNullOrWhiteSpace(_rejectError))
+                                {
+                                    <div class="alert alert-danger mb-3">@_rejectError</div>
+                                }
+                                <label class="form-label">Reason for rejection <span class="text-danger">*</span></label>
+                                <input class="form-control" placeholder="e.g. Vendor sent wrong material, refused at dock"
+                                       @bind="_rejectReason" @bind:event="oninput" />
+                                <div class="slide-over-footer px-0">
+                                    <button type="button" class="btn btn-outline-secondary" @onclick="ToggleRejectPanel">Cancel</button>
+                                    <button type="button" class="btn btn-danger" disabled="@(_rejecting || string.IsNullOrWhiteSpace(_rejectReason))" @onclick="RejectGrnAsync">
+                                        @(_rejecting ? "Rejecting..." : "Confirm Rejection")
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="toolbar-panel panel-toolbar pick-result-toolbar">
+                        <div class="toolbar-group">
+                            <select class="form-select filter-control" @bind="_statusFilter">
+                                <option value="">All statuses</option>
+                                @foreach (var status in Enum.GetValues<AllocationStatus>())
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </select>
+                        </div>
+                        <span class="count-pill">@DisplayResultAllocationRows.Count() line(s)</span>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th><button class="sort-button" @onclick='@(() => SortBy("material"))'>Material <i class='bi @SortIcon("material")'></i></button></th>
+                                    <th><button class="sort-button" @onclick='@(() => SortBy("mfgmonth"))'>Mfg Month <i class='bi @SortIcon("mfgmonth")'></i></button></th>
+                                    <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("requested"))'>Requested <i class='bi @SortIcon("requested")'></i></button></th>
+                                    <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("allocated"))'>Allocated <i class='bi @SortIcon("allocated")'></i></button></th>
+                                    <th><button class="sort-button" @onclick='@(() => SortBy("status"))'>Status <i class='bi @SortIcon("status")'></i></button></th>
+                                    <th><button class="sort-button" @onclick='@(() => SortBy("pallet"))'>Location <i class='bi @SortIcon("pallet")'></i></button></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in DisplayResultAllocationRows)
+                                {
+                                    <tr>
+                                        <td><span class="record-code">@row.Line.MaterialNumber</span> @row.Line.MaterialDescription</td>
+                                        <td><span class="status-pill neutral">@row.Line.MfgMonthLabel</span></td>
+                                        <td class="text-end">@row.Line.RequestedQuantityBoxes</td>
+                                        <td class="text-end fw-semibold">@row.AllocatedQuantityBoxes.ToString("0.###")</td>
+                                        <td>
+                                            <span class="status-pill @AllocationClass(row.Line.Status)">
+                                                @row.Line.Status
+                                            </span>
+                                            @row.Line.Remarks
+                                        </td>
+                                        <td>
+                                            @if (row.Allocation is null)
+                                            {
+                                                <span class="text-muted small">No location reserved</span>
+                                            }
+                                            else
+                                            {
+                                                <div class="allocation-pill-list">
+                                                    <button type="button"
+                                                            class="allocation-location-pill"
+                                                            title="@AllocationPillTitle(row.Allocation)"
+                                                            @onclick="() => OpenPalletDetailsAsync(row.Allocation.LocationCode)">
+                                                        <span>@row.Allocation.LocationCode</span>
+                                                        <strong>+@row.Allocation.QuantityBoxes.ToString("0.###")</strong>
+                                                    </button>
+                                                    @if (!row.Allocation.IsConfirmed && row.Allocation.PutawayId is not null)
+                                                    {
+                                                        <button type="button"
+                                                                class="btn btn-sm btn-outline-secondary"
+                                                                title="Change put-away location"
+                                                                aria-label="Change put-away location"
+                                                                @onclick="() => OpenChangeLocationAsync(row.Allocation.PutawayId!.Value, row.Allocation.LocationCode)">
+                                                            <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+                                                        </button>
+                                                    }
+                                                </div>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseResultModal">Close</button>
+                    @if (_result is not null && !_result.IsConfirmed && !_result.IsRejected)
+                    {
+                        <a class="btn btn-outline-primary" href="@($"/inward/{_result.Id}/putaway")">
+                            <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
+                            Start Putaway
+                        </a>
+                        <button type="button" class="btn btn-primary" @onclick="ConfirmPutawayAsync" disabled="@_confirming">
+                            <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                            @(_confirming ? "Confirming..." : "Confirm Put-away")
+                        </button>
+                    }
+                    @if (CanRejectResult)
+                    {
+                        <button type="button" class="btn btn-outline-danger" @onclick="ToggleRejectPanel">
+                            <i class="bi bi-x-circle" aria-hidden="true"></i>
+                            Reject GRN
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_isPalletDetailsOpen)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="ClosePalletDetails">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="pallet-detail-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Pallet Position</div>
+                        <h2 id="pallet-detail-title" class="slide-over-title">Pallet Details</h2>
+                        <p class="slide-over-subtitle">@(_selectedPalletPosition?.LocationCode ?? "Loading location details")</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close pallet details" @onclick="ClosePalletDetails">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+
+                <div class="slide-over-body">
+                    @if (!string.IsNullOrWhiteSpace(_palletDetailsError))
+                    {
+                        <div class="alert alert-danger mb-0">@_palletDetailsError</div>
+                    }
+                    else if (_selectedPalletPosition is null)
+                    {
+                        <div class="loading-panel">
+                            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                            Loading pallet details...
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="position-detail-shell">
+                            <div class="position-summary-card">
+                                <div class="position-summary-top">
+                                    <div>
+                                        <div class="eyebrow">Location</div>
+                                        <h2>@_selectedPalletPosition.LocationCode</h2>
+                                    </div>
+                                    <span class="status-pill @(_selectedPalletPosition.IsActive ? "success" : "inactive")">@(_selectedPalletPosition.IsActive ? "Active" : "Inactive")</span>
+                                </div>
+
+                                <div class="position-tag-row">
+                                    <span class="status-pill info">@_selectedPalletPosition.LocationTypeName</span>
+                                    <span class="status-pill @SubtypeClass(_selectedPalletPosition.LocationSubtypeCode)">@_selectedPalletPosition.LocationSubtypeName</span>
+                                    <span class="status-pill @ZoneClass(_selectedPalletPosition.ZoneTypeCode)">@_selectedPalletPosition.ZoneTypeName</span>
+                                </div>
+
+                                <div class="position-progress-block">
+                                    <div>
+                                        <span>Occupied</span>
+                                        <strong>@_selectedPalletPosition.OccupiedBoxes.ToString("0.###") / @_selectedPalletPosition.CapacityBoxes boxes</strong>
+                                    </div>
+                                    <span>@OccupancyPercent(_selectedPalletPosition).ToString("0.#")%</span>
+                                </div>
+                                <div class="position-progress-track">
+                                    <span style="@($"width:{OccupancyPercent(_selectedPalletPosition):0.##}%")"></span>
+                                </div>
+                            </div>
+
+                            <div class="position-metric-grid">
+                                <div class="position-metric">
+                                    <span>Capacity</span>
+                                    <strong>@_selectedPalletPosition.CapacityBoxes</strong>
+                                </div>
+                                <div class="position-metric">
+                                    <span>Occupied</span>
+                                    <strong>@_selectedPalletPosition.OccupiedBoxes.ToString("0.###")</strong>
+                                </div>
+                                <div class="position-metric success">
+                                    <span>Free</span>
+                                    <strong>@_selectedPalletPosition.FreeBoxes.ToString("0.###")</strong>
+                                </div>
+                                <div class="position-metric">
+                                    <span>Priority</span>
+                                    <strong>@_selectedPalletPosition.DistancePriority</strong>
+                                </div>
+                                <div class="position-metric">
+                                    <span>Pallets</span>
+                                    <strong>@_selectedPalletPosition.MaxPallets</strong>
+                                </div>
+                                <div class="position-metric">
+                                    <span>Boxes / pallet</span>
+                                    <strong>@_selectedPalletPosition.BoxesPerPallet</strong>
+                                </div>
+                            </div>
+
+                            <section class="position-section">
+                                <div class="position-section-header">
+                                    <div>
+                                        <div class="eyebrow">SKU Stock</div>
+                                        <h3>Placed SKUs</h3>
+                                    </div>
+                                    <span class="status-pill info">@_selectedPalletPosition.Stock.Count item(s)</span>
+                                </div>
+
+                                @if (_selectedPalletPosition.Stock.Count == 0)
+                                {
+                                    <div class="empty-inline">No SKU stock placed in this pallet position.</div>
+                                }
+                                else
+                                {
+                                    <div class="sku-stock-list">
+                                        @foreach (var stock in _selectedPalletPosition.Stock)
+                                        {
+                                            <article class="sku-stock-card">
+                                                <div class="sku-stock-card-header">
+                                                    <span class="sku-code-chip">@stock.MaterialNumber</span>
+                                                    <span class="status-pill @SubtypeClass(stock.StockSubtypeCode)">@stock.StockSubtypeName</span>
+                                                </div>
+                                                <h4>@stock.MaterialDescription</h4>
+                                                <div class="sku-stock-meta">
+                                                    <div>
+                                                        <span>Design Type</span>
+                                                        <strong>@stock.DesignType</strong>
+                                                    </div>
+                                                    <div>
+                                                        <span>PKM</span>
+                                                        <strong>@stock.MfgMonthLabel</strong>
+                                                    </div>
+                                                    <div>
+                                                        <span>Boxes</span>
+                                                        <strong>@stock.QuantityBoxes.ToString("0.###")</strong>
+                                                    </div>
+                                                </div>
+                                            </article>
+                                        }
+                                    </div>
+                                }
+                            </section>
+
+                            <section class="position-section position-label-section">
+                                <div>
+                                    <div class="eyebrow">Physical Label</div>
+                                    <div class="position-label-value">@(!string.IsNullOrWhiteSpace(_selectedPalletPosition.FlatLabel) ? _selectedPalletPosition.FlatLabel : "Not assigned")</div>
+                                </div>
+                            </section>
+                        </div>
+                    }
+                </div>
+
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="ClosePalletDetails">Close</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_isChangeLocationOpen)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseChangeLocation">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="change-location-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Put-away Reservation</div>
+                        <h2 id="change-location-title" class="slide-over-title">Change Location</h2>
+                        <p class="slide-over-subtitle">Currently reserved at @_changeCurrentLocationCode</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close change location" @onclick="CloseChangeLocation">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+
+                <div class="slide-over-body">
+                    @if (!string.IsNullOrWhiteSpace(_changeError))
+                    {
+                        <div class="alert alert-danger mb-0">@_changeError</div>
+                    }
+
+                    <div class="mb-3">
+                        <label class="form-label">Reason for override <span class="text-danger">*</span></label>
+                        <input class="form-control" placeholder="e.g. Damaged pallet in original slot"
+                               @bind="_changeReason" @bind:event="oninput" />
+                    </div>
+
+                    @if (_changeOptions is null)
+                    {
+                        <div class="loading-panel">
+                            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                            Loading available locations...
+                        </div>
+                    }
+                    else if (_changeOptions.Count == 0)
+                    {
+                        <div class="empty-state">No alternate locations have enough free capacity right now.</div>
+                    }
+                    else
+                    {
+                        <div class="toolbar-panel">
+                            <div class="toolbar-group">
+                                <div class="input-group search-control">
+                                    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                                    <input class="form-control" placeholder="Search location, subtype, or zone"
+                                           @bind="_changeLocationSearch" @bind:event="oninput" />
+                                </div>
+                            </div>
+                            <span class="sync-chip">@DisplayChangeOptions.Count().ToString("N0") location(s)</span>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Location</th>
+                                        <th>Subtype</th>
+                                        <th>Zone</th>
+                                        <th class="text-end">Free / Capacity</th>
+                                        <th class="table-actions"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var option in DisplayChangeOptions)
+                                    {
+                                        <tr class="@(option.IsCurrent ? "table-active" : null)">
+                                            <td><span class="record-code">@option.LocationCode</span></td>
+                                            <td><span class="status-pill @SubtypeClass(option.LocationSubtypeCode)">@option.LocationSubtypeName</span></td>
+                                            <td><span class="status-pill @ZoneClass(option.ZoneTypeCode)">@option.ZoneTypeName</span></td>
+                                            <td class="text-end">@option.FreeBoxes.ToString("0.###") / @option.CapacityBoxes</td>
+                                            <td class="table-actions">
+                                                @if (option.IsCurrent)
+                                                {
+                                                    <span class="status-pill info">Current</span>
+                                                }
+                                                else
+                                                {
+                                                    <button type="button" class="btn btn-sm btn-primary" disabled="@(_changingLocation || string.IsNullOrWhiteSpace(_changeReason))" @onclick="() => MoveToLocationAsync(option.Id)">
+                                                        Move Here
+                                                    </button>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseChangeLocation">Close</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<LineModel> _lines = new() { new LineModel() };
+    private IReadOnlyList<MaterialDto> _materials = Array.Empty<MaterialDto>();
+    private int? _activeMaterialLineIndex;
+    private bool _submitting;
+    private string? _error;
+    private InwardResultDto? _result;
+    private string _statusFilter = string.Empty;
+    private bool _isResultModalOpen;
+    private bool _isPalletDetailsOpen;
+    private bool _confirming;
+    private string? _confirmationMessage;
+    private bool _showRejectPanel;
+    private string _rejectReason = string.Empty;
+    private bool _rejecting;
+    private string? _rejectError;
+    private string? _rejectedReason;
+    private PalletPositionDto? _selectedPalletPosition;
+    private string? _palletDetailsError;
+    private bool _isChangeLocationOpen;
+    private int _changingPutawayId;
+    private string _changeCurrentLocationCode = string.Empty;
+    private IReadOnlyList<InwardPalletChangeOptionDto>? _changeOptions;
+    private string _changeLocationSearch = string.Empty;
+    private string _changeReason = string.Empty;
+    private string? _changeError;
+    private bool _changingLocation;
+    private DotNetObjectReference<Index>? _outsideClickReference;
+    private string? _outsideClickHandlerId;
+    private string _sortBy = "material";
+    private bool _sortDescending;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMaterialsAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        _outsideClickReference = DotNetObjectReference.Create(this);
+        _outsideClickHandlerId = await JsRuntime.InvokeAsync<string>(
+            "godrejWms.registerOutsideClick",
+            ".material-combobox",
+            _outsideClickReference,
+            nameof(CloseMaterialDropdown));
+    }
+
+    private void AddLine() => _lines.Add(new LineModel());
+
+    private void OpenResultModal() => _isResultModalOpen = true;
+
+    private void CloseResultModal() => _isResultModalOpen = false;
+
+
+    private async Task OpenPalletDetailsAsync(string locationCode)
+    {
+        _selectedPalletPosition = null;
+        _palletDetailsError = null;
+        _isPalletDetailsOpen = true;
+
+        try
+        {
+            _selectedPalletPosition = await Mediator.Send(new GetPalletPositionByCodeQuery(locationCode));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load pallet details for {LocationCode}", locationCode);
+            _palletDetailsError = ex.Message;
+        }
+    }
+
+    private void ClosePalletDetails()
+    {
+        _isPalletDetailsOpen = false;
+        _selectedPalletPosition = null;
+        _palletDetailsError = null;
+    }
+
+    private async Task OpenChangeLocationAsync(int putawayId, string currentLocationCode)
+    {
+        _changingPutawayId = putawayId;
+        _changeCurrentLocationCode = currentLocationCode;
+        _changeOptions = null;
+        _changeLocationSearch = string.Empty;
+        _changeReason = string.Empty;
+        _changeError = null;
+        _isChangeLocationOpen = true;
+
+        try
+        {
+            _changeOptions = await Mediator.Send(new GetInwardPalletChangeOptionsQuery(putawayId));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load pallet change options for putaway {PutawayId}", putawayId);
+            _changeError = ex.Message;
+        }
+    }
+
+    private void CloseChangeLocation()
+    {
+        _isChangeLocationOpen = false;
+        _changeOptions = null;
+        _changeError = null;
+    }
+
+    private async Task MoveToLocationAsync(int newPositionId)
+    {
+        _changingLocation = true;
+        _changeError = null;
+        try
+        {
+            _result = await Mediator.Send(new ChangeInwardPutawayLocationCommand(_changingPutawayId, newPositionId, _changeReason));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Put-away location changed.");
+            CloseChangeLocation();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to change put-away location for putaway {PutawayId}", _changingPutawayId);
+            _changeError = ex.Message;
+        }
+        finally
+        {
+            _changingLocation = false;
+        }
+    }
+
+    private IEnumerable<InwardPalletChangeOptionDto> DisplayChangeOptions
+    {
+        get
+        {
+            var query = (_changeOptions ?? Array.Empty<InwardPalletChangeOptionDto>()).AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_changeLocationSearch))
+            {
+                var term = _changeLocationSearch.Trim();
+                query = query.Where(o =>
+                    o.LocationCode.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    o.LocationSubtypeName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    o.ZoneTypeName.Contains(term, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return query;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        _error = null;
+        _result = null;
+        var validLines = _lines.Where(l => l.MaterialCode > 0 && l.QuantityBoxes > 0 && l.MfgYear > 0 && l.MfgMonth > 0).ToList();
+
+        if (validLines.Count == 0)
+        {
+            _error = "Add at least one valid line.";
+            return;
+        }
+
+        _submitting = true;
+        try
+        {
+            var command = new SubmitInwardCommand(
+                validLines.Select(l => new SubmitInwardLine(l.MaterialCode, l.QuantityBoxes, l.MfgMonthText)).ToList());
+
+            _result = await Mediator.Send(command);
+            _statusFilter = string.Empty;
+            _isResultModalOpen = true;
+            _lines = new List<LineModel> { new() };
+
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Inward submission failed");
+            _error = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private async Task OnImportFileSelected(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        _result = null;
+        _submitting = true;
+        try
+        {
+            await using var stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            memory.Position = 0;
+
+            _result = await Mediator.Send(new ImportInwardFromExcelCommand(memory));
+            _statusFilter = string.Empty;
+            _isResultModalOpen = true;
+
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Inward import failed");
+            _error = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private async Task ConfirmPutawayAsync()
+    {
+        if (_result is null || _result.IsConfirmed)
+        {
+            return;
+        }
+
+        _error = null;
+        _confirmationMessage = null;
+        _confirming = true;
+
+        try
+        {
+            _result = await Mediator.Send(new ConfirmInwardPutawayCommand(_result.ReferenceNumber));
+            _confirmationMessage = "Stock confirmed. Dashboard and inventory views now reflect this GRN.";
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", _confirmationMessage);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Put-away confirmation failed for {ReferenceNumber}", _result.ReferenceNumber);
+            _error = ex.Message;
+        }
+        finally
+        {
+            _confirming = false;
+        }
+    }
+
+    /// <summary>Mirrors Detail.razor's identically-named guard - see its remarks for why this is
+    /// checked directly against each line's put-aways rather than <c>_result.IsConfirmed</c>.</summary>
+    private bool CanRejectResult =>
+        _result is not null && !_result.IsRejected &&
+        _result.Lines.SelectMany(l => l.AllocatedTo).All(a => !a.IsConfirmed);
+
+    private void ToggleRejectPanel()
+    {
+        _showRejectPanel = !_showRejectPanel;
+        _rejectReason = string.Empty;
+        _rejectError = null;
+    }
+
+    private async Task RejectGrnAsync()
+    {
+        if (_result is null || string.IsNullOrWhiteSpace(_rejectReason))
+        {
+            return;
+        }
+
+        _rejecting = true;
+        _rejectError = null;
+        try
+        {
+            _rejectedReason = _rejectReason;
+            _result = await Mediator.Send(new RejectInwardCommand(_result.Id, _rejectReason));
+            _showRejectPanel = false;
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "GRN rejected. Reserved locations have been released.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to reject GRN {TransactionId}", _result.Id);
+            _rejectError = ex.Message;
+        }
+        finally
+        {
+            _rejecting = false;
+        }
+    }
+
+    private async Task DownloadSampleFormatAsync()
+    {
+        var bytes = ExcelService.WriteInwardUploadTemplate();
+        var base64 = Convert.ToBase64String(bytes);
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "inward-upload-sample-format.xlsx", base64,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+    private IEnumerable<InwardLineResultDto> DisplayResultLines
+    {
+        get
+        {
+            var query = (_result?.Lines ?? Array.Empty<InwardLineResultDto>()).AsEnumerable();
+
+            if (Enum.TryParse<AllocationStatus>(_statusFilter, out var status))
+            {
+                query = query.Where(l => l.Status == status);
+            }
+
+            return query;
+        }
+    }
+
+    private IEnumerable<AllocationResultRow> DisplayResultAllocationRows
+    {
+        get
+        {
+            var rows = DisplayResultLines.SelectMany(line =>
+                line.AllocatedTo.Count == 0
+                    ? [new AllocationResultRow(line, null)]
+                    : line.AllocatedTo.Select(allocation => new AllocationResultRow(line, allocation)));
+
+            return (_sortBy, _sortDescending) switch
+            {
+                ("requested", false) => rows.OrderBy(r => r.Line.RequestedQuantityBoxes),
+                ("requested", true) => rows.OrderByDescending(r => r.Line.RequestedQuantityBoxes),
+                ("allocated", false) => rows.OrderBy(r => r.AllocatedQuantityBoxes),
+                ("allocated", true) => rows.OrderByDescending(r => r.AllocatedQuantityBoxes),
+                ("status", false) => rows.OrderBy(r => r.Line.Status),
+                ("status", true) => rows.OrderByDescending(r => r.Line.Status),
+                ("mfgmonth", false) => rows.OrderBy(r => r.Line.MfgMonthLabel),
+                ("mfgmonth", true) => rows.OrderByDescending(r => r.Line.MfgMonthLabel),
+                ("pallet", false) => rows.OrderBy(r => r.Allocation?.LocationCode ?? string.Empty),
+                ("pallet", true) => rows.OrderByDescending(r => r.Allocation?.LocationCode ?? string.Empty),
+                (_, true) => rows.OrderByDescending(r => r.Line.MaterialNumber),
+                _ => rows.OrderBy(r => r.Line.MaterialNumber)
+            };
+        }
+    }
+
+    private void SortBy(string column)
+    {
+        if (_sortBy == column)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortBy = column;
+            _sortDescending = false;
+        }
+    }
+
+    private string SortIcon(string column) =>
+        _sortBy == column ? (_sortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
+
+    private async Task LoadMaterialsAsync()
+    {
+        var page = await Mediator.Send(new GetMaterialsQuery(IsActive: true, PageSize: 1000));
+        _materials = page.Items;
+    }
+
+    private IEnumerable<MaterialDto> MaterialMatches(string search)
+    {
+        var term = search.Trim();
+        var query = _materials.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(term))
+        {
+            query = query.Where(m =>
+                m.MaterialNumber.ToString().Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                m.Description.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return query.Take(8);
+    }
+
+    private void SelectMaterial(int index, MaterialDto material)
+    {
+        _lines[index].MaterialCodeText = material.MaterialNumber.ToString();
+        _activeMaterialLineIndex = null;
+    }
+
+
+    [JSInvokable]
+    public void CloseMaterialDropdown()
+    {
+        if (_activeMaterialLineIndex is null)
+        {
+            return;
+        }
+
+        _activeMaterialLineIndex = null;
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_outsideClickHandlerId is not null)
+        {
+            try
+            {
+                await JsRuntime.InvokeVoidAsync("godrejWms.unregisterOutsideClick", _outsideClickHandlerId);
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        _outsideClickReference?.Dispose();
+    }
+    private static string AllocationPillTitle(InwardAllocationLineDto allocation) =>
+        string.IsNullOrWhiteSpace(allocation.Reason)
+            ? $"{ConfirmationLabel(allocation)} - view pallet details for {allocation.LocationCode}"
+            : $"{ConfirmationLabel(allocation)} - {allocation.Reason} - view pallet details for {allocation.LocationCode}";
+
+    private static string ConfirmationLabel(InwardAllocationLineDto allocation) => allocation.IsConfirmed ? "Confirmed" : "Reserved";
+
+    private static string AllocationClass(AllocationStatus status) => status switch
+    {
+        AllocationStatus.Fulfilled => "success",
+        AllocationStatus.Partial => "warning",
+        _ => "danger"
+    };
+
+    private static string ZoneClass(string code) => code switch
+    {
+        "Fast" => "fast",
+        "DispatchNear" => "info",
+        "Seasonal" => "warning",
+        _ => "slate"
+    };
+
+    private static string SubtypeClass(string code) => code switch
+    {
+        "Good" => "success",
+        "Damage" => "danger",
+        "Expire" => "warning",
+        "Hold" => "violet",
+        _ => "slate"
+    };
+
+    private static decimal OccupancyPercent(PalletPositionDto position) =>
+        position.CapacityBoxes <= 0 ? 0 : Math.Clamp(position.OccupiedBoxes / position.CapacityBoxes * 100, 0, 100);
+
+    private static IEnumerable<int> YearOptions => Enumerable.Range(DateTime.Today.Year - 3, 5);
+
+    private static readonly MonthOption[] MonthOptions =
+    [
+        new(1, "JAN"),
+        new(2, "FEB"),
+        new(3, "MAR"),
+        new(4, "APR"),
+        new(5, "MAY"),
+        new(6, "JUN"),
+        new(7, "JUL"),
+        new(8, "AUG"),
+        new(9, "SEP"),
+        new(10, "OCT"),
+        new(11, "NOV"),
+        new(12, "DEC")
+    ];
+
+    private class LineModel
+    {
+        public string MaterialCodeText { get; set; } = string.Empty;
+        public decimal QuantityBoxes { get; set; }
+        public int MfgYear { get; set; } = DateTime.Today.Year;
+        public int MfgMonth { get; set; } = DateTime.Today.Month;
+
+        public long MaterialCode => long.TryParse(MaterialCodeText, out var value) ? value : 0;
+
+        public string MfgMonthText => $"{MonthOptions.First(m => m.Value == MfgMonth).Label}|{MfgYear}";
+    }
+
+    private sealed record MonthOption(int Value, string Label);
+
+    private sealed record AllocationResultRow(InwardLineResultDto Line, InwardAllocationLineDto? Allocation)
+    {
+        public decimal AllocatedQuantityBoxes => Allocation?.QuantityBoxes ?? 0;
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

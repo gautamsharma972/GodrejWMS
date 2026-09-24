@@ -1,0 +1,275 @@
+@page "/reports/inward"
+@attribute [Authorize(Roles = "Admin,Supervisor")]
+@using GodrejWMS.Application.Features.Reports.Dtos
+@using GodrejWMS.Application.Features.Reports.Queries
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Inward Reports - Godrej WMS</PageTitle>
+
+<div class="page-shell report-page">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Reports</div>
+            <h1>Inward Reports</h1>
+            <p class="page-kicker">Rejection reasons, put-away turnaround time, and allocation exceptions for GRNs.</p>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="btn-group" role="group" aria-label="Report tabs">
+                <button type="button" class="btn @(_activeTab == ReportTab.Rejections ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchTab(ReportTab.Rejections)'>
+                    Rejection Reasons
+                </button>
+                <button type="button" class="btn @(_activeTab == ReportTab.Turnaround ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchTab(ReportTab.Turnaround)'>
+                    Put-away Turnaround
+                </button>
+                <button type="button" class="btn @(_activeTab == ReportTab.Exceptions ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchTab(ReportTab.Exceptions)'>
+                    Exceptions
+                </button>
+            </div>
+            <div class="toolbar-group">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ExportCsvAsync" disabled="@_loading">
+                    <i class="bi bi-download" aria-hidden="true"></i>
+                    Export CSV
+                </button>
+            </div>
+        </div>
+
+        <div class="toolbar-panel panel-toolbar">
+            <div class="toolbar-group">
+                <input class="form-control filter-control" type="date" title="From date" value="@_fromDate" @onchange="OnFromChanged" />
+                <input class="form-control filter-control" type="date" title="To date" value="@_toDate" @onchange="OnToChanged" />
+            </div>
+            @if (!_loading)
+            {
+                <span class="sync-chip">@RowCount row(s)</span>
+            }
+        </div>
+
+        @if (_loading)
+        {
+            <div class="loading-panel">
+                <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                Loading report...
+            </div>
+        }
+        else if (RowCount == 0)
+        {
+            <div class="empty-state">No data in this date range.</div>
+        }
+        else if (_activeTab == ReportTab.Rejections)
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Reason</th>
+                            <th class="text-end">GRNs</th>
+                            <th class="text-end">Total Requested Boxes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _rejectionRows)
+                        {
+                            <tr>
+                                <td>@row.Reason</td>
+                                <td class="text-end">@row.GrnCount.ToString("N0")</td>
+                                <td class="text-end fw-semibold">@row.TotalRequestedBoxes.ToString("0.###")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (_activeTab == ReportTab.Turnaround)
+        {
+            @if (_turnaround is not null)
+            {
+                <div class="putaway-summary-grid mb-3">
+                    <div><span>GRNs in range</span><strong>@_turnaround.GrnCount</strong></div>
+                    <div><span>Fully confirmed</span><strong>@_turnaround.ConfirmedCount</strong></div>
+                    <div><span>Average turnaround</span><strong>@FormatHours(_turnaround.AverageHours)</strong></div>
+                    <div><span>Median turnaround</span><strong>@FormatHours(_turnaround.MedianHours)</strong></div>
+                </div>
+            }
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Reference</th>
+                            <th>Received</th>
+                            <th>Confirmed</th>
+                            <th class="text-end">Turnaround</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _turnaroundRows)
+                        {
+                            <tr>
+                                <td><a class="record-code" href="@($"/inward/{row.Id}")">@row.ReferenceNumber</a></td>
+                                <td>@row.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
+                                <td>
+                                    @if (row.ConfirmedAt.HasValue)
+                                    {
+                                        @row.ConfirmedAt.Value.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")
+                                    }
+                                    else
+                                    {
+                                        <span class="status-pill warning">Pending</span>
+                                    }
+                                </td>
+                                <td class="text-end fw-semibold">@FormatHours(row.TurnaroundHours)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Reference</th>
+                            <th>Created</th>
+                            <th>Material</th>
+                            <th>PKM</th>
+                            <th class="text-end">Requested</th>
+                            <th class="text-end">Allocated</th>
+                            <th class="text-end">Shortfall</th>
+                            <th>Status</th>
+                            <th>Remarks</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _exceptionRows)
+                        {
+                            <tr>
+                                <td><a class="record-code" href="@($"/inward/{row.TransactionId}")">@row.ReferenceNumber</a></td>
+                                <td>@row.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
+                                <td><span class="record-code">@row.MaterialNumber</span> @row.MaterialDescription</td>
+                                <td><ReportValueBadge Kind="pkm" Value="@row.MfgMonthLabel" /></td>
+                                <td class="text-end">@row.RequestedQuantityBoxes.ToString("0.###")</td>
+                                <td class="text-end">@row.AllocatedQuantityBoxes.ToString("0.###")</td>
+                                <td class="text-end fw-semibold">@row.ShortfallBoxes.ToString("0.###")</td>
+                                <td><span class="status-pill @(row.Status == "Partial" ? "warning" : "danger")">@row.Status</span></td>
+                                <td>@row.Remarks</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private enum ReportTab { Rejections, Turnaround, Exceptions }
+
+    private ReportTab _activeTab = ReportTab.Rejections;
+    private bool _loading = true;
+    private string _fromDate = string.Empty;
+    private string _toDate = string.Empty;
+
+    private IReadOnlyList<InwardRejectionReasonRowDto> _rejectionRows = [];
+    private InwardTurnaroundSummaryDto? _turnaround;
+    private IReadOnlyList<InwardTurnaroundRowDto> _turnaroundRows => _turnaround?.Rows ?? [];
+    private IReadOnlyList<InwardExceptionRowDto> _exceptionRows = [];
+
+    private int RowCount => _activeTab switch
+    {
+        ReportTab.Rejections => _rejectionRows.Count,
+        ReportTab.Turnaround => _turnaroundRows.Count,
+        _ => _exceptionRows.Count
+    };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task SwitchTab(ReportTab tab)
+    {
+        _activeTab = tab;
+        await LoadAsync();
+    }
+
+    private async Task OnFromChanged(ChangeEventArgs e)
+    {
+        _fromDate = e.Value?.ToString() ?? string.Empty;
+        await LoadAsync();
+    }
+
+    private async Task OnToChanged(ChangeEventArgs e)
+    {
+        _toDate = e.Value?.ToString() ?? string.Empty;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var from = ParseDate(_fromDate)?.ToDateTime(TimeOnly.MinValue);
+        var to = ParseDate(_toDate)?.ToDateTime(TimeOnly.MaxValue);
+
+        switch (_activeTab)
+        {
+            case ReportTab.Rejections:
+                _rejectionRows = await Mediator.Send(new GetInwardRejectionReasonsQuery(from, to));
+                break;
+            case ReportTab.Turnaround:
+                _turnaround = await Mediator.Send(new GetInwardPutawayTurnaroundQuery(from, to));
+                break;
+            default:
+                _exceptionRows = await Mediator.Send(new GetInwardExceptionsQuery(from, to));
+                break;
+        }
+
+        _loading = false;
+    }
+
+    private async Task ExportCsvAsync()
+    {
+        string csv;
+        string fileName;
+
+        switch (_activeTab)
+        {
+            case ReportTab.Rejections:
+                fileName = "inward-rejection-reasons.csv";
+                csv = "Reason,GRNs,Total Requested Boxes\r\n" + string.Join("\r\n", _rejectionRows.Select(r =>
+                    string.Join(",", Csv(r.Reason), r.GrnCount.ToString(), r.TotalRequestedBoxes.ToString("0.###"))));
+                break;
+            case ReportTab.Turnaround:
+                fileName = "inward-putaway-turnaround.csv";
+                csv = "Reference,Received,Confirmed,Turnaround Hours\r\n" + string.Join("\r\n", _turnaroundRows.Select(r =>
+                    string.Join(",", Csv(r.ReferenceNumber), Csv(r.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")),
+                        Csv(r.ConfirmedAt.HasValue ? r.ConfirmedAt.Value.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt") : "Pending"),
+                        r.TurnaroundHours.HasValue ? r.TurnaroundHours.Value.ToString("0.##") : string.Empty)));
+                break;
+            default:
+                fileName = "inward-exceptions.csv";
+                csv = "Reference,Created,Material,PKM,Requested,Allocated,Shortfall,Status,Remarks\r\n" + string.Join("\r\n", _exceptionRows.Select(r =>
+                    string.Join(",", Csv(r.ReferenceNumber), Csv(r.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")),
+                        Csv($"{r.MaterialNumber} {r.MaterialDescription}"), Csv(r.MfgMonthLabel),
+                        r.RequestedQuantityBoxes.ToString("0.###"), r.AllocatedQuantityBoxes.ToString("0.###"), r.ShortfallBoxes.ToString("0.###"),
+                        Csv(r.Status), Csv(r.Remarks ?? string.Empty))));
+                break;
+        }
+
+        var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(csv));
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", fileName, base64, "text/csv");
+    }
+
+    private static string FormatHours(double? hours) =>
+        hours.HasValue ? $"{hours.Value:0.#} hr" : "-";
+
+    private static DateOnly? ParseDate(string value) =>
+        DateOnly.TryParse(value, out var date) ? date : null;
+
+    private static string Csv(string value)
+    {
+        var escaped = value.Replace("\"", "\"\"");
+        return escaped.Contains(',') || escaped.Contains('"') || escaped.Contains('\n') ? $"\"{escaped}\"" : escaped;
+    }
+}

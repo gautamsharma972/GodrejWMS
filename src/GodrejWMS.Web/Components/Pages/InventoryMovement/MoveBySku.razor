@@ -1,0 +1,461 @@
+@page "/inventory-movement/by-sku"
+@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
+@using GodrejWMS.Application.Features.InventoryMovement.Commands
+@using GodrejWMS.Application.Features.InventoryMovement.Dtos
+@using GodrejWMS.Application.Features.InventoryMovement.Queries
+@using GodrejWMS.Application.Features.Materials.Dtos
+@using GodrejWMS.Application.Features.Materials.Queries
+@using GodrejWMS.Application.Features.Racks.Queries
+@inject IMediator Mediator
+@inject ILogger<MoveBySku> Logger
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Move by SKU - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Inventory Movement</div>
+            <h1>Move by SKU</h1>
+            <p class="page-kicker">Select a SKU, choose one or more inventory records, and assign each a new location.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="/inventory-movement/by-location">
+            <i class="bi bi-geo-alt" aria-hidden="true"></i>
+            Move by Location instead
+        </a>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">1. SKU</h2>
+                <p class="panel-subtitle">Search by material code or description.</p>
+            </div>
+        </div>
+        <div class="panel-body">
+            <div class="input-group search-control mb-0">
+                <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                <input class="form-control" placeholder="Search SKU code or description" @bind="_skuSearch" @bind:event="oninput" @onkeyup="SearchSkuAsync" />
+            </div>
+            @if (_skuResults.Count > 0 && _selectedMaterial is null)
+            {
+                <div class="table-responsive mt-3">
+                    <table class="table table-hover align-middle mb-0">
+                        <tbody>
+                            @foreach (var m in _skuResults)
+                            {
+                                <tr>
+                                    <td><span class="record-code">@m.MaterialNumber</span></td>
+                                    <td>@m.Description</td>
+                                    <td class="table-actions">
+                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => SelectMaterialAsync(m)">Select</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            @if (_selectedMaterial is not null)
+            {
+                <div class="alert alert-info mt-3 mb-0 d-flex justify-content-between align-items-center">
+                    <span>Selected: <strong>@_selectedMaterial.MaterialNumber</strong> - @_selectedMaterial.Description</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ClearMaterial">Change</button>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (_stockRecords is not null)
+    {
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">2. Inventory Records</h2>
+                    <p class="panel-subtitle">Select the record(s) to move, then assign each a new location and quantity.</p>
+                </div>
+            </div>
+            <div class="panel-body">
+                @if (_stockRecords.Count == 0)
+                {
+                    <div class="empty-state">No inventory found for this SKU.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th><button type="button" class="sort-button" @onclick='@(() => SortBy("pkm"))'>PKM <i class='bi @SortIcon("pkm")'></i></button></th>
+                                    <th><button type="button" class="sort-button" @onclick='@(() => SortBy("location"))'>Current Location <i class='bi @SortIcon("location")'></i></button></th>
+                                    <th class="text-end"><button type="button" class="sort-button" @onclick='@(() => SortBy("available"))'>Available <i class='bi @SortIcon("available")'></i></button></th>
+                                    <th>New Location</th>
+                                    <th>Move Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var line in SortedLines)
+                                {
+                                    <tr @key="line">
+                                        <td><input type="checkbox" class="form-check-input" @bind="line.IsSelected" /></td>
+                                        <td>@line.Record.MfgMonthLabel</td>
+                                        <td><span class="record-code">@line.Record.LocationCode</span></td>
+                                        <td class="text-end">@line.Record.QuantityBoxes.ToString("0.###")</td>
+                                        <td style="max-width:160px">
+                                            <input class="form-control form-control-sm" placeholder="e.g. A-05-01" disabled="@(!line.IsSelected)" @bind="line.NewLocationCode" />
+                                        </td>
+                                        <td style="max-width:120px">
+                                            <input type="number" class="form-control form-control-sm" min="0" step="0.001" disabled="@(!line.IsSelected)" @bind="line.MoveQuantity" />
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="d-flex justify-content-end mt-3">
+                        <button type="button" class="btn btn-primary" disabled="@(_validating || !_lines.Any(l => l.IsSelected))" @onclick="ContinueAsync">
+                            @(_validating ? "Validating..." : "Continue")
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_validatedLines is not null)
+    {
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">Confirm Inventory Movement</h2>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>SKU</th>
+                                <th>PKM</th>
+                                <th>From</th>
+                                <th>To</th>
+                                <th class="text-end">Quantity</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var vl in _validatedLines)
+                            {
+                                <tr>
+                                    <td><span class="record-code">@_selectedMaterial?.MaterialNumber</span></td>
+                                    <td>@vl.Line.Record.MfgMonthLabel</td>
+                                    <td>@vl.Line.Record.LocationCode</td>
+                                    <td>@vl.Line.NewLocationCode</td>
+                                    <td class="text-end">@vl.Line.MoveQuantity.ToString("0.###")</td>
+                                    <td>
+                                        @if (vl.Validation.Valid)
+                                        {
+                                            <span class="status-pill success">Valid</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="status-pill danger" title="@vl.Validation.Reason">@vl.Validation.Reason</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="row g-3 mt-1">
+                    <div class="col-md-4">
+                        <span>Total movement lines</span>
+                        <div class="fw-bold">@_validatedLines.Count</div>
+                    </div>
+                    <div class="col-md-4">
+                        <span>Total quantity</span>
+                        <div class="fw-bold">@_validatedLines.Sum(l => l.Line.MoveQuantity).ToString("0.###")</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Reason</label>
+                        <select class="form-select" @bind="_selectedReasonId">
+                            <option value="">Select reason</option>
+                            @foreach (var reason in _reasons.Where(r => r.IsActive))
+                            {
+                                <option value="@reason.Id">@reason.DisplayName</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_confirmError))
+                {
+                    <div class="alert alert-danger mt-3">@_confirmError</div>
+                }
+
+                <div class="slide-over-footer px-0">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelValidated">Cancel</button>
+                    <button type="button" class="btn btn-primary" disabled="@(_confirming || !CanConfirm)" @onclick="ConfirmAsync">
+                        @(_confirming ? "Confirming..." : "Confirm Movement")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_confirmResults is not null)
+    {
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">Movement Results</h2>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>SKU</th>
+                                <th>PKM</th>
+                                <th>From</th>
+                                <th>To</th>
+                                <th class="text-end">Quantity</th>
+                                <th>Result</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in _confirmResults)
+                            {
+                                <tr>
+                                    <td><span class="record-code">@r.MaterialNumber</span></td>
+                                    <td>@r.MfgMonthLabel</td>
+                                    <td>@r.SourceLocationCode</td>
+                                    <td>@r.DestinationLocationCode</td>
+                                    <td class="text-end">@r.QuantityBoxes.ToString("0.###")</td>
+                                    <td>
+                                        @if (r.Success)
+                                        {
+                                            <span class="status-pill success" title="@r.MovementNumber">@r.MovementNumber</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="status-pill danger" title="@r.ErrorMessage">Failed</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <button type="button" class="btn btn-outline-secondary mt-3" @onclick="ResetAll">Start Another Movement</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private string _skuSearch = string.Empty;
+    private IReadOnlyList<MaterialDto> _skuResults = [];
+    private MaterialDto? _selectedMaterial;
+
+    private IReadOnlyList<MaterialStockLineDto>? _stockRecords;
+    private List<LineDraft> _lines = [];
+    private string _sortColumn = "location";
+    private bool _sortDescending;
+
+    private bool _validating;
+    private List<ValidatedLine>? _validatedLines;
+
+    private IReadOnlyList<MovementReasonDto> _reasons = [];
+    private int? _selectedReasonId;
+
+    private bool _confirming;
+    private string? _confirmError;
+    private IReadOnlyList<InventoryMovementLineResultDto>? _confirmResults;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _reasons = await Mediator.Send(new GetMovementReasonsQuery());
+    }
+
+    private bool CanConfirm => _selectedReasonId.HasValue && _validatedLines is not null && _validatedLines.All(l => l.Validation.Valid);
+
+    private async Task SearchSkuAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_skuSearch))
+        {
+            _skuResults = [];
+            return;
+        }
+
+        var page = await Mediator.Send(new GetMaterialsQuery(Search: _skuSearch, PageSize: 10));
+        _skuResults = page.Items;
+    }
+
+    private async Task SelectMaterialAsync(MaterialDto material)
+    {
+        _selectedMaterial = material;
+        _skuResults = [];
+        _stockRecords = null;
+        _validatedLines = null;
+        _confirmResults = null;
+
+        var records = await Mediator.Send(new GetStockByMaterialQuery(material.Id));
+        _stockRecords = records;
+        _lines = records.Select(r => new LineDraft(r)).ToList();
+        _sortColumn = "location";
+        _sortDescending = false;
+    }
+
+    private void ClearMaterial()
+    {
+        _selectedMaterial = null;
+        _stockRecords = null;
+        _lines = [];
+        _validatedLines = null;
+        _confirmResults = null;
+    }
+
+    private async Task ContinueAsync()
+    {
+        _validating = true;
+        _validatedLines = null;
+        _confirmError = null;
+        try
+        {
+            var selected = _lines.Where(l => l.IsSelected).ToList();
+            var validated = new List<ValidatedLine>();
+
+            foreach (var line in selected)
+            {
+                if (string.IsNullOrWhiteSpace(line.NewLocationCode))
+                {
+                    validated.Add(new ValidatedLine(line, new InventoryMovementValidationDto(false, "Enter a new location.")));
+                    continue;
+                }
+
+                if (line.MoveQuantity <= 0)
+                {
+                    validated.Add(new ValidatedLine(line, new InventoryMovementValidationDto(false, "Move quantity must be greater than 0.")));
+                    continue;
+                }
+
+                try
+                {
+                    var destination = await Mediator.Send(new GetPalletPositionByCodeQuery(line.NewLocationCode.Trim()));
+                    line.ResolvedDestinationId = destination.Id;
+
+                    var result = await Mediator.Send(new ValidateInventoryMovementLinesQuery(
+                        [new InventoryMovementLineInput(line.Record.MaterialId, line.Record.MfgMonth, line.Record.PalletPositionId, destination.Id, line.MoveQuantity)]));
+                    validated.Add(new ValidatedLine(line, result.Single()));
+                }
+                catch (Exception ex)
+                {
+                    validated.Add(new ValidatedLine(line, new InventoryMovementValidationDto(false, ex.Message)));
+                }
+            }
+
+            _validatedLines = validated;
+        }
+        finally
+        {
+            _validating = false;
+        }
+    }
+
+    private void CancelValidated()
+    {
+        _validatedLines = null;
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_validatedLines is null || !_selectedReasonId.HasValue)
+        {
+            return;
+        }
+
+        _confirming = true;
+        _confirmError = null;
+        try
+        {
+            var lines = _validatedLines
+                .Select(vl => new InventoryMovementLineInput(
+                    vl.Line.Record.MaterialId, vl.Line.Record.MfgMonth, vl.Line.Record.PalletPositionId,
+                    vl.Line.ResolvedDestinationId!.Value, vl.Line.MoveQuantity))
+                .ToList();
+
+            _confirmResults = await Mediator.Send(new ConfirmInventoryMovementCommand(lines, _selectedReasonId.Value));
+            _validatedLines = null;
+
+            var successCount = _confirmResults.Count(r => r.Success);
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"{successCount} of {_confirmResults.Count} movement line(s) confirmed.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to confirm inventory movement batch");
+            _confirmError = ex.Message;
+        }
+        finally
+        {
+            _confirming = false;
+        }
+    }
+
+    private void ResetAll()
+    {
+        _skuSearch = string.Empty;
+        _skuResults = [];
+        _selectedMaterial = null;
+        _stockRecords = null;
+        _lines = [];
+        _validatedLines = null;
+        _selectedReasonId = null;
+        _confirmError = null;
+        _confirmResults = null;
+    }
+
+    private IEnumerable<LineDraft> SortedLines => _sortColumn switch
+    {
+        "pkm" => _sortDescending
+            ? _lines.OrderByDescending(l => l.Record.MfgMonth)
+            : _lines.OrderBy(l => l.Record.MfgMonth),
+        "available" => _sortDescending
+            ? _lines.OrderByDescending(l => l.Record.QuantityBoxes)
+            : _lines.OrderBy(l => l.Record.QuantityBoxes),
+        _ => _sortDescending
+            ? _lines.OrderByDescending(l => l.Record.LocationCode)
+            : _lines.OrderBy(l => l.Record.LocationCode),
+    };
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortColumn = column;
+            _sortDescending = false;
+        }
+    }
+
+    private string SortIcon(string column) =>
+        _sortColumn == column ? (_sortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
+
+    private sealed class LineDraft(MaterialStockLineDto record)
+    {
+        public MaterialStockLineDto Record { get; } = record;
+        public bool IsSelected { get; set; }
+        public string NewLocationCode { get; set; } = string.Empty;
+        public decimal MoveQuantity { get; set; }
+        public int? ResolvedDestinationId { get; set; }
+    }
+
+    private sealed record ValidatedLine(LineDraft Line, InventoryMovementValidationDto Validation);
+}

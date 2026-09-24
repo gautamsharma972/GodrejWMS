@@ -1,0 +1,578 @@
+@page "/materials"
+@attribute [Authorize]
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Features.DesignTypes.Dtos
+@using GodrejWMS.Application.Features.DesignTypes.Queries
+@using GodrejWMS.Application.Features.Materials.Commands
+@using GodrejWMS.Application.Features.Materials.Dtos
+@using GodrejWMS.Application.Features.Materials.Queries
+@using GodrejWMS.Application.Features.Seasons.Dtos
+@using GodrejWMS.Application.Features.Seasons.Queries
+@using GodrejWMS.Application.Features.SkuMovementTypes.Dtos
+@using GodrejWMS.Application.Features.SkuMovementTypes.Queries
+@using GodrejWMS.Application.Features.ZoneTypes.Dtos
+@using GodrejWMS.Application.Features.ZoneTypes.Queries
+@using GodrejWMS.Domain.Entities
+@inject IMediator Mediator
+@inject ILogger<Index> Logger
+@inject IExcelService ExcelService
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Materials - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Master Data</div>
+            <h1>Material Master</h1>
+            <p class="page-kicker">Maintain SKU dimensions, pack sizes, pallet capacity, velocity, and seasonal classification.</p>
+        </div>
+        <AuthorizeView Roles="Admin,Supervisor" Context="headerActionsContext">
+            <div class="header-actions">
+                <button class="btn btn-outline-secondary" @onclick="DownloadSampleFormatAsync">
+                    <i class="bi bi-download" aria-hidden="true"></i>
+                    Sample Format
+                </button>
+                <label class="btn btn-outline-primary mb-0" for="material-excel-upload">
+                    @if (_importing)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span>Uploading</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-upload" aria-hidden="true"></i>
+                        <span>Upload Excel</span>
+                    }
+                </label>
+                <InputFile id="material-excel-upload" OnChange="OnImportFileSelected" class="visually-hidden" />
+                <button class="btn btn-primary" @onclick="() => ShowForm(null)">
+                    <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                    New Material
+                </button>
+            </div>
+        </AuthorizeView>
+    </div>
+
+    <div class="toolbar-panel">
+        <div class="toolbar-group">
+            <div class="input-group search-control">
+                <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                <input class="form-control" placeholder="Search description, code, or design type"
+                       @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+            </div>
+            <select class="form-select filter-control" value="@_designTypeFilter" @onchange="OnDesignTypeFilterChanged">
+                <option value="">All design types</option>
+                @foreach (var designType in ActiveDesignTypes)
+                {
+                    <option value="@designType.Code">@designType.Code</option>
+                }
+            </select>
+            <select class="form-select filter-control" value="@_movementFilter" @onchange="OnMovementFilterChanged">
+                <option value="">All velocities</option>
+                @foreach (var movementType in MovementTypeOptions())
+                {
+                    <option value="@movementType.Id">@movementType.DisplayName</option>
+                }
+            </select>
+            <select class="form-select filter-control" value="@_seasonFilter" @onchange="OnSeasonFilterChanged">
+                <option value="">All seasons</option>
+                @foreach (var season in SeasonOptions())
+                {
+                    <option value="@season.Id">@season.DisplayName</option>
+                }
+            </select>
+            <select class="form-select filter-control" value="@_activeFilterText" @onchange="OnActiveFilterChanged">
+                <option value="">All statuses</option>
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+            </select>
+        </div>
+    </div>
+
+    @if (_importResult is not null)
+    {
+        <div class="alert alert-info mb-0">
+            Import complete: @_importResult.Created created, @_importResult.Updated updated.
+            @if (_importResult.Errors.Count > 0)
+            {
+                <ul class="mb-0">
+                    @foreach (var e in _importResult.Errors)
+                    {
+                        <li>@e</li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+
+    @if (_showForm)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseForm">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="material-drawer-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">@(_editingId is null ? "New SKU" : "Edit SKU")</div>
+                        <h2 class="slide-over-title" id="material-drawer-title">@(_editingId is null ? "Create Material" : $"Edit Material {_form.MaterialNumber}")</h2>
+                        <p class="slide-over-subtitle">Keep dimensional and commercial attributes aligned with warehouse planning.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Close material editor" @onclick="CloseForm">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <EditForm Model="_form" FormName="material-form" OnValidSubmit="SaveAsync" class="slide-over-form">
+                    <div class="slide-over-body">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Material Number</label>
+                                <InputNumber class="form-control" @bind-Value="_form.MaterialNumber" />
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label">Description</label>
+                                <InputText class="form-control" @bind-Value="_form.Description" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Design Type</label>
+                                <InputSelect class="form-select" @bind-Value="_form.DesignType">
+                                    <option value="">Select design type</option>
+                                    @foreach (var designType in ActiveDesignTypes)
+                                    {
+                                        <option value="@designType.Code">@DesignTypeOptionText(designType)</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Characteristic</label>
+                                <InputText class="form-control" @bind-Value="_form.CharacteristicValue" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Season</label>
+                                <InputSelect class="form-select" @bind-Value="_form.SeasonId">
+                                    @foreach (var s in SeasonOptions(_form.SeasonId))
+                                    {
+                                        <option value="@s.Id">@s.DisplayName</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">SKU Movement</label>
+                                <InputSelect class="form-select" @bind-Value="_form.MovementTypeId">
+                                    @foreach (var movementType in MovementTypeOptions(_form.MovementTypeId))
+                                    {
+                                        <option value="@movementType.Id">@movementType.DisplayName</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">PK Size</label>
+                                <InputNumber class="form-control" @bind-Value="_form.PackSize" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">MRP Price</label>
+                                <InputNumber class="form-control" @bind-Value="_form.MrpPrice" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Pallet Size</label>
+                                <InputNumber class="form-control" @bind-Value="_form.PalletCapacityBoxes" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Preferred Zone</label>
+                                <InputSelect class="form-select" @bind-Value="_form.PreferredZoneTypeId">
+                                    <option value="">No preference</option>
+                                    @foreach (var zoneType in ActiveZoneTypes)
+                                    {
+                                        <option value="@zoneType.Id">@zoneType.DisplayName</option>
+                                    }
+                                </InputSelect>
+                                @if (_form.PreferredZoneTypeId.HasValue)
+                                {
+                                    <div class="form-check mt-2">
+                                        <InputCheckbox class="form-check-input" @bind-Value="_form.RequirePreferredZone" />
+                                        <span class="form-check-label">Require this zone (hard constraint)</span>
+                                    </div>
+                                }
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Active</label>
+                                <div class="form-check mt-2">
+                                    <InputCheckbox class="form-check-input" @bind-Value="_form.IsActive" />
+                                    <span class="form-check-label">Available</span>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Length (mm)</label>
+                                <InputNumber class="form-control" @bind-Value="_form.LengthMm" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Width (mm)</label>
+                                <InputNumber class="form-control" @bind-Value="_form.WidthMm" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Hight (mm)</label>
+                                <InputNumber class="form-control" @bind-Value="_form.HeightMm" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Net Weight (kg)</label>
+                                <InputNumber class="form-control" @bind-Value="_form.NetWeightKg" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Gross Weight (kg)</label>
+                                <InputNumber class="form-control" @bind-Value="_form.GrossWeightKg" />
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(_formError))
+                        {
+                            <div class="alert alert-danger mt-3 mb-0">@_formError</div>
+                        }
+                    </div>
+                    <div class="slide-over-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check2" aria-hidden="true"></i>
+                            Save Material
+                        </button>
+                    </div>
+                </EditForm>
+            </section>
+        </div>
+    }
+
+    @if (_page is null)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading materials...
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive panel-table">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("material"))'>Material Code <i class='bi @SortIcon("material")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("description"))'>Description <i class='bi @SortIcon("description")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("design"))'>Design Type <i class='bi @SortIcon("design")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("pack"))'>Pack <i class='bi @SortIcon("pack")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("mrp"))'>MRP <i class='bi @SortIcon("mrp")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("velocity"))'>Velocity <i class='bi @SortIcon("velocity")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("boxWeight"))'>Box Weight <i class='bi @SortIcon("boxWeight")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("palletWeight"))'>Pallet Weight <i class='bi @SortIcon("palletWeight")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("season"))'>Season <i class='bi @SortIcon("season")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("active"))'>Active <i class='bi @SortIcon("active")'></i></button></th>
+                        <th class="table-actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in _page.Items)
+                    {
+                        <tr>
+                            <td><span class="record-code">@m.MaterialNumber</span></td>
+                            <td>@m.Description</td>
+                            <td><span class="status-pill @DesignTypeClass(m.DesignType)">@m.DesignType</span></td>
+                            <td class="text-end">@m.PackSize</td>
+                            <td class="text-end">@m.MrpPrice.ToString("N2")</td>
+                            <td><span class="status-pill @VelocityClass(m.MovementTypeCode)">@m.MovementTypeName</span></td>
+                            <td class="text-end">@m.BoxWeightKg.ToString("N2") kg</td>
+                            <td class="text-end">@m.PalletWeightKg.ToString("N2") kg</td>
+                            <td><span class="status-pill @SeasonClass(m.SeasonCode)">@m.SeasonName</span></td>
+                            <td><span class="status-pill @(m.IsActive ? "success" : "inactive")">@(m.IsActive ? "Active" : "Inactive")</span></td>
+                            <td class="table-actions">
+                                <AuthorizeView Roles="Admin,Supervisor" Context="rowEditContext">
+                                    <button class="btn btn-sm btn-outline-secondary" title="@($"Edit {m.MaterialNumber}")" aria-label="@($"Edit {m.MaterialNumber}")" @onclick="() => ShowForm(m)">
+                                        <i class="bi bi-pencil-square" aria-hidden="true"></i>
+                                    </button>
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <nav class="pagination-bar" aria-label="Material pagination">
+            <ul class="pagination mb-0">
+                <li class="page-item @(_page.HasPreviousPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadPage(_pageNumber - 1)">Previous</button>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Page @_page.PageNumber of @Math.Max(1, _page.TotalPages)</span></li>
+                <li class="page-item @(_page.HasNextPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadPage(_pageNumber + 1)">Next</button>
+                </li>
+            </ul>
+        </nav>
+    }
+</div>
+
+@code {
+    private PaginatedList<MaterialDto>? _page;
+    private IReadOnlyList<DesignTypeDto> _designTypes = [];
+    private IReadOnlyList<SkuMovementTypeDto> _movementTypes = [];
+    private IReadOnlyList<SeasonDto> _seasons = [];
+    private IReadOnlyList<ZoneTypeDto> _zoneTypes = [];
+    private int _pageNumber = 1;
+    private string _search = string.Empty;
+    private string _designTypeFilter = string.Empty;
+    private int? _movementFilter;
+    private int? _seasonFilter;
+    private string _activeFilterText = string.Empty;
+    private string _sortBy = "material";
+    private bool _sortDescending;
+    private bool _showForm;
+    private int? _editingId;
+    private long _editMaterialNumber;
+    private MaterialFormModel _form = new();
+    private string? _formError;
+    private bool _importing;
+    private ImportMaterialsResult? _importResult;
+
+    private IEnumerable<DesignTypeDto> ActiveDesignTypes => _designTypes.Where(d => d.IsActive);
+
+    private IEnumerable<SkuMovementTypeDto> MovementTypeOptions(int? currentId = null) =>
+        _movementTypes
+            .Where(s => s.IsActive || s.Id == currentId)
+            .OrderBy(s => s.SortOrder)
+            .ThenBy(s => s.DisplayName);
+
+    private IEnumerable<SeasonDto> SeasonOptions(int? currentId = null) =>
+        _seasons
+            .Where(s => s.IsActive || s.Id == currentId)
+            .OrderBy(s => s.SortOrder)
+            .ThenBy(s => s.DisplayName);
+
+    private IEnumerable<ZoneTypeDto> ActiveZoneTypes => _zoneTypes.Where(z => z.IsActive);
+
+    private int DefaultSeasonId() => SeasonOptions().FirstOrDefault()?.Id ?? SeasonIds.Rainy;
+
+protected override async Task OnInitializedAsync()
+    {
+        await LoadReferenceDataAsync();
+        await LoadPage(1);
+    }
+
+    private async Task LoadReferenceDataAsync()
+    {
+        _designTypes = await Mediator.Send(new GetDesignTypesQuery());
+        _movementTypes = await Mediator.Send(new GetSkuMovementTypesQuery());
+        _seasons = await Mediator.Send(new GetSeasonsQuery());
+        _zoneTypes = await Mediator.Send(new GetZoneTypesQuery());
+    }
+
+    private async Task LoadPage(int page)
+    {
+        if (page < 1) return;
+        _pageNumber = page;
+        _page = await Mediator.Send(new GetMaterialsQuery(
+            Search: _search,
+            DesignType: string.IsNullOrWhiteSpace(_designTypeFilter) ? null : _designTypeFilter.Trim(),
+            MovementTypeId: _movementFilter,
+            SeasonId: _seasonFilter,
+            IsActive: bool.TryParse(_activeFilterText, out var isActive) ? isActive : null,
+            SortBy: _sortBy,
+            SortDescending: _sortDescending,
+            PageNumber: page,
+            PageSize: 25));
+    }
+
+    private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadPage(1);
+
+    private async Task OnDesignTypeFilterChanged(ChangeEventArgs e)
+    {
+        _designTypeFilter = e.Value?.ToString() ?? string.Empty;
+        await LoadPage(1);
+    }
+
+    private async Task OnMovementFilterChanged(ChangeEventArgs e)
+    {
+        _movementFilter = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await LoadPage(1);
+    }
+
+    private async Task OnSeasonFilterChanged(ChangeEventArgs e)
+    {
+        _seasonFilter = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await LoadPage(1);
+    }
+
+    private async Task OnActiveFilterChanged(ChangeEventArgs e)
+    {
+        _activeFilterText = e.Value?.ToString() ?? string.Empty;
+        await LoadPage(1);
+    }
+
+    private async Task SortBy(string column)
+    {
+        if (_sortBy == column)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortBy = column;
+            _sortDescending = false;
+        }
+
+        await LoadPage(1);
+    }
+
+    private void ShowForm(MaterialDto? material)
+    {
+        _formError = null;
+        if (material is null)
+        {
+            _editingId = null;
+            _editMaterialNumber = 0;
+            _form = new MaterialFormModel
+            {
+                DesignType = ActiveDesignTypes.FirstOrDefault()?.Code ?? string.Empty,
+                SeasonId = DefaultSeasonId()
+            };
+        }
+        else
+        {
+            _editingId = material.Id;
+            _editMaterialNumber = material.MaterialNumber;
+            _form = new MaterialFormModel
+            {
+                MaterialNumber = material.MaterialNumber,
+                Description = material.Description,
+                DesignType = material.DesignType,
+                CharacteristicValue = material.CharacteristicValue,
+                PackSize = material.PackSize,
+                MrpPrice = material.MrpPrice,
+                LengthMm = material.LengthMm,
+                WidthMm = material.WidthMm,
+                HeightMm = material.HeightMm,
+                NetWeightKg = material.NetWeightKg,
+                GrossWeightKg = material.GrossWeightKg,
+                PalletCapacityBoxes = material.PalletCapacityBoxes,
+                MovementTypeId = material.MovementTypeId,
+                SeasonId = material.SeasonId,
+                PreferredZoneTypeId = material.PreferredZoneTypeId,
+                RequirePreferredZone = material.RequirePreferredZone,
+                IsActive = material.IsActive
+            };
+        }
+        _showForm = true;
+    }
+
+    private void CloseForm()
+    {
+        _showForm = false;
+        _formError = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            if (_editingId is null)
+            {
+                await Mediator.Send(new CreateMaterialCommand(
+                    _form.MaterialNumber, _form.Description, _form.DesignType, _form.CharacteristicValue,
+                    _form.PackSize, _form.MrpPrice, _form.LengthMm, _form.WidthMm, _form.HeightMm,
+                    _form.NetWeightKg, _form.GrossWeightKg, _form.PalletCapacityBoxes, _form.MovementTypeId, _form.SeasonId,
+                    _form.PreferredZoneTypeId, _form.RequirePreferredZone));
+            }
+            else
+            {
+                await Mediator.Send(new UpdateMaterialCommand(
+                    _editingId.Value, _form.MaterialNumber, _form.Description, _form.DesignType, _form.CharacteristicValue,
+                    _form.PackSize, _form.MrpPrice, _form.LengthMm, _form.WidthMm, _form.HeightMm,
+                    _form.NetWeightKg, _form.GrossWeightKg, _form.PalletCapacityBoxes, _form.MovementTypeId, _form.SeasonId, _form.IsActive,
+                    _form.PreferredZoneTypeId, _form.RequirePreferredZone));
+            }
+
+            _showForm = false;
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Material saved.");
+            await LoadPage(_pageNumber);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save material");
+            _formError = ex.Message;
+        }
+    }
+
+    private async Task OnImportFileSelected(InputFileChangeEventArgs e)
+    {
+        _importing = true;
+        _importResult = null;
+        try
+        {
+            await using var stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            memory.Position = 0;
+
+            _importResult = await Mediator.Send(new ImportMaterialsFromExcelCommand(memory));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Material import complete: {_importResult.Created} created, {_importResult.Updated} updated.");
+            await LoadPage(1);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to import materials");
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    private async Task DownloadSampleFormatAsync()
+    {
+        var bytes = ExcelService.WriteMaterialMasterTemplate();
+        var base64 = Convert.ToBase64String(bytes);
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "material-master-sample-format.xlsx", base64,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private string SortIcon(string column) =>
+        _sortBy == column ? (_sortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
+
+    private static string VelocityClass(string code) =>
+        code == SkuMovementTypeCodes.FastMoving ? "fast" : "slow";
+
+    private static string SeasonClass(string code) =>
+        code.ToLowerInvariant();
+
+    private static string DesignTypeClass(string value)
+    {
+        var palette = new[] { "info", "violet", "teal", "pink", "warning", "slate" };
+        var hash = value.Aggregate(0, (current, ch) => current + ch);
+        return palette[Math.Abs(hash) % palette.Length];
+    }
+
+    private static string DesignTypeOptionText(DesignTypeDto designType) =>
+        string.IsNullOrWhiteSpace(designType.Description)
+            ? designType.Code
+            : $"{designType.Code} - {designType.Description}";
+
+    private class MaterialFormModel
+    {
+        public long MaterialNumber { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public string DesignType { get; set; } = string.Empty;
+        public string? CharacteristicValue { get; set; }
+        public int PackSize { get; set; } = 1;
+        public decimal MrpPrice { get; set; }
+        public decimal LengthMm { get; set; }
+        public decimal WidthMm { get; set; }
+        public decimal HeightMm { get; set; }
+        public decimal NetWeightKg { get; set; }
+        public decimal GrossWeightKg { get; set; }
+        public int PalletCapacityBoxes { get; set; } = 40;
+        public int MovementTypeId { get; set; } = SkuMovementTypeIds.SlowMoving;
+        public int SeasonId { get; set; } = SeasonIds.Rainy;
+        public int? PreferredZoneTypeId { get; set; }
+        public bool RequirePreferredZone { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+}
+
+
+
+
+

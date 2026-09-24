@@ -1,0 +1,221 @@
+@page "/season-mapping"
+@attribute [Authorize]
+@using GodrejWMS.Application.Features.SeasonMapping.Commands
+@using GodrejWMS.Application.Features.SeasonMapping.Dtos
+@using GodrejWMS.Application.Features.SeasonMapping.Queries
+@using GodrejWMS.Application.Features.Seasons.Dtos
+@using GodrejWMS.Application.Features.Seasons.Queries
+@using System.Globalization
+@inject IMediator Mediator
+@inject ILogger<Index> Logger
+
+<PageTitle>Season Mapping - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Master Data</div>
+            <h1>Season &amp; Month Mapping</h1>
+            <p class="page-kicker">Assign each calendar month to a season. Used to classify material seasonal demand.</p>
+        </div>
+        <AuthorizeView Roles="Admin,Supervisor" Context="editContext">
+            <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                @if (_saving)
+                {
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                }
+                else
+                {
+                    <i class="bi bi-check2" aria-hidden="true"></i>
+                }
+                Save Mapping
+            </button>
+        </AuthorizeView>
+    </div>
+
+    @if (_saveError is not null)
+    {
+        <div class="alert alert-danger mb-0">@_saveError</div>
+    }
+    @if (_savedMessage is not null)
+    {
+        <div class="alert alert-success mb-0">@_savedMessage</div>
+    }
+
+    @if (_rows is null)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading season mapping...
+        </div>
+    }
+    else
+    {
+        <div class="toolbar-panel">
+            <div class="toolbar-group">
+                <select class="form-select filter-control" @bind="_seasonFilter">
+                    <option value="">All seasons</option>
+                    @foreach (var season in SeasonOptions())
+                    {
+                        <option value="@season.Id">@season.DisplayName</option>
+                    }
+                </select>
+            </div>
+            <span class="sync-chip">@DisplayRows.Count().ToString("N0") months</span>
+        </div>
+
+        <div class="table-responsive panel-table">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("month"))'>Month <i class='bi @SortIcon("month")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("season"))'>Season <i class='bi @SortIcon("season")'></i></button></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in DisplayRows)
+                    {
+                        <tr>
+                            <td class="fw-semibold">@MonthName(row.Month)</td>
+                            <td style="max-width: 220px">
+                                <AuthorizeView Roles="Admin,Supervisor" Context="rowEditContext">
+                                    <Authorized>
+                                        <select class="form-select" value="@row.SeasonId" @onchange="e => OnSeasonChanged(row.Month, e)">
+                                            @foreach (var s in SeasonOptions(row.SeasonId))
+                                            {
+                                                <option value="@s.Id">@s.DisplayName</option>
+                                            }
+                                        </select>
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        <span class="status-pill @SeasonClass(row.SeasonCode)">@row.SeasonName</span>
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly string[] MonthNames = CultureInfo.InvariantCulture.DateTimeFormat.MonthNames;
+
+    private List<SeasonMonthMapDto>? _rows;
+    private int? _seasonFilter;
+    private string _sortBy = "month";
+    private bool _sortDescending;
+    private bool _saving;
+    private string? _saveError;
+    private string? _savedMessage;
+    private IReadOnlyList<SeasonDto> _seasons = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _seasons = await Mediator.Send(new GetSeasonsQuery());
+        await LoadAsync();
+    }
+
+    private IEnumerable<SeasonDto> SeasonOptions(int? currentId = null) =>
+        _seasons
+            .Where(s => s.IsActive || s.Id == currentId)
+            .OrderBy(s => s.SortOrder)
+            .ThenBy(s => s.DisplayName);
+
+    private async Task LoadAsync()
+    {
+        var result = await Mediator.Send(new GetSeasonMonthMapQuery());
+        _rows = result.OrderBy(r => r.Month).ToList();
+    }
+
+    private static string MonthName(int month) => MonthNames[month - 1];
+
+    private IEnumerable<SeasonMonthMapDto> DisplayRows
+    {
+        get
+        {
+            var query = (_rows ?? []).AsEnumerable();
+
+            if (_seasonFilter.HasValue)
+            {
+                query = query.Where(r => r.SeasonId == _seasonFilter.Value);
+            }
+
+            return (_sortBy, _sortDescending) switch
+            {
+                ("season", false) => query.OrderBy(r => r.SeasonId).ThenBy(r => r.Month),
+                ("season", true) => query.OrderByDescending(r => r.SeasonId).ThenBy(r => r.Month),
+                (_, true) => query.OrderByDescending(r => r.Month),
+                _ => query.OrderBy(r => r.Month)
+            };
+        }
+    }
+
+    private void SortBy(string column)
+    {
+        if (_sortBy == column)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortBy = column;
+            _sortDescending = false;
+        }
+    }
+
+    private string SortIcon(string column) =>
+        _sortBy == column ? (_sortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
+
+    private static string SeasonClass(string code) =>
+        code.ToLowerInvariant();
+
+    private void OnSeasonChanged(int month, ChangeEventArgs e)
+    {
+        if (_rows is null || e.Value is not string value || !int.TryParse(value, out var seasonId))
+        {
+            return;
+        }
+
+        var season = _seasons.FirstOrDefault(s => s.Id == seasonId);
+        if (season is null)
+        {
+            return;
+        }
+
+        var index = _rows.FindIndex(r => r.Month == month);
+        if (index >= 0)
+        {
+            _rows[index] = _rows[index] with { SeasonId = season.Id, SeasonCode = season.Code, SeasonName = season.DisplayName };
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_rows is null)
+        {
+            return;
+        }
+
+        _saving = true;
+        _saveError = null;
+        _savedMessage = null;
+        try
+        {
+            var assignments = _rows.Select(r => new SeasonMonthAssignment(r.Month, r.SeasonId)).ToList();
+            await Mediator.Send(new UpdateSeasonMonthMapCommand(assignments));
+            _savedMessage = "Season mapping saved.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save season mapping");
+            _saveError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

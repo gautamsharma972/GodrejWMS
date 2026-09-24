@@ -1,0 +1,304 @@
+@page "/audit-trail"
+@attribute [Authorize(Roles = "Admin")]
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Features.ActivityLogs.Dtos
+@using GodrejWMS.Application.Features.ActivityLogs.Queries
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Audit Trail - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Governance</div>
+            <h1>Audit Trail</h1>
+            <p class="page-kicker">Track who changed master data, submitted transactions, and moved operational records.</p>
+        </div>
+        <button class="btn btn-outline-primary" @onclick="ExportAsync" disabled="@(_page is null || _page.TotalCount == 0)">
+            <i class="bi bi-download" aria-hidden="true"></i>
+            Export CSV
+        </button>
+    </div>
+
+    <div class="toolbar-panel">
+        <div class="toolbar-group">
+            <div class="input-group search-control">
+                <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                <input class="form-control" placeholder="Search summary, user, entity, or id"
+                       @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+            </div>
+            <select class="form-select filter-control" value="@_actionFilter" @onchange="OnActionChanged">
+                <option value="">All actions</option>
+                <option value="Created">Created</option>
+                <option value="Updated">Updated</option>
+                <option value="Deleted">Deleted</option>
+            </select>
+            <select class="form-select filter-control" value="@_entityFilter" @onchange="OnEntityChanged">
+                <option value="">All entities</option>
+                @foreach (var entity in EntityOptions)
+                {
+                    <option value="@entity">@EntityLabel(entity)</option>
+                }
+            </select>
+            <input class="form-control filter-control" type="date" title="From date" value="@_from" @onchange="OnFromChanged" />
+            <input class="form-control filter-control" type="date" title="To date" value="@_to" @onchange="OnToChanged" />
+        </div>
+        @if (_page is not null)
+        {
+            <span class="sync-chip">@_page.TotalCount.ToString("N0") records</span>
+        }
+    </div>
+
+    @if (_page is null)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading audit trail...
+        </div>
+    }
+    else if (_page.Items.Count == 0)
+    {
+        <div class="empty-state">No audit activity found for the current filters.</div>
+    }
+    else
+    {
+        <div class="table-responsive panel-table">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("occurred"))'>Occurred <i class='bi @SortIcon("occurred")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("user"))'>User <i class='bi @SortIcon("user")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("action"))'>Action <i class='bi @SortIcon("action")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("entity"))'>Entity <i class='bi @SortIcon("entity")'></i></button></th>
+                        <th>Summary</th>
+                        <th class="table-actions">Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _page.Items)
+                    {
+                        <tr>
+                            <td>@row.OccurredAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
+                            <td>@(row.UserName ?? "System")</td>
+                            <td><span class="status-pill @ActionClass(row.Action)">@row.Action</span></td>
+                            <td>
+                                <span class="record-code">@EntityLabel(row.EntityName)</span>
+                                @if (!string.IsNullOrWhiteSpace(row.EntityId))
+                                {
+                                    <span class="text-muted">#@row.EntityId</span>
+                                }
+                            </td>
+                            <td>@row.Summary</td>
+                            <td class="table-actions">
+                                <button class="btn btn-sm btn-outline-primary" title="View audit details" aria-label="View audit details" @onclick="() => ShowDetails(row)">
+                                    <i class="bi bi-eye" aria-hidden="true"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <nav class="pagination-bar" aria-label="Audit trail pagination">
+            <ul class="pagination mb-0">
+                <li class="page-item @(_page.HasPreviousPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadPage(_pageNumber - 1)">Previous</button>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Page @_page.PageNumber of @Math.Max(1, _page.TotalPages)</span></li>
+                <li class="page-item @(_page.HasNextPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadPage(_pageNumber + 1)">Next</button>
+                </li>
+            </ul>
+        </nav>
+    }
+</div>
+
+@if (_selected is not null)
+{
+    <div class="slide-over-backdrop" role="presentation" @onclick="CloseDetails">
+        <aside class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="auditDetailTitle" @onclick:stopPropagation="true">
+            <div class="slide-over-header">
+                <div>
+                    <div class="eyebrow">Audit Detail</div>
+                    <h2 class="slide-over-title" id="auditDetailTitle">@_selected.Summary</h2>
+                </div>
+                <button type="button" class="slide-over-close" title="Close" aria-label="Close audit detail" @onclick="CloseDetails">
+                    <i class="bi bi-x-lg" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="slide-over-body">
+                <dl class="detail-list">
+                    <dt>Occurred</dt>
+                    <dd>@_selected.OccurredAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</dd>
+                    <dt>User</dt>
+                    <dd>@(_selected.UserName ?? "System")</dd>
+                    <dt>Action</dt>
+                    <dd><span class="status-pill @ActionClass(_selected.Action)">@_selected.Action</span></dd>
+                    <dt>Entity</dt>
+                    <dd>@EntityLabel(_selected.EntityName) @(!string.IsNullOrWhiteSpace(_selected.EntityId) ? $"#{_selected.EntityId}" : string.Empty)</dd>
+                </dl>
+
+                @if (!string.IsNullOrWhiteSpace(_selected.OldValuesJson))
+                {
+                    <h3 class="panel-title mt-4">Before</h3>
+                    <pre class="json-preview">@_selected.OldValuesJson</pre>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_selected.NewValuesJson))
+                {
+                    <h3 class="panel-title mt-4">After</h3>
+                    <pre class="json-preview">@_selected.NewValuesJson</pre>
+                }
+            </div>
+            <div class="slide-over-footer">
+                <button type="button" class="btn btn-outline-secondary" @onclick="CloseDetails">Close</button>
+            </div>
+        </aside>
+    </div>
+}
+
+@code {
+    private static readonly string[] EntityOptions =
+    [
+        "Material",
+        "PalletPosition",
+        "Rack",
+        "DesignType",
+        "SeasonMonthMap",
+        "InwardTransaction",
+        "InwardTransactionLine",
+        "InwardPutaway",
+        "PulloutTransaction",
+        "PulloutTransactionLine",
+        "PulloutPick",
+        "StockBatch"
+    ];
+
+    private PaginatedList<ActivityLogDto>? _page;
+    private ActivityLogDto? _selected;
+    private int _pageNumber = 1;
+    private string _search = string.Empty;
+    private string _actionFilter = string.Empty;
+    private string _entityFilter = string.Empty;
+    private string _from = string.Empty;
+    private string _to = string.Empty;
+    private string _sortBy = "occurred";
+    private bool _sortDescending = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPage(1);
+    }
+
+    private async Task LoadPage(int page)
+    {
+        if (page < 1) return;
+
+        _pageNumber = page;
+        _page = await Mediator.Send(CreateQuery(page, 50));
+    }
+
+    private GetActivityLogsQuery CreateQuery(int page, int pageSize) =>
+        new(
+            Search: _search,
+            Action: string.IsNullOrWhiteSpace(_actionFilter) ? null : _actionFilter,
+            EntityName: string.IsNullOrWhiteSpace(_entityFilter) ? null : _entityFilter,
+            From: ParseDate(_from),
+            To: ParseDate(_to)?.AddDays(1),
+            SortBy: _sortBy,
+            SortDescending: _sortDescending,
+            PageNumber: page,
+            PageSize: pageSize);
+
+    private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadPage(1);
+
+    private async Task OnActionChanged(ChangeEventArgs e)
+    {
+        _actionFilter = e.Value?.ToString() ?? string.Empty;
+        await LoadPage(1);
+    }
+
+    private async Task OnEntityChanged(ChangeEventArgs e)
+    {
+        _entityFilter = e.Value?.ToString() ?? string.Empty;
+        await LoadPage(1);
+    }
+
+    private async Task OnFromChanged(ChangeEventArgs e)
+    {
+        _from = e.Value?.ToString() ?? string.Empty;
+        await LoadPage(1);
+    }
+
+    private async Task OnToChanged(ChangeEventArgs e)
+    {
+        _to = e.Value?.ToString() ?? string.Empty;
+        await LoadPage(1);
+    }
+
+    private async Task SortBy(string column)
+    {
+        if (_sortBy == column)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortBy = column;
+            _sortDescending = column is "occurred";
+        }
+
+        await LoadPage(1);
+    }
+
+    private async Task ExportAsync()
+    {
+        var page = await Mediator.Send(CreateQuery(1, 10000));
+        var rows = page.Items.Select(a => string.Join(",",
+            Csv(a.OccurredAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")),
+            Csv(a.UserName ?? "System"),
+            Csv(a.Action),
+            Csv(EntityLabel(a.EntityName)),
+            Csv(a.EntityId ?? string.Empty),
+            Csv(a.Summary)));
+        var csv = "Occurred,User,Action,Entity,Entity Id,Summary\r\n" + string.Join("\r\n", rows);
+        var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(csv));
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "audit-trail.csv", base64, "text/csv");
+    }
+
+    private void ShowDetails(ActivityLogDto row) => _selected = row;
+
+    private void CloseDetails() => _selected = null;
+
+    private string SortIcon(string column) =>
+        _sortBy == column ? (_sortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
+
+    private static DateTimeOffset? ParseDate(string value) =>
+        DateTime.TryParse(value, out var date) ? new DateTimeOffset(date) : null;
+
+    private static string ActionClass(string action) => action switch
+    {
+        "Created" => "success",
+        "Updated" => "info",
+        "Deleted" => "danger",
+        _ => "slate"
+    };
+
+    private static string EntityLabel(string value) =>
+        value.Replace("PalletPosition", "Location")
+            .Replace("SeasonMonthMap", "Season Mapping")
+            .Replace("InwardTransaction", "Inward Transaction")
+            .Replace("InwardPutaway", "Inward Put-away")
+            .Replace("PulloutTransaction", "Pullout Transaction")
+            .Replace("PulloutPick", "Pullout Pick")
+            .Replace("StockBatch", "Inventory Batch");
+
+    private static string Csv(string value)
+    {
+        var escaped = value.Replace("\"", "\"\"");
+        return escaped.Contains(',') || escaped.Contains('"') || escaped.Contains('\n') ? $"\"{escaped}\"" : escaped;
+    }
+}
+

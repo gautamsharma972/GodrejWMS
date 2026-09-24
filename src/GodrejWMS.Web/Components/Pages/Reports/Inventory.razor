@@ -1,0 +1,296 @@
+@page "/reports/inventory"
+@attribute [Authorize(Roles = "Admin,Supervisor")]
+@using GodrejWMS.Application.Features.Reports.Dtos
+@using GodrejWMS.Application.Features.Reports.Queries
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Inventory Reports - Godrej WMS</PageTitle>
+
+<div class="page-shell report-page">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Reports</div>
+            <h1>Inventory Reports</h1>
+            <p class="page-kicker">Stock valuation, aging, and warehouse utilization by zone and location type.</p>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="btn-group" role="group" aria-label="Report tabs">
+                <button type="button" class="btn @(_activeTab == ReportTab.Aging ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchTab(ReportTab.Aging)'>
+                    Aging / Slow-Moving
+                </button>
+                <button type="button" class="btn @(_activeTab == ReportTab.Utilization ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchTab(ReportTab.Utilization)'>
+                    Warehouse Utilization
+                </button>
+                <AuthorizeView Roles="Admin" Context="valuationTabContext">
+                    <button type="button" class="btn @(_activeTab == ReportTab.Valuation ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchTab(ReportTab.Valuation)'>
+                        Valuation (at MRP)
+                    </button>
+                </AuthorizeView>
+            </div>
+            <div class="toolbar-group">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ExportCsvAsync" disabled="@_loading">
+                    <i class="bi bi-download" aria-hidden="true"></i>
+                    Export CSV
+                </button>
+            </div>
+        </div>
+
+        @if (_activeTab == ReportTab.Valuation)
+        {
+            <div class="toolbar-panel panel-toolbar">
+                <div class="toolbar-group">
+                    <div class="input-group search-control">
+                        <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                        <input class="form-control" placeholder="Search material code or description" @bind="_valuationSearch" @bind:event="oninput" @onkeyup="OnValuationSearchKeyUp" />
+                    </div>
+                </div>
+                @if (!_loading)
+                {
+                    <span class="sync-chip">@RowCount row(s)</span>
+                }
+            </div>
+        }
+        else if (!_loading)
+        {
+            <div class="toolbar-panel panel-toolbar">
+                <span class="sync-chip">@RowCount row(s)</span>
+            </div>
+        }
+
+        @if (_loading)
+        {
+            <div class="loading-panel">
+                <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                Loading report...
+            </div>
+        }
+        else if (_error is not null)
+        {
+            <div class="alert alert-danger mb-0">@_error</div>
+        }
+        else if (RowCount == 0)
+        {
+            <div class="empty-state">No data available.</div>
+        }
+        else if (_activeTab == ReportTab.Aging)
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Age Bucket</th>
+                            <th>Velocity</th>
+                            <th class="text-end">Batches</th>
+                            <th class="text-end">Total Boxes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _agingRows)
+                        {
+                            <tr>
+                                <td><span class="status-pill @(row.AgeBucket == "90+ days" ? "danger" : row.AgeBucket == "61-90 days" ? "warning" : "success")">@row.AgeBucket</span></td>
+                                <td><ReportValueBadge Kind="velocity" Value="@row.MovementTypeName" /></td>
+                                <td class="text-end">@row.BatchCount.ToString("N0")</td>
+                                <td class="text-end fw-semibold">@row.TotalBoxes.ToString("0.###")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (_activeTab == ReportTab.Utilization)
+        {
+            <div class="panel-body report-sections">
+                <h2 class="panel-title mb-2">By Zone</h2>
+                <div class="table-responsive mb-4">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Zone</th>
+                                <th class="text-end">Locations</th>
+                                <th class="text-end">Occupied / Capacity</th>
+                                <th>Occupancy</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _utilization?.ByZone ?? [])
+                            {
+                                <tr>
+                                    <td><ReportValueBadge Kind="zone" Value="@row.ZoneCode" /> @row.ZoneName</td>
+                                    <td class="text-end">@row.LocationCount.ToString("N0")</td>
+                                    <td class="text-end">@row.OccupiedBoxes.ToString("0.###") / @row.CapacityBoxes</td>
+                                    <td style="min-width:160px">
+                                        <div class="audit-progress" aria-hidden="true"><span style="@($"width: {row.OccupancyPercent:0.##}%")"></span></div>
+                                        <small class="text-muted">@row.OccupancyPercent.ToString("0.#")%</small>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <h2 class="panel-title mb-2">By Location Type</h2>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Location Type</th>
+                                <th class="text-end">Locations</th>
+                                <th class="text-end">Occupied / Capacity</th>
+                                <th>Occupancy</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _utilization?.ByLocationType ?? [])
+                            {
+                                <tr>
+                                    <td><ReportValueBadge Kind="locationType" Value="@row.LocationTypeName" /></td>
+                                    <td class="text-end">@row.LocationCount.ToString("N0")</td>
+                                    <td class="text-end">@row.OccupiedBoxes.ToString("0.###") / @row.CapacityBoxes</td>
+                                    <td style="min-width:160px">
+                                        <div class="audit-progress" aria-hidden="true"><span style="@($"width: {row.OccupancyPercent:0.##}%")"></span></div>
+                                        <small class="text-muted">@row.OccupancyPercent.ToString("0.#")%</small>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Material</th>
+                            <th>Design Type</th>
+                            <th>Season</th>
+                            <th class="text-end">Total Boxes</th>
+                            <th class="text-end">Value (at MRP)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _valuationRows)
+                        {
+                            <tr>
+                                <td><span class="record-code">@row.MaterialNumber</span> @row.MaterialDescription</td>
+                                <td><ReportValueBadge Kind="design" Value="@row.DesignType" /></td>
+                                <td><ReportValueBadge Kind="season" Value="@row.SeasonName" /></td>
+                                <td class="text-end">@row.TotalBoxes.ToString("0.###")</td>
+                                <td class="text-end fw-semibold">@row.TotalValue.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div class="putaway-summary-grid mt-3">
+                    <div><span>Total Value (at MRP)</span><strong>@_valuationRows.Sum(r => r.TotalValue).ToString("N2")</strong></div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private enum ReportTab { Aging, Utilization, Valuation }
+
+    private ReportTab _activeTab = ReportTab.Aging;
+    private bool _loading = true;
+    private string? _error;
+    private string _valuationSearch = string.Empty;
+
+    private IReadOnlyList<InventoryAgingRowDto> _agingRows = [];
+    private WarehouseUtilizationDto? _utilization;
+    private IReadOnlyList<InventoryValuationRowDto> _valuationRows = [];
+
+    private int RowCount => _activeTab switch
+    {
+        ReportTab.Aging => _agingRows.Count,
+        ReportTab.Utilization => (_utilization?.ByZone.Count ?? 0) + (_utilization?.ByLocationType.Count ?? 0),
+        _ => _valuationRows.Count
+    };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task SwitchTab(ReportTab tab)
+    {
+        _activeTab = tab;
+        await LoadAsync();
+    }
+
+    private async Task OnValuationSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            switch (_activeTab)
+            {
+                case ReportTab.Aging:
+                    _agingRows = await Mediator.Send(new GetInventoryAgingQuery());
+                    break;
+                case ReportTab.Utilization:
+                    _utilization = await Mediator.Send(new GetWarehouseUtilizationByZoneQuery());
+                    break;
+                default:
+                    _valuationRows = await Mediator.Send(new GetInventoryValuationQuery(
+                        string.IsNullOrWhiteSpace(_valuationSearch) ? null : _valuationSearch.Trim()));
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ExportCsvAsync()
+    {
+        string csv;
+        string fileName;
+
+        switch (_activeTab)
+        {
+            case ReportTab.Aging:
+                fileName = "inventory-aging.csv";
+                csv = "Age Bucket,Velocity,Batches,Total Boxes\r\n" + string.Join("\r\n", _agingRows.Select(r =>
+                    string.Join(",", Csv(r.AgeBucket), Csv(r.MovementTypeName), r.BatchCount.ToString(), r.TotalBoxes.ToString("0.###"))));
+                break;
+            case ReportTab.Utilization:
+                fileName = "warehouse-utilization.csv";
+                var zoneLines = (_utilization?.ByZone ?? []).Select(r =>
+                    string.Join(",", "Zone", Csv(r.ZoneName), r.LocationCount.ToString(), r.OccupiedBoxes.ToString("0.###"), r.CapacityBoxes.ToString(), r.OccupancyPercent.ToString("0.#")));
+                var typeLines = (_utilization?.ByLocationType ?? []).Select(r =>
+                    string.Join(",", "LocationType", Csv(r.LocationTypeName), r.LocationCount.ToString(), r.OccupiedBoxes.ToString("0.###"), r.CapacityBoxes.ToString(), r.OccupancyPercent.ToString("0.#")));
+                csv = "Grouping,Name,Locations,Occupied,Capacity,Occupancy %\r\n" + string.Join("\r\n", zoneLines.Concat(typeLines));
+                break;
+            default:
+                fileName = "inventory-valuation.csv";
+                csv = "Material,Description,Design Type,Season,Total Boxes,Value At MRP\r\n" + string.Join("\r\n", _valuationRows.Select(r =>
+                    string.Join(",", r.MaterialNumber.ToString(), Csv(r.MaterialDescription), Csv(r.DesignType), Csv(r.SeasonName),
+                        r.TotalBoxes.ToString("0.###"), r.TotalValue.ToString("0.##"))));
+                break;
+        }
+
+        var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(csv));
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", fileName, base64, "text/csv");
+    }
+
+    private static string Csv(string value)
+    {
+        var escaped = value.Replace("\"", "\"\"");
+        return escaped.Contains(',') || escaped.Contains('"') || escaped.Contains('\n') ? $"\"{escaped}\"" : escaped;
+    }
+}

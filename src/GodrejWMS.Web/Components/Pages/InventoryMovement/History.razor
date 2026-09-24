@@ -1,0 +1,205 @@
+@page "/inventory-movement/history"
+@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Features.InventoryMovement.Dtos
+@using GodrejWMS.Application.Features.InventoryMovement.Queries
+@inject IMediator Mediator
+
+<PageTitle>Inventory Movement History - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Inventory Movement</div>
+            <h1>Movement History</h1>
+            <p class="page-kicker">Search, filter, and review completed Inventory Movements.</p>
+        </div>
+        <div class="toolbar-group">
+            <a class="btn btn-outline-secondary" href="/inventory-movement/by-location">
+                <i class="bi bi-geo-alt" aria-hidden="true"></i>
+                Move by Location
+            </a>
+            <a class="btn btn-outline-secondary" href="/inventory-movement/by-sku">
+                <i class="bi bi-upc-scan" aria-hidden="true"></i>
+                Move by SKU
+            </a>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Movement Register</h2>
+            </div>
+            <div class="toolbar-group">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => LoadPage(_pageNumber)">
+                    <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                    Refresh
+                </button>
+            </div>
+        </div>
+        <div class="toolbar-panel panel-toolbar">
+            <div class="toolbar-group">
+                <div class="input-group search-control">
+                    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                    <input class="form-control" placeholder="Movement ID or SKU" @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+                </div>
+                <input class="form-control filter-control" placeholder="Source Location" @bind="_sourceLocation" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+                <input class="form-control filter-control" placeholder="Destination Location" @bind="_destinationLocation" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+                <input class="form-control filter-control" type="date" title="From date" value="@_fromDate" @onchange="OnFromChanged" />
+                <input class="form-control filter-control" type="date" title="To date" value="@_toDate" @onchange="OnToChanged" />
+            </div>
+            @if (_page is not null)
+            {
+                <span class="sync-chip">@_page.TotalCount.ToString("N0") records</span>
+            }
+        </div>
+
+        @if (_page is null)
+        {
+            <div class="loading-panel">
+                <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                Loading history...
+            </div>
+        }
+        else if (_page.Items.Count == 0)
+        {
+            <div class="empty-state">No inventory movements recorded yet.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Movement ID</th>
+                            <th>Date/Time</th>
+                            <th>SKU</th>
+                            <th>PKM</th>
+                            <th>From</th>
+                            <th>To</th>
+                            <th class="text-end">Quantity</th>
+                            <th>User</th>
+                            <th>Reason</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _page.Items)
+                        {
+                            <tr class="record-row" style="cursor:pointer" @onclick="() => OpenDetail(item)">
+                                <td><span class="record-code">@item.MovementNumber</span></td>
+                                <td>@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
+                                <td>@item.MaterialNumber<br /><small class="text-muted">@item.MaterialDescription</small></td>
+                                <td>@item.MfgMonthLabel</td>
+                                <td><span class="record-code">@item.SourceLocationCode</span></td>
+                                <td><span class="record-code">@item.DestinationLocationCode</span></td>
+                                <td class="text-end">@item.QuantityBoxes.ToString("0.###")</td>
+                                <td>@(item.PerformedByUserName ?? "-")</td>
+                                <td>@item.ReasonName</td>
+                                <td><span class="status-pill success">@item.Status</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    @if (_page is not null && _page.Items.Count > 0)
+    {
+        <nav class="pagination-bar" aria-label="Inventory movement history pagination">
+            <ul class="pagination mb-0">
+                <li class="page-item @(_page.HasPreviousPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadPage(_pageNumber - 1)">Previous</button>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Page @_page.PageNumber of @Math.Max(1, _page.TotalPages)</span></li>
+                <li class="page-item @(_page.HasNextPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadPage(_pageNumber + 1)">Next</button>
+                </li>
+            </ul>
+        </nav>
+    }
+
+    @if (_selectedMovement is not null)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseDetail">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="movement-detail-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Movement Detail</div>
+                        <h2 class="slide-over-title" id="movement-detail-title">@_selectedMovement.MovementNumber</h2>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close" @onclick="CloseDetail">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    <div class="putaway-summary-grid">
+                        <div><span>SKU</span><strong>@_selectedMovement.MaterialNumber</strong></div>
+                        <div><span>PKM</span><strong>@_selectedMovement.MfgMonthLabel</strong></div>
+                        <div><span>Source Location</span><strong>@_selectedMovement.SourceLocationCode</strong></div>
+                        <div><span>Destination Location</span><strong>@_selectedMovement.DestinationLocationCode</strong></div>
+                        <div><span>Quantity</span><strong>@_selectedMovement.QuantityBoxes.ToString("0.###")</strong></div>
+                    </div>
+                    <p class="mt-3 mb-1"><strong>Reason:</strong> @_selectedMovement.ReasonName</p>
+                    <p class="mb-1"><strong>Performed By:</strong> @(_selectedMovement.PerformedByUserName ?? "Unknown")</p>
+                    <p class="mb-1"><strong>Date:</strong> @_selectedMovement.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</p>
+                    <p class="mb-0"><strong>Status:</strong> <span class="status-pill success">@_selectedMovement.Status</span></p>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private PaginatedList<InventoryMovementDto>? _page;
+    private int _pageNumber = 1;
+    private string _search = string.Empty;
+    private string _sourceLocation = string.Empty;
+    private string _destinationLocation = string.Empty;
+    private string _fromDate = string.Empty;
+    private string _toDate = string.Empty;
+    private InventoryMovementDto? _selectedMovement;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPage(1);
+    }
+
+    private async Task LoadPage(int page)
+    {
+        if (page < 1) return;
+
+        _pageNumber = page;
+        _page = await Mediator.Send(new GetInventoryMovementHistoryQuery(
+            Search: string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(),
+            SourceLocationCode: string.IsNullOrWhiteSpace(_sourceLocation) ? null : _sourceLocation.Trim(),
+            DestinationLocationCode: string.IsNullOrWhiteSpace(_destinationLocation) ? null : _destinationLocation.Trim(),
+            FromDate: ParseDate(_fromDate),
+            ToDate: ParseDate(_toDate),
+            PageNumber: page,
+            PageSize: 10));
+    }
+
+    private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadPage(1);
+
+    private async Task OnFromChanged(ChangeEventArgs e)
+    {
+        _fromDate = e.Value?.ToString() ?? string.Empty;
+        await LoadPage(1);
+    }
+
+    private async Task OnToChanged(ChangeEventArgs e)
+    {
+        _toDate = e.Value?.ToString() ?? string.Empty;
+        await LoadPage(1);
+    }
+
+    private void OpenDetail(InventoryMovementDto item) => _selectedMovement = item;
+
+    private void CloseDetail() => _selectedMovement = null;
+
+    private static DateOnly? ParseDate(string value) =>
+        DateOnly.TryParse(value, out var date) ? date : null;
+}

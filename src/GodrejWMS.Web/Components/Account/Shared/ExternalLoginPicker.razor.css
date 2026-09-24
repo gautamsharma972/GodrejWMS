@@ -1,0 +1,26 @@
+.external-login-empty {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 36px;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid var(--wms-border);
+    border-radius: 999px;
+    background: #f8fafc;
+    color: var(--wms-muted);
+    font-size: 0.82rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.external-login-empty i {
+    color: #64748b;
+}
+
+.external-login-form {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}

@@ -1,0 +1,118 @@
+@page "/reports/operations"
+@attribute [Authorize(Roles = "Admin,Supervisor")]
+@implements IAsyncDisposable
+@using GodrejWMS.Application.Common
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Features.Reports.Core
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+@inject GodrejWMS.Application.Common.Interfaces.IExcelService ExcelService
+
+<PageTitle>Operational Reports - Godrej WMS</PageTitle>
+
+<div class="page-shell report-page">
+    <div class="page-header">
+        <div><div class="eyebrow">Reports</div><h1>Operational Reports</h1>
+            <p class="page-kicker">Warehouse-scoped inventory and transaction reporting. Data refreshes every 30 seconds.</p></div>
+        <span class="sync-chip"><span class="live-dot"></span> Auto refresh</span>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <select class="form-select report-select" value="@_kind" @onchange="ChangeReport">
+                @foreach (var option in SupportedReports)
+                { <option value="@option.Kind">@option.Group — @option.Label</option> }
+            </select>
+            <div class="toolbar-group">
+                <button class="btn btn-outline-secondary" @onclick="ResetAsync">Reset Filters</button>
+                <button class="btn btn-outline-primary" @onclick="ExportExcelAsync" disabled="@(_loading || _page is null || _page.TotalCount == 0)"><i class="bi bi-download"></i> Export Excel</button>
+                <button class="btn btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+            </div>
+        </div>
+        <div class="toolbar-panel report-filter-grid">
+            <select class="form-select" @bind="_warehouseText"><option value="">All assigned warehouses</option>@foreach (var w in _warehouses){<option value="@w.Id">@w.Code</option>}</select>
+            <input class="form-control" placeholder="Search / reference" @bind="_search" />
+            <input class="form-control" placeholder="SKU code" @bind="_skuText" />
+            <input class="form-control" placeholder="PKM (yyyyMM)" @bind="_pkmText" />
+            <input class="form-control" placeholder="Location" @bind="_location" />
+            <input class="form-control" placeholder="Zone" @bind="_zone" />
+            <input class="form-control" placeholder="Rack" @bind="_rack" />
+            <input class="form-control" type="date" value="@_fromDateText" @onchange="e => _fromDateText = e.Value?.ToString() ?? string.Empty" />
+            <input class="form-control" type="date" value="@_toDateText" @onchange="e => _toDateText = e.Value?.ToString() ?? string.Empty" />
+            <button class="btn btn-primary" @onclick="() => LoadAsync(1)">Apply</button>
+        </div>
+
+        @if (_loading) { <div class="loading-panel"><div class="spinner-border spinner-border-sm"></div> Loading report...</div> }
+        else if (_error is not null) { <div class="alert alert-danger m-3">@_error</div> }
+        else if (_page is null || _page.Items.Count == 0) { <div class="empty-state">No data matches the selected filters.</div> }
+        else
+        {
+            <div class="table-responsive operational-report-table"><table class="table table-hover align-middle mb-0">
+                <thead><tr>
+                    @foreach (var column in Columns) { <th class="@(column.Numeric ? "text-end" : "")"><button class="sort-button" @onclick="() => SortAsync(column.Sort)">@column.Label</button></th> }
+                </tr></thead>
+                <tbody>@foreach (var row in _page.Items) { <tr>@foreach (var column in Columns) { <td class="@(column.Numeric ? "text-end" : "")">@if (BadgeColumns.Contains(column.Key)) { <ReportValueBadge Kind="@column.Key" Value="@Cell(row, column.Key)" /> } else { @Cell(row, column.Key) }</td> }</tr> }</tbody>
+            </table></div>
+            <nav class="pagination-bar history-pagination operational-pagination" aria-label="Operational report pagination">
+                <ul class="pagination mb-0">
+                    <li class="page-item @(_page.HasPreviousPage ? "" : "disabled")">
+                        <button class="page-link" disabled="@(!_page.HasPreviousPage)" @onclick="() => LoadAsync(_page.PageNumber - 1)">Previous</button>
+                    </li>
+                    <li class="page-item disabled operational-page-summary">
+                        <span class="page-link">Page @_page.PageNumber of @Math.Max(1, _page.TotalPages)<span class="page-count-separator" aria-hidden="true"></span>@_page.TotalCount row(s)</span>
+                    </li>
+                    <li class="page-item @(_page.HasNextPage ? "" : "disabled")">
+                        <button class="page-link" disabled="@(!_page.HasNextPage)" @onclick="() => LoadAsync(_page.PageNumber + 1)">Next</button>
+                    </li>
+                </ul>
+            </nav>
+        }
+    </div>
+</div>
+
+@code {
+    private sealed record ReportOption(string Group, string Label, ReportKind Kind);
+    private sealed record Column(string Key, string Label, string Sort = "reference", bool Numeric = false);
+    private static readonly HashSet<string> BadgeColumns = ["warehouse", "location", "source", "destination", "zone", "design", "pkm", "status"];
+    private static readonly ReportOption[] SupportedReports =
+    [
+        new("Inventory", "Current Stock", ReportKind.CurrentStock), new("Inventory", "SKU-Wise Stock", ReportKind.SkuStock),
+        new("Inventory", "Location-Wise Stock", ReportKind.LocationStock), new("Inventory", "PKM-Wise Stock", ReportKind.PkmStock),
+        new("Inward", "Transactions", ReportKind.InwardTransactions), new("Inward", "Inward vs Putaway", ReportKind.InwardPutaway),
+        new("Inward", "Putaway Details", ReportKind.PutawayDetails), new("Inward", "Discrepancies", ReportKind.InwardExceptions),
+        new("Outward", "Transactions", ReportKind.OutwardTransactions), new("Outward", "Picking Details", ReportKind.PickingDetails),
+        new("Outward", "Pending Picking", ReportKind.PendingPicking), new("Outward", "Shortages", ReportKind.OutwardShortages),
+        new("Movement", "Movement Register", ReportKind.MovementRegister),
+        new("Movement", "Location Movement History", ReportKind.LocationHistory), new("Movement", "SKU Movement History", ReportKind.SkuHistory),
+        new("Audit", "Inventory Transaction Ledger", ReportKind.Ledger),
+        new("Warehouse", "Rack-Wise Stock", ReportKind.RackStock), new("Warehouse", "Zone-Wise Stock", ReportKind.ZoneStock),
+        new("Warehouse", "Capacity Utilization", ReportKind.Capacity), new("Warehouse", "Empty & Available Locations", ReportKind.AvailableLocations),
+        new("Warehouse", "Rack / Level Occupancy", ReportKind.RackLevel)
+    ];
+    private ReportKind _kind = ReportKind.CurrentStock; private PaginatedList<ReportRow>? _page; private IReadOnlyList<WarehouseOption> _warehouses = [];
+    private bool _loading; private string? _error; private string _warehouseText="", _search="", _skuText="", _pkmText="", _location="", _zone="", _rack="", _fromDateText="", _toDateText="", _sort="reference"; private bool _descending;
+    private readonly CancellationTokenSource _dispose = new(); private PeriodicTimer? _timer;
+
+    protected override async Task OnInitializedAsync() { _warehouses = await Mediator.Send(new GetAccessibleWarehousesQuery()); _sort = DefaultSort; await LoadAsync(1); _timer = new(TimeSpan.FromSeconds(30)); _ = RefreshLoopAsync(); }
+    private async Task RefreshLoopAsync() { try { while (_timer is not null && await _timer.WaitForNextTickAsync(_dispose.Token)) { await InvokeAsync(async () => await LoadAsync(_page?.PageNumber ?? 1, true)); } } catch (OperationCanceledException) { } }
+    private async Task ChangeReport(ChangeEventArgs e) { if (Enum.TryParse<ReportKind>(e.Value?.ToString(), out var kind)) _kind = kind; _sort = DefaultSort; _descending = false; await LoadAsync(1); }
+    private string DefaultSort => IsTransaction ? "date" : IsStock ? "sku" : "location";
+    private bool IsStock => _kind is ReportKind.CurrentStock or ReportKind.SkuStock or ReportKind.LocationStock or ReportKind.PkmStock;
+    private bool IsTransaction => _kind is >= ReportKind.InwardTransactions and <= ReportKind.MovementRegister;
+    private ReportFilter Filter => new(int.TryParse(_warehouseText,out var w)?w:null, Null(_search), Null(_location), Null(_zone), Null(_rack), Sku:long.TryParse(_skuText,out var sku)?sku:null, Pkm:int.TryParse(_pkmText,out var pkm)?pkm:null, From:ParseDate(_fromDateText), To:ParseDate(_toDateText)?.AddDays(1), Reference:Null(_search));
+    private async Task LoadAsync(int page, bool quiet=false) { if (!quiet) _loading=true; _error=null; try { _page=await Mediator.Send(new GetOperationalReportQuery(_kind,Filter,page,50,_sort,_descending),_dispose.Token); } catch(Exception ex){_error=ex.Message;} finally{_loading=false;} }
+    private async Task SortAsync(string sort) { if (_sort==sort)_descending=!_descending; else {_sort=sort;_descending=false;} await LoadAsync(1); }
+    private async Task ResetAsync(){_warehouseText=_search=_skuText=_pkmText=_location=_zone=_rack=_fromDateText=_toDateText="";await LoadAsync(1);}
+    private IReadOnlyList<Column> Columns => _kind switch {
+        ReportKind.SkuStock => [new("warehouse","Warehouse"),new("sku","SKU","sku"),new("description","SKU Name"),new("design","Design"),new("quantity","Total Quantity","quantity",true),new("locations","Locations","quantity",true),new("pkms","PKM Variants","quantity",true)],
+        ReportKind.PkmStock => [new("warehouse","Warehouse"),new("sku","SKU","sku"),new("description","SKU Name"),new("design","Design"),new("pkm","PKM"),new("quantity","Quantity","quantity",true),new("locations","Locations","quantity",true)],
+        ReportKind.CurrentStock or ReportKind.LocationStock => [new("warehouse","Warehouse"),new("location","Location","location"),new("zone","Zone"),new("rack","Rack"),new("column","Bay",Numeric:true),new("level","Level",Numeric:true),new("sku","SKU","sku"),new("description","SKU Name"),new("design","Design"),new("pkm","PKM"),new("quantity","Quantity","quantity",true),new("pallet","Pallet Size",Numeric:true),new("date","Last Updated","date")],
+        ReportKind.RackStock or ReportKind.ZoneStock or ReportKind.Capacity or ReportKind.RackLevel => [new("warehouse","Warehouse"),new("zone","Zone"),new("rack","Rack"),new("level","Level"),new("locations","Locations",Numeric:true),new("occupiedLocations","Occupied",Numeric:true),new("quantity","Stock","quantity",true),new("capacity","Capacity",Numeric:true),new("reserved","Reserved",Numeric:true),new("available","Available",Numeric:true)],
+        ReportKind.AvailableLocations => [new("warehouse","Warehouse"),new("location","Location","location"),new("zone","Zone"),new("rack","Rack"),new("column","Bay",Numeric:true),new("level","Level",Numeric:true),new("quantity","Occupied",Numeric:true),new("reserved","Reserved",Numeric:true),new("capacity","Capacity",Numeric:true),new("available","Available",Numeric:true)],
+        _ => [new("warehouse","Warehouse"),new("reference","Reference","reference"),new("date","Date","date"),new("sku","SKU","sku"),new("description","SKU Name"),new("pkm","PKM"),new("location","Location","location"),new("source","Source"),new("destination","Destination"),new("requested","Requested",Numeric:true),new("completed","Completed",Numeric:true),new("pending","Pending",Numeric:true),new("quantity","Quantity","quantity",true),new("status","Status"),new("user","User")]
+    };
+    private static string Cell(ReportRow r,string key)=>key switch{"warehouse"=>r.Warehouse,"reference"=>r.Reference,"date"=>r.Date?.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")??"—","sku"=>r.Sku?.ToString()??"—","description"=>r.Description,"design"=>r.Design,"pkm"=>r.Pkm.HasValue?MfgMonthParser.Format(r.Pkm.Value):"—","zone"=>r.Zone,"rack"=>r.Rack,"column"=>r.Column?.ToString()??"—","level"=>r.Level?.ToString()??"—","location"=>r.Location,"source"=>r.Source,"destination"=>r.Destination,"quantity"=>r.Quantity.ToString("0.###"),"requested"=>r.Requested.ToString("0.###"),"completed"=>r.Completed.ToString("0.###"),"pending"=>r.Pending.ToString("0.###"),"capacity"=>r.Capacity.ToString("0.###"),"reserved"=>r.ReservedCapacity.ToString("0.###"),"available"=>r.Available.ToString("0.###"),"locations"=>r.Locations.ToString(),"occupiedLocations"=>r.OccupiedLocations.ToString(),"pkms"=>r.PkmVariants.ToString(),"pallet"=>r.PalletSize?.ToString()??"—","status"=>r.Status,"user"=>r.User,_=>""};
+    private async Task ExportExcelAsync(){var data=await Mediator.Send(new GetOperationalReportQuery(_kind,Filter,1,10000,_sort,_descending));var columns=Columns.Select(c=>(c.Label,(Func<ReportRow,string>)(r=>Cell(r,c.Key)))).ToList();var bytes=ExcelService.WriteOperationalReport(_kind.ToString(),columns,data.Items);await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile",$"{_kind}-{DateTime.Now:yyyyMMdd}.xlsx",Convert.ToBase64String(bytes),"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");}
+    private static string? Null(string s)=>string.IsNullOrWhiteSpace(s)?null:s.Trim(); private static DateTimeOffset? ParseDate(string s)=>DateTime.TryParse(s,out var d)?new DateTimeOffset(d):null;
+    public ValueTask DisposeAsync(){_dispose.Cancel();_timer?.Dispose();_dispose.Dispose();return ValueTask.CompletedTask;}
+}

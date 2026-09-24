@@ -1,0 +1,445 @@
+@page "/racks"
+@attribute [Authorize]
+@using GodrejWMS.Application.Features.Racks.Commands
+@using GodrejWMS.Application.Features.Racks.Dtos
+@using GodrejWMS.Application.Features.Racks.Queries
+@using GodrejWMS.Application.Features.LocationSubtypes.Dtos
+@using GodrejWMS.Application.Features.LocationSubtypes.Queries
+@using GodrejWMS.Application.Features.ZoneTypes.Dtos
+@using GodrejWMS.Application.Features.ZoneTypes.Queries
+@using GodrejWMS.Application.Features.LocationTypes.Dtos
+@using GodrejWMS.Application.Features.LocationTypes.Queries
+@using GodrejWMS.Domain.Entities
+@inject IMediator Mediator
+@inject ILogger<Index> Logger
+
+<PageTitle>Racks - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Storage Configuration</div>
+            <h1>Racks &amp; Pallet Positions</h1>
+            <p class="page-kicker">Manage rack definitions and generated location master records for warehouse storage.</p>
+        </div>
+        <AuthorizeView Roles="Admin" Context="adminContext">
+            <button class="btn btn-primary" @onclick="ShowCreateForm">
+                <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                New Rack
+            </button>
+        </AuthorizeView>
+    </div>
+
+    @if (_showForm)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseForm">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="rack-drawer-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Storage setup</div>
+                        <h2 class="slide-over-title" id="rack-drawer-title">@(_editingRackId.HasValue ? "Edit Rack" : "Create Rack")</h2>
+                        <p class="slide-over-subtitle">Define the rack grid, location classification, and pallet capacity defaults.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Close rack editor" @onclick="CloseForm">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <EditForm Model="_form" FormName="rack-form" OnValidSubmit="SaveRackAsync" class="slide-over-form">
+                    <div class="slide-over-body">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Code</label>
+                                <input class="form-control" @bind="_form.Code" @bind:event="oninput" />
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label">Name</label>
+                                <InputText class="form-control" @bind-Value="_form.Name" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Columns</label>
+                                <input type="number" class="form-control" @bind="_form.Columns" @bind:event="oninput" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Levels</label>
+                                <input type="number" class="form-control" @bind="_form.Levels" @bind:event="oninput" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Boxes/Pallet</label>
+                                <InputNumber class="form-control" @bind-Value="_form.BoxesPerPallet" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Max Pallets/Location</label>
+                                <InputNumber class="form-control" @bind-Value="_form.MaxPallets" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Location Type</label>
+                                <InputSelect class="form-select" @bind-Value="_form.LocationTypeId">
+                                    @foreach (var value in LocationTypeOptions(_form.LocationTypeId))
+                                    {
+                                        <option value="@value.Id">@value.DisplayName</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Location Subtype</label>
+                                <InputSelect class="form-select" @bind-Value="_form.LocationSubtypeId">
+                                    @foreach (var value in SubtypeOptions(_form.LocationSubtypeId))
+                                    {
+                                        <option value="@value.Id">@value.DisplayName</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Zone Type</label>
+                                <InputSelect class="form-select" @bind-Value="_form.ZoneTypeId">
+                                    @foreach (var value in ZoneOptions(_form.ZoneTypeId))
+                                    {
+                                        <option value="@value.Id">@value.DisplayName</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Starting Distance Priority</label>
+                                <input type="number" class="form-control" @bind="_form.StartingDistancePriority" @bind:event="oninput" />
+                            </div>
+                            <div class="col-12">
+                                <div class="putaway-info-bar" role="status">
+                                    <div class="info-bar-icon">
+                                        <i class="bi bi-info-circle" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="info-bar-content">
+                                        <h2>Distance Priority</h2>
+                                        <p>Per location = (Level - 1) x 10 + (Starting Distance Priority + Column - 1). E.g. @DistancePriorityPreview()</p>
+                                    </div>
+                                    <span class="status-pill info">Auto generated</span>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Shelf dimensions (L x W x H mm)</label>
+                                <div class="d-flex gap-2 flex-wrap">
+                                    <InputNumber class="form-control" @bind-Value="_form.ShelfLengthMm" />
+                                    <InputNumber class="form-control" @bind-Value="_form.ShelfWidthMm" />
+                                    <InputNumber class="form-control" @bind-Value="_form.ShelfHeightMm" />
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(_formError))
+                        {
+                            <div class="alert alert-danger mt-3 mb-0">@_formError</div>
+                        }
+                    </div>
+                    <div class="slide-over-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class='bi @(_editingRackId.HasValue ? "bi-check2" : "bi-grid-3x3-gap")' aria-hidden="true"></i>
+                            @(_editingRackId.HasValue ? "Save Rack & Pallets" : "Create Rack & Generate Locations")
+                        </button>
+                    </div>
+                </EditForm>
+            </section>
+        </div>
+    }
+
+    @if (_racks is null)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading racks...
+        </div>
+    }
+    else if (_racks.Count == 0)
+    {
+        <div class="empty-state">No racks configured yet.</div>
+    }
+    else
+    {
+        <div class="toolbar-panel">
+            <div class="toolbar-group">
+                <div class="input-group search-control">
+                    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                    <input class="form-control" placeholder="Search rack code or name" @bind="_rackSearch" @bind:event="oninput" />
+                </div>
+                <select class="form-select filter-control" @bind="_occupancyFilter">
+                    <option value="">All occupancy</option>
+                    <option value="empty">Empty</option>
+                    <option value="partial">Partial</option>
+                    <option value="full">Full</option>
+                </select>
+            </div>
+            <span class="sync-chip">@DisplayRacks.Count().ToString("N0") racks</span>
+        </div>
+
+        <div class="table-responsive panel-table">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("code"))'>Code <i class='bi @SortIcon("code")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("name"))'>Name <i class='bi @SortIcon("name")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("grid"))'>Grid <i class='bi @SortIcon("grid")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("capacity"))'>Capacity <i class='bi @SortIcon("capacity")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("positions"))'>Positions <i class='bi @SortIcon("positions")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("occupied"))'>Occupied <i class='bi @SortIcon("occupied")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("occupancy"))'>Occupancy <i class='bi @SortIcon("occupancy")'></i></button></th>
+                        <th class="table-actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in DisplayRacks)
+                    {
+                        <tr>
+                            <td><span class="record-code">@r.Code</span></td>
+                            <td>@r.Name</td>
+                            <td class="text-end">@r.Columns x @r.Levels</td>
+                            <td class="text-end">@r.TotalCapacityBoxes.ToString("N0") boxes</td>
+                            <td class="text-end fw-semibold">@r.TotalPositions</td>
+                            <td class="text-end">@r.OccupiedPositions</td>
+                            <td class="text-end"><span class="status-pill @OccupancyClass(r.OccupancyPercent)">@r.OccupancyPercent%</span></td>
+                            <td class="table-actions">
+                                <AuthorizeView Roles="Admin" Context="rowAdminContext">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" title="@($"Edit rack {r.Code}")" aria-label="@($"Edit rack {r.Code}")" @onclick="() => ShowEditFormAsync(r)">
+                                        <i class="bi bi-pencil-square" aria-hidden="true"></i>
+                                    </button>
+                                </AuthorizeView>
+                                <a class="btn btn-sm btn-outline-secondary" title="@($"Open layout for rack {r.Code}")" aria-label="@($"Open layout for rack {r.Code}")" href="@($"racks/{r.Id}/layout")">
+                                    <i class="bi bi-diagram-3" aria-hidden="true"></i>
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<RackDto>? _racks;
+    private string _rackSearch = string.Empty;
+    private string _occupancyFilter = string.Empty;
+    private string _sortBy = "code";
+    private bool _sortDescending;
+    private bool _showForm;
+    private int? _editingRackId;
+    private string? _formError;
+    private RackFormModel _form = new();
+    private IReadOnlyList<LocationSubtypeDto> _locationSubtypes = [];
+    private IReadOnlyList<ZoneTypeDto> _zoneTypes = [];
+    private IReadOnlyList<LocationTypeDto> _locationTypes = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locationSubtypes = await Mediator.Send(new GetLocationSubtypesQuery());
+        _zoneTypes = await Mediator.Send(new GetZoneTypesQuery());
+        _locationTypes = await Mediator.Send(new GetLocationTypesQuery());
+        await LoadAsync();
+    }
+
+    private IEnumerable<LocationSubtypeDto> SubtypeOptions(int? currentId = null) =>
+        _locationSubtypes
+            .Where(s => s.IsActive || s.Id == currentId)
+            .OrderBy(s => s.SortOrder)
+            .ThenBy(s => s.DisplayName);
+
+    private IEnumerable<ZoneTypeDto> ZoneOptions(int? currentId = null) =>
+        _zoneTypes
+            .Where(z => z.IsActive || z.Id == currentId)
+            .OrderBy(z => z.SortOrder)
+            .ThenBy(z => z.DisplayName);
+
+    private IEnumerable<LocationTypeDto> LocationTypeOptions(int? currentId = null) =>
+        _locationTypes
+            .Where(l => l.IsActive || l.Id == currentId)
+            .OrderBy(l => l.SortOrder)
+            .ThenBy(l => l.DisplayName);
+
+    private void ShowCreateForm()
+    {
+        _formError = null;
+        _editingRackId = null;
+        _form = new RackFormModel();
+        _showForm = true;
+    }
+
+    private async Task ShowEditFormAsync(RackDto rack)
+    {
+        _formError = null;
+        _editingRackId = rack.Id;
+
+        var layout = await Mediator.Send(new GetRackLayoutQuery(rack.Id));
+        var defaults = layout.Positions
+            .OrderBy(p => p.Level)
+            .ThenBy(p => p.Column)
+            .FirstOrDefault();
+
+        _form = new RackFormModel
+        {
+            Code = rack.Code,
+            Name = rack.Name,
+            Columns = rack.Columns,
+            Levels = rack.Levels,
+            ShelfLengthMm = rack.ShelfLengthMm,
+            ShelfWidthMm = rack.ShelfWidthMm,
+            ShelfHeightMm = rack.ShelfHeightMm,
+            LocationTypeId = defaults?.LocationTypeId ?? LocationTypeIds.Rack,
+            LocationSubtypeId = defaults?.LocationSubtypeId ?? LocationSubtypeIds.Good,
+            ZoneTypeId = defaults?.ZoneTypeId ?? ZoneTypeIds.Fast,
+            StartingDistancePriority = defaults?.DistancePriority ?? 1,
+            MaxPallets = defaults?.MaxPallets ?? 2,
+            BoxesPerPallet = defaults?.BoxesPerPallet ?? 40
+        };
+
+        _showForm = true;
+    }
+
+    private void CloseForm()
+    {
+        _showForm = false;
+        _formError = null;
+        _editingRackId = null;
+    }
+
+    private async Task LoadAsync()
+    {
+        _racks = await Mediator.Send(new GetRacksQuery());
+    }
+
+    private async Task SaveRackAsync()
+    {
+        try
+        {
+            if (_editingRackId.HasValue)
+            {
+                await Mediator.Send(new UpdateRackCommand(
+                    _editingRackId.Value,
+                    _form.Code, _form.Name, _form.Columns, _form.Levels,
+                    _form.ShelfLengthMm, _form.ShelfWidthMm, _form.ShelfHeightMm,
+                    _form.LocationTypeId, _form.LocationSubtypeId, _form.ZoneTypeId,
+                    _form.StartingDistancePriority, _form.MaxPallets, _form.BoxesPerPallet));
+            }
+            else
+            {
+                await Mediator.Send(new CreateRackCommand(
+                    _form.Code, _form.Name, _form.Columns, _form.Levels,
+                    _form.ShelfLengthMm, _form.ShelfWidthMm, _form.ShelfHeightMm,
+                    _form.LocationTypeId, _form.LocationSubtypeId, _form.ZoneTypeId,
+                    _form.StartingDistancePriority, _form.MaxPallets, _form.BoxesPerPallet));
+            }
+
+            _showForm = false;
+            _editingRackId = null;
+            _form = new RackFormModel();
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save rack");
+            _formError = ex.Message;
+        }
+    }
+
+    private IEnumerable<RackDto> DisplayRacks
+    {
+        get
+        {
+            var query = (_racks ?? Array.Empty<RackDto>()).AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_rackSearch))
+            {
+                var term = _rackSearch.Trim();
+                query = query.Where(r =>
+                    r.Code.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    (r.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+
+            query = _occupancyFilter switch
+            {
+                "empty" => query.Where(r => r.OccupancyPercent == 0),
+                "partial" => query.Where(r => r.OccupancyPercent > 0 && r.OccupancyPercent < 100),
+                "full" => query.Where(r => r.OccupancyPercent >= 100),
+                _ => query
+            };
+
+            return (_sortBy, _sortDescending) switch
+            {
+                ("name", false) => query.OrderBy(r => r.Name),
+                ("name", true) => query.OrderByDescending(r => r.Name),
+                ("grid", false) => query.OrderBy(r => r.Columns * r.Levels),
+                ("grid", true) => query.OrderByDescending(r => r.Columns * r.Levels),
+                ("capacity", false) => query.OrderBy(r => r.TotalCapacityBoxes),
+                ("capacity", true) => query.OrderByDescending(r => r.TotalCapacityBoxes),
+                ("positions", false) => query.OrderBy(r => r.TotalPositions),
+                ("positions", true) => query.OrderByDescending(r => r.TotalPositions),
+                ("occupied", false) => query.OrderBy(r => r.OccupiedPositions),
+                ("occupied", true) => query.OrderByDescending(r => r.OccupiedPositions),
+                ("occupancy", false) => query.OrderBy(r => r.OccupancyPercent),
+                ("occupancy", true) => query.OrderByDescending(r => r.OccupancyPercent),
+                (_, true) => query.OrderByDescending(r => r.Code),
+                _ => query.OrderBy(r => r.Code)
+            };
+        }
+    }
+
+    private void SortBy(string column)
+    {
+        if (_sortBy == column)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortBy = column;
+            _sortDescending = false;
+        }
+    }
+
+    private string SortIcon(string column) =>
+        _sortBy == column ? (_sortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
+
+    private string DistancePriorityPreview()
+    {
+        if (_form.Levels < 1 || _form.Columns < 1)
+        {
+            return "-";
+        }
+
+        var rackCode = string.IsNullOrWhiteSpace(_form.Code) ? "A" : _form.Code.Trim().ToUpperInvariant();
+        var levels = Math.Min(_form.Levels, 20);
+        var columns = Math.Min(_form.Columns, 50);
+
+        return string.Join(" · ", Enumerable.Range(1, levels)
+            .Select(level =>
+            {
+                var firstCode = PalletPosition.BuildLocationCode(rackCode, column: 1, level);
+                var lastCode = PalletPosition.BuildLocationCode(rackCode, column: columns, level);
+                var firstPriority = (level - 1) * 10 + _form.StartingDistancePriority;
+                var lastPriority = (level - 1) * 10 + (_form.StartingDistancePriority + columns - 1);
+                return columns == 1
+                    ? $"{firstCode}: {firstPriority}"
+                    : $"{firstCode}: {firstPriority} … {lastCode}: {lastPriority}";
+            }));
+    }
+
+    private static string OccupancyClass(decimal occupancy) =>
+        occupancy <= 0 ? "slate" : occupancy >= 100 ? "danger" : "warning";
+
+    private class RackFormModel
+    {
+        public string Code { get; set; } = string.Empty;
+        public string? Name { get; set; }
+        public int Columns { get; set; } = 5;
+        public int Levels { get; set; } = 6;
+        public decimal ShelfLengthMm { get; set; } = 2000;
+        public decimal ShelfWidthMm { get; set; } = 2500;
+        public decimal ShelfHeightMm { get; set; } = 3600;
+        public int LocationTypeId { get; set; } = LocationTypeIds.Rack;
+        public int LocationSubtypeId { get; set; } = LocationSubtypeIds.Good;
+        public int ZoneTypeId { get; set; } = ZoneTypeIds.Fast;
+        public int StartingDistancePriority { get; set; } = 1;
+        public int MaxPallets { get; set; } = 2;
+        public int BoxesPerPallet { get; set; } = 40;
+    }
+}
+
+
+

@@ -1,0 +1,645 @@
+@page "/inventory-movement/by-location"
+@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
+@using GodrejWMS.Application.Features.InventoryMovement.Commands
+@using GodrejWMS.Application.Features.InventoryMovement.Dtos
+@using GodrejWMS.Application.Features.InventoryMovement.Queries
+@using GodrejWMS.Application.Features.Locations.Queries
+@using GodrejWMS.Application.Features.Racks.Dtos
+@using GodrejWMS.Application.Features.Racks.Queries
+@inject IMediator Mediator
+@inject ILogger<MoveByLocation> Logger
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Move by Location - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Inventory Movement</div>
+            <h1>Move by Location</h1>
+            <p class="page-kicker">Relocate existing stock from a Source Location to a Destination Location.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="/inventory-movement/by-sku">
+            <i class="bi bi-upc-scan" aria-hidden="true"></i>
+            Move by SKU instead
+        </a>
+    </div>
+
+    @if (_sourceCollapsed)
+    {
+        <div class="panel">
+            <div class="panel-header accordion-toggle" role="button" tabindex="0" @onclick="() => _sourceCollapsed = false">
+                <div>
+                    <h2 class="panel-title"><i class="bi bi-check-circle-fill accordion-check" aria-hidden="true"></i> 1. Source Location</h2>
+                    <p class="panel-subtitle">@_sourcePosition?.LocationCode &middot; @_selectedStock?.MaterialNumber &middot; @_selectedStock?.MfgMonthLabel &middot; @_selectedStock?.QuantityBoxes.ToString("0.###") available</p>
+                </div>
+                <i class="bi bi-chevron-down accordion-chevron" aria-hidden="true"></i>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">1. Source Location</h2>
+                    <p class="panel-subtitle">Enter the location code to move stock out of.</p>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="input-group search-control mb-0">
+                    <span class="input-group-text"><i class="bi bi-geo-alt" aria-hidden="true"></i></span>
+                    <input class="form-control" placeholder="e.g. A-01-01" autocomplete="off"
+                           @bind="_sourceLocationCode" @bind:event="oninput" @onkeyup="OnSourceKeyUp" @onfocusout="OnSourceBlur" />
+                    <button type="button" class="btn btn-primary" disabled="@_loadingSource" @onclick="LoadSourceAsync">
+                        @(_loadingSource ? "Loading..." : "Load")
+                    </button>
+                    @if (_showSourceSuggestions && _sourceSuggestions.Count > 0)
+                    {
+                        <div class="location-suggestions">
+                            @foreach (var s in _sourceSuggestions)
+                            {
+                                <button type="button" class="location-suggestion-item" @onmousedown="() => SelectSourceSuggestion(s)" @onmousedown:preventDefault="true">
+                                    <span class="record-code">@s.LocationCode</span>
+                                    <span class="location-suggestion-meta">
+                                        @s.ZoneTypeName &middot; Rack @RackOf(s.LocationCode) &middot; @s.OccupiedBoxes.ToString("0.###")/@s.CapacityBoxes
+                                        @if (!s.IsActive)
+                                        {
+                                            <span class="status-pill danger">Inactive</span>
+                                        }
+                                    </span>
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_sourceError))
+                {
+                    <div class="alert alert-danger mt-3 mb-0">@_sourceError</div>
+                }
+            </div>
+        </div>
+
+        @if (_sourcePosition is not null)
+        {
+            <div class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">@_sourcePosition.LocationCode</h2>
+                        <p class="panel-subtitle">
+                            Zone: <span class="status-pill info">@_sourcePosition.ZoneTypeName</span>
+                            &nbsp;Rack: @RackOf(_sourcePosition.LocationCode) &nbsp;Column: @_sourcePosition.Column.ToString("00") &nbsp;Level: @_sourcePosition.Level.ToString("00")
+                        </p>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    @if (_sourcePosition.Stock.Count == 0)
+                    {
+                        <div class="empty-state">This location has no inventory to move.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>SKU Code</th>
+                                        <th>SKU Name</th>
+                                        <th>PKM</th>
+                                        <th>Subtype</th>
+                                        <th class="text-end">Quantity</th>
+                                        <th class="table-actions"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var line in _sourcePosition.Stock)
+                                    {
+                                        <tr class="@(_selectedStock == line ? "table-active" : null)">
+                                            <td><span class="record-code">@line.MaterialNumber</span></td>
+                                            <td>@line.MaterialDescription</td>
+                                            <td>@line.MfgMonthLabel</td>
+                                            <td>@line.StockSubtypeName</td>
+                                            <td class="text-end">@line.QuantityBoxes.ToString("0.###")</td>
+                                            <td class="table-actions">
+                                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => SelectStock(line)">
+                                                    Select
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+
+    @if (_selectedStock is not null)
+    {
+        @if (_quantityCollapsed)
+        {
+            <div class="panel">
+                <div class="panel-header accordion-toggle" role="button" tabindex="0" @onclick="() => _quantityCollapsed = false">
+                    <div>
+                        <h2 class="panel-title"><i class="bi bi-check-circle-fill accordion-check" aria-hidden="true"></i> 2. Move Quantity</h2>
+                        <p class="panel-subtitle">@_moveQuantity.ToString("0.###") box(es)</p>
+                    </div>
+                    <i class="bi bi-chevron-down accordion-chevron" aria-hidden="true"></i>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">2. Move Quantity</h2>
+                        <p class="panel-subtitle">@_selectedStock.MaterialNumber &middot; @_selectedStock.MfgMonthLabel &middot; Available @_selectedStock.QuantityBoxes.ToString("0.###")</p>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">Move Quantity</label>
+                            <input type="number" class="form-control" min="0" step="0.001" @bind="_moveQuantity" />
+                        </div>
+                        <div class="col-md-4">
+                            <button type="button" class="btn btn-outline-secondary" @onclick="MoveFullQuantity">
+                                Move Full Quantity
+                            </button>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_quantityError))
+                    {
+                        <div class="alert alert-danger mt-3 mb-0">@_quantityError</div>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (_destinationCollapsed)
+        {
+            <div class="panel">
+                <div class="panel-header accordion-toggle" role="button" tabindex="0" @onclick="() => _destinationCollapsed = false">
+                    <div>
+                        <h2 class="panel-title"><i class="bi bi-check-circle-fill accordion-check" aria-hidden="true"></i> 3. Destination Location</h2>
+                        <p class="panel-subtitle">@_destinationPosition?.LocationCode &middot; @_destinationPosition?.ZoneTypeName &middot; @_destinationPosition?.OccupiedBoxes.ToString("0.###") / @_destinationPosition?.CapacityBoxes</p>
+                    </div>
+                    <i class="bi bi-chevron-down accordion-chevron" aria-hidden="true"></i>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">3. Destination Location</h2>
+                        <p class="panel-subtitle">Enter the location code to move stock into.</p>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div class="input-group search-control mb-0">
+                        <span class="input-group-text"><i class="bi bi-geo-alt" aria-hidden="true"></i></span>
+                        <input class="form-control" placeholder="e.g. A-05-03" autocomplete="off"
+                               @bind="_destinationLocationCode" @bind:event="oninput" @onkeyup="OnDestinationKeyUp" @onfocusout="OnDestinationBlur" />
+                        <button type="button" class="btn btn-primary" disabled="@_loadingDestination" @onclick="LoadDestinationAsync">
+                            @(_loadingDestination ? "Loading..." : "Load")
+                        </button>
+                        @if (_showDestinationSuggestions && _destinationSuggestions.Count > 0)
+                        {
+                            <div class="location-suggestions">
+                                @foreach (var s in _destinationSuggestions)
+                                {
+                                    <button type="button" class="location-suggestion-item" @onmousedown="() => SelectDestinationSuggestion(s)" @onmousedown:preventDefault="true">
+                                        <span class="record-code">@s.LocationCode</span>
+                                        <span class="location-suggestion-meta">
+                                            @s.ZoneTypeName &middot; Rack @RackOf(s.LocationCode) &middot; @s.OccupiedBoxes.ToString("0.###")/@s.CapacityBoxes
+                                            @if (!s.IsActive)
+                                            {
+                                                <span class="status-pill danger">Inactive</span>
+                                            }
+                                        </span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_destinationError))
+                    {
+                        <div class="alert alert-danger mt-3 mb-0">@_destinationError</div>
+                    }
+                    @if (_destinationPosition is not null)
+                    {
+                        <div class="putaway-summary-grid mt-3">
+                            <div><span>Zone</span><strong>@_destinationPosition.ZoneTypeName</strong></div>
+                            <div><span>Rack</span><strong>@RackOf(_destinationPosition.LocationCode)</strong></div>
+                            <div><span>Column</span><strong>@_destinationPosition.Column.ToString("00")</strong></div>
+                            <div><span>Level</span><strong>@_destinationPosition.Level.ToString("00")</strong></div>
+                            <div><span>Current Occupancy</span><strong>@_destinationPosition.OccupiedBoxes.ToString("0.###") / @_destinationPosition.CapacityBoxes</strong></div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+
+    @if (_destinationPosition is not null)
+    {
+        @if (_reasonCollapsed)
+        {
+            <div class="panel">
+                <div class="panel-header accordion-toggle" role="button" tabindex="0" @onclick="() => _reasonCollapsed = false">
+                    <div>
+                        <h2 class="panel-title"><i class="bi bi-check-circle-fill accordion-check" aria-hidden="true"></i> 4. Reason</h2>
+                        <p class="panel-subtitle">@_reasons.FirstOrDefault(r => r.Id == _selectedReasonId)?.DisplayName</p>
+                    </div>
+                    <i class="bi bi-chevron-down accordion-chevron" aria-hidden="true"></i>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">4. Reason</h2>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <select class="form-select" style="max-width:360px" @bind="_selectedReasonId" @bind:after="OnReasonChanged">
+                        <option value="">Select reason</option>
+                        @foreach (var reason in _reasons.Where(r => r.IsActive))
+                        {
+                            <option value="@reason.Id">@reason.DisplayName</option>
+                        }
+                    </select>
+                </div>
+            </div>
+        }
+
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">Movement Summary</h2>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="putaway-summary-grid">
+                    <div><span>From</span><strong>@_sourcePosition?.LocationCode</strong></div>
+                    <div><span>To</span><strong>@_destinationPosition.LocationCode</strong></div>
+                    <div><span>SKU</span><strong>@_selectedStock?.MaterialNumber</strong></div>
+                    <div><span>PKM</span><strong>@_selectedStock?.MfgMonthLabel</strong></div>
+                    <div><span>Quantity</span><strong>@_moveQuantity.ToString("0.###")</strong></div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_confirmError))
+                {
+                    <div class="alert alert-danger mt-3">@_confirmError</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(_confirmSuccessMessage))
+                {
+                    <div class="alert alert-success mt-3">@_confirmSuccessMessage</div>
+                }
+
+                <div class="slide-over-footer px-0">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="ResetForm">Cancel</button>
+                    <button type="button" class="btn btn-primary" disabled="@(_confirming || !CanConfirm)" @onclick="ConfirmMovementAsync">
+                        @(_confirming ? "Confirming..." : "Confirm Movement")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private string _sourceLocationCode = string.Empty;
+    private PalletPositionDto? _sourcePosition;
+    private string? _sourceError;
+    private bool _loadingSource;
+    private List<PalletPositionDto> _sourceSuggestions = [];
+    private bool _showSourceSuggestions;
+    private bool _sourceCollapsed;
+
+    private PalletPositionStockDto? _selectedStock;
+    private decimal _moveQuantity;
+    private string? _quantityError;
+    private bool _quantityCollapsed;
+
+    private string _destinationLocationCode = string.Empty;
+    private PalletPositionDto? _destinationPosition;
+    private string? _destinationError;
+    private bool _loadingDestination;
+    private List<PalletPositionDto> _destinationSuggestions = [];
+    private bool _showDestinationSuggestions;
+    private bool _destinationCollapsed;
+    private bool _reasonCollapsed;
+
+    private IReadOnlyList<MovementReasonDto> _reasons = [];
+    private int? _selectedReasonId;
+
+    private bool _confirming;
+    private string? _confirmError;
+    private string? _confirmSuccessMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _reasons = await Mediator.Send(new GetMovementReasonsQuery());
+    }
+
+    private bool CanConfirm =>
+        _sourcePosition is not null && _selectedStock is not null && _destinationPosition is not null &&
+        _selectedReasonId.HasValue && _moveQuantity > 0 && string.IsNullOrWhiteSpace(_quantityError);
+
+    private async Task OnSourceKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            _showSourceSuggestions = false;
+            await LoadSourceAsync();
+            return;
+        }
+
+        if (e.Key == "Escape")
+        {
+            _showSourceSuggestions = false;
+            return;
+        }
+
+        await SearchSourceSuggestionsAsync();
+    }
+
+    private async Task OnDestinationKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            _showDestinationSuggestions = false;
+            await LoadDestinationAsync();
+            return;
+        }
+
+        if (e.Key == "Escape")
+        {
+            _showDestinationSuggestions = false;
+            return;
+        }
+
+        await SearchDestinationSuggestionsAsync();
+    }
+
+    private async Task SearchSourceSuggestionsAsync()
+    {
+        var term = _sourceLocationCode.Trim();
+        if (term.Length == 0)
+        {
+            _sourceSuggestions = [];
+            _showSourceSuggestions = false;
+            return;
+        }
+
+        var page = await Mediator.Send(new GetLocationsQuery(Search: term, PageSize: 8));
+        _sourceSuggestions = page.Items.ToList();
+        _showSourceSuggestions = _sourceSuggestions.Count > 0;
+    }
+
+    private async Task SearchDestinationSuggestionsAsync()
+    {
+        var term = _destinationLocationCode.Trim();
+        if (term.Length == 0)
+        {
+            _destinationSuggestions = [];
+            _showDestinationSuggestions = false;
+            return;
+        }
+
+        var page = await Mediator.Send(new GetLocationsQuery(Search: term, PageSize: 8));
+        _destinationSuggestions = page.Items.ToList();
+        _showDestinationSuggestions = _destinationSuggestions.Count > 0;
+    }
+
+    private async Task SelectSourceSuggestion(PalletPositionDto suggestion)
+    {
+        _sourceLocationCode = suggestion.LocationCode;
+        _showSourceSuggestions = false;
+        await LoadSourceAsync();
+    }
+
+    private async Task SelectDestinationSuggestion(PalletPositionDto suggestion)
+    {
+        _destinationLocationCode = suggestion.LocationCode;
+        _showDestinationSuggestions = false;
+        await LoadDestinationAsync();
+    }
+
+    private async Task OnSourceBlur(Microsoft.AspNetCore.Components.Web.FocusEventArgs e)
+    {
+        // Suggestion clicks use @onmousedown:preventDefault, so this only fires on a genuine
+        // focus change (clicking elsewhere, tabbing away) - the short delay just lets any
+        // in-flight suggestion search finish before the list disappears.
+        await Task.Delay(150);
+        _showSourceSuggestions = false;
+        StateHasChanged();
+    }
+
+    private async Task OnDestinationBlur(Microsoft.AspNetCore.Components.Web.FocusEventArgs e)
+    {
+        await Task.Delay(150);
+        _showDestinationSuggestions = false;
+        StateHasChanged();
+    }
+
+    private async Task LoadSourceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_sourceLocationCode))
+        {
+            return;
+        }
+
+        _loadingSource = true;
+        _sourceError = null;
+        _sourcePosition = null;
+        _selectedStock = null;
+        _destinationPosition = null;
+        _showSourceSuggestions = false;
+        _sourceCollapsed = false;
+        _quantityCollapsed = false;
+        _destinationCollapsed = false;
+        _reasonCollapsed = false;
+        try
+        {
+            _sourcePosition = await Mediator.Send(new GetPalletPositionByCodeQuery(_sourceLocationCode.Trim()));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load source location {LocationCode}", _sourceLocationCode);
+            _sourceError = ex.Message;
+        }
+        finally
+        {
+            _loadingSource = false;
+        }
+    }
+
+    private void SelectStock(PalletPositionStockDto line)
+    {
+        _selectedStock = line;
+        _moveQuantity = 0;
+        _quantityError = null;
+        _destinationPosition = null;
+        _destinationLocationCode = string.Empty;
+        _confirmError = null;
+        _confirmSuccessMessage = null;
+
+        // Picking a stock line completes step 1; any downstream step built on the previous
+        // selection is no longer valid, so it must go back to being fully expanded.
+        _sourceCollapsed = true;
+        _quantityCollapsed = false;
+        _destinationCollapsed = false;
+        _reasonCollapsed = false;
+    }
+
+    private void MoveFullQuantity()
+    {
+        if (_selectedStock is null)
+        {
+            return;
+        }
+
+        _moveQuantity = _selectedStock.QuantityBoxes;
+        ValidateQuantity();
+    }
+
+    private void ValidateQuantity()
+    {
+        _quantityError = _moveQuantity switch
+        {
+            <= 0 => "Move Quantity must be greater than 0.",
+            _ when _selectedStock is not null && _moveQuantity > _selectedStock.QuantityBoxes =>
+                $"Move Quantity must not exceed available quantity ({_selectedStock.QuantityBoxes:0.###}).",
+            _ => null
+        };
+    }
+
+    private async Task LoadDestinationAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_destinationLocationCode))
+        {
+            return;
+        }
+
+        ValidateQuantity();
+
+        _loadingDestination = true;
+        _destinationError = null;
+        _destinationPosition = null;
+        _showDestinationSuggestions = false;
+        _destinationCollapsed = false;
+        _reasonCollapsed = false;
+        try
+        {
+            var position = await Mediator.Send(new GetPalletPositionByCodeQuery(_destinationLocationCode.Trim()));
+            if (_sourcePosition is not null && position.Id == _sourcePosition.Id)
+            {
+                _destinationError = "Source and destination locations cannot be the same.";
+            }
+            else
+            {
+                _destinationPosition = position;
+
+                // A location loaded successfully means the user is done adjusting the quantity
+                // (it was just revalidated above), so step 2 collapses; step 3 stays open since
+                // it's the step that just finished loading.
+                if (string.IsNullOrWhiteSpace(_quantityError))
+                {
+                    _quantityCollapsed = true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load destination location {LocationCode}", _destinationLocationCode);
+            _destinationError = ex.Message;
+        }
+        finally
+        {
+            _loadingDestination = false;
+        }
+    }
+
+    private void OnReasonChanged()
+    {
+        // Picking a reason completes both step 3 (destination) and step 4 (reason) at once -
+        // there's nothing left to adjust about the destination once a reason is chosen. Clearing
+        // it back to "Select reason" re-opens both so the user can revisit either.
+        var complete = _selectedReasonId.HasValue;
+        _destinationCollapsed = complete;
+        _reasonCollapsed = complete;
+    }
+
+    private async Task ConfirmMovementAsync()
+    {
+        if (_sourcePosition is null || _selectedStock is null || _destinationPosition is null || !_selectedReasonId.HasValue)
+        {
+            return;
+        }
+
+        _confirming = true;
+        _confirmError = null;
+        _confirmSuccessMessage = null;
+        try
+        {
+            var line = new InventoryMovementLineInput(
+                _selectedStock.MaterialId, _selectedStock.MfgMonth, _sourcePosition.Id, _destinationPosition.Id, _moveQuantity);
+
+            var results = await Mediator.Send(new ConfirmInventoryMovementCommand([line], _selectedReasonId.Value));
+            var result = results.Single();
+
+            if (result.Success)
+            {
+                _confirmSuccessMessage = $"Moved {result.QuantityBoxes:0.###} box(es) of {result.MaterialNumber} from {result.SourceLocationCode} to {result.DestinationLocationCode} ({result.MovementNumber}).";
+                await JsRuntime.InvokeVoidAsync("godrejWms.showToast", _confirmSuccessMessage);
+                ResetForm();
+            }
+            else
+            {
+                _confirmError = result.ErrorMessage;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to confirm inventory movement");
+            _confirmError = ex.Message;
+        }
+        finally
+        {
+            _confirming = false;
+        }
+    }
+
+    private void ResetForm()
+    {
+        _sourceLocationCode = string.Empty;
+        _sourcePosition = null;
+        _selectedStock = null;
+        _moveQuantity = 0;
+        _quantityError = null;
+        _destinationLocationCode = string.Empty;
+        _destinationPosition = null;
+        _destinationError = null;
+        _selectedReasonId = null;
+        _confirmError = null;
+        _sourceSuggestions = [];
+        _showSourceSuggestions = false;
+        _destinationSuggestions = [];
+        _showDestinationSuggestions = false;
+        _sourceCollapsed = false;
+        _quantityCollapsed = false;
+        _destinationCollapsed = false;
+        _reasonCollapsed = false;
+    }
+
+    private static string RackOf(string locationCode) => locationCode.Split('-').FirstOrDefault() ?? locationCode;
+}

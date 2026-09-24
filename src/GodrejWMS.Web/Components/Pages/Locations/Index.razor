@@ -1,0 +1,551 @@
+@page "/locations"
+@attribute [Authorize]
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Features.Locations.Commands
+@using GodrejWMS.Application.Features.Locations.Dtos
+@using GodrejWMS.Application.Features.Locations.Queries
+@using GodrejWMS.Application.Features.Racks.Commands
+@using GodrejWMS.Application.Features.Racks.Dtos
+@using GodrejWMS.Application.Features.LocationSubtypes.Dtos
+@using GodrejWMS.Application.Features.LocationSubtypes.Queries
+@using GodrejWMS.Application.Features.ZoneTypes.Dtos
+@using GodrejWMS.Application.Features.ZoneTypes.Queries
+@using GodrejWMS.Application.Features.LocationTypes.Dtos
+@using GodrejWMS.Application.Features.LocationTypes.Queries
+@inject IMediator Mediator
+@inject IExcelService ExcelService
+@inject IJSRuntime JsRuntime
+@inject ILogger<Index> Logger
+
+<PageTitle>Location Master - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Warehouse Master Data</div>
+            <h1>Location Master</h1>
+            <p class="page-kicker">Review rack, pallet, floor, and yard locations with zone, subtype, distance, capacity, and occupancy controls.</p>
+        </div>
+        <AuthorizeView Roles="Admin,Supervisor" Context="headerActionsContext">
+            <div class="header-actions">
+                <button class="btn btn-outline-secondary" @onclick="DownloadSampleFormatAsync">
+                    <i class="bi bi-download" aria-hidden="true"></i>
+                    Sample Format
+                </button>
+                <button class="btn btn-outline-primary" @onclick="ExportAsync">
+                    <i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i>
+                    Export Excel
+                </button>
+                <label class="btn btn-primary mb-0" for="location-excel-upload">
+                    @if (_importing)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span>Uploading</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-upload" aria-hidden="true"></i>
+                        <span>Upload Excel</span>
+                    }
+                </label>
+                <InputFile id="location-excel-upload" OnChange="OnImportFileSelected" class="visually-hidden" />
+            </div>
+        </AuthorizeView>
+    </div>
+
+    @if (_importResult is not null)
+    {
+        <div class="alert alert-info mb-0">
+            Import complete: @_importResult.Updated updated.
+            @if (_importResult.Errors.Count > 0)
+            {
+                <ul class="mb-0">
+                    @foreach (var error in _importResult.Errors)
+                    {
+                        <li>@error</li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+
+    <div class="toolbar-panel">
+        <div class="toolbar-group">
+            <div class="input-group search-control">
+                <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                <input class="form-control" placeholder="Search location, flat label, or rack"
+                       @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+            </div>
+            <select class="form-select filter-control" value="@_locationTypeFilter" @onchange="OnLocationTypeChanged">
+                <option value="">All types</option>
+                @foreach (var locationType in LocationTypeOptions())
+                {
+                    <option value="@locationType.Id">@locationType.DisplayName</option>
+                }
+            </select>
+            <select class="form-select filter-control" value="@_locationSubtypeFilter" @onchange="OnLocationSubtypeChanged">
+                <option value="">All subtypes</option>
+                @foreach (var subtype in SubtypeOptions())
+                {
+                    <option value="@subtype.Id">@subtype.DisplayName</option>
+                }
+            </select>
+            <select class="form-select filter-control" value="@_zoneTypeFilter" @onchange="OnZoneTypeChanged">
+                <option value="">All zones</option>
+                @foreach (var zone in ZoneOptions())
+                {
+                    <option value="@zone.Id">@zone.DisplayName</option>
+                }
+            </select>
+            <select class="form-select filter-control" value="@_activeFilterText" @onchange="OnActiveChanged">
+                <option value="">All statuses</option>
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+            </select>
+        </div>
+        @if (_page is not null)
+        {
+            <span class="sync-chip">@_page.TotalCount.ToString("N0") locations</span>
+        }
+    </div>
+
+    @if (_page is null)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading locations...
+        </div>
+    }
+    else if (_page.Items.Count == 0)
+    {
+        <div class="empty-state">No locations found for the current search.</div>
+    }
+    else
+    {
+        <div class="table-responsive panel-table">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("location"))'>Location Code <i class='bi @SortIcon("location")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("rack"))'>Flat Label <i class='bi @SortIcon("rack")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("level"))'>Level <i class='bi @SortIcon("level")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("column"))'>Column <i class='bi @SortIcon("column")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("type"))'>Type <i class='bi @SortIcon("type")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("subtype"))'>Subtype <i class='bi @SortIcon("subtype")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("zone"))'>Zone <i class='bi @SortIcon("zone")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("distance"))'>Distance <i class='bi @SortIcon("distance")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("capacity"))'>Capacity <i class='bi @SortIcon("capacity")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("occupancy"))'>Occupied <i class='bi @SortIcon("occupancy")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("active"))'>Status <i class='bi @SortIcon("active")'></i></button></th>
+                        <th class="table-actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var location in _page.Items)
+                    {
+                        <tr>
+                            <td><span class="record-code">@location.LocationCode</span></td>
+                            <td>@(location.FlatLabel ?? "-")</td>
+                            <td class="text-end">@FormatLevel(location.Level)</td>
+                            <td class="text-end">@location.Column</td>
+                            <td><span class="status-pill @LocationTypeClass(location.LocationTypeCode)">@location.LocationTypeName</span></td>
+                            <td><span class="status-pill @SubtypeClass(location.LocationSubtypeCode)">@location.LocationSubtypeName</span></td>
+                            <td><span class="status-pill @ZoneClass(location.ZoneTypeCode)">@location.ZoneTypeName</span></td>
+                            <td class="text-end">@location.DistancePriority</td>
+                            <td class="text-end">@location.CapacityBoxes boxes</td>
+                            <td class="text-end">@location.OccupiedBoxes.ToString("N0") boxes</td>
+                            <td><span class="status-pill @(location.IsActive ? "success" : "inactive")">@(location.IsActive ? "Active" : "Inactive")</span></td>
+                            <td class="table-actions">
+                                <AuthorizeView Roles="Admin,Supervisor" Context="rowEditContext">
+                                    <button class="btn btn-sm btn-outline-secondary" title="@($"Edit {location.LocationCode}")" aria-label="@($"Edit {location.LocationCode}")" @onclick="() => ShowEdit(location)">
+                                        <i class="bi bi-pencil-square" aria-hidden="true"></i>
+                                    </button>
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <nav class="pagination-bar" aria-label="Location master pagination">
+            <ul class="pagination mb-0">
+                <li class="page-item @(_page.HasPreviousPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadPage(_pageNumber - 1)">Previous</button>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Page @_page.PageNumber of @Math.Max(1, _page.TotalPages)</span></li>
+                <li class="page-item @(_page.HasNextPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadPage(_pageNumber + 1)">Next</button>
+                </li>
+            </ul>
+        </nav>
+    }
+
+    @if (_showForm && _selectedLocation is not null)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseForm">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="location-drawer-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Location Master</div>
+                        <h2 class="slide-over-title" id="location-drawer-title">Edit Location @_selectedLocation.LocationCode</h2>
+                        <p class="slide-over-subtitle">Update subtype, zone, capacity, and put-away/picking availability.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Close location editor" @onclick="CloseForm">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <EditForm Model="_form" FormName="location-form" OnValidSubmit="SaveAsync" class="slide-over-form">
+                    <div class="slide-over-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Location Code</label>
+                                <input class="form-control" value="@_selectedLocation.LocationCode" readonly />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Flat Label</label>
+                                <InputText class="form-control" @bind-Value="_form.FlatLabel" placeholder="e.g. A1" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Location Type</label>
+                                <InputSelect class="form-select" @bind-Value="_form.LocationTypeId">
+                                    @foreach (var value in LocationTypeOptions(_form.LocationTypeId))
+                                    {
+                                        <option value="@value.Id">@value.DisplayName</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Location Subtype</label>
+                                <InputSelect class="form-select" @bind-Value="_form.LocationSubtypeId">
+                                    @foreach (var value in SubtypeOptions(_form.LocationSubtypeId))
+                                    {
+                                        <option value="@value.Id">@value.DisplayName</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Zone Type</label>
+                                <InputSelect class="form-select" @bind-Value="_form.ZoneTypeId">
+                                    @foreach (var value in ZoneOptions(_form.ZoneTypeId))
+                                    {
+                                        <option value="@value.Id">@value.DisplayName</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Distance Priority</label>
+                                <InputNumber class="form-control" @bind-Value="_form.DistancePriority" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Max Pallets</label>
+                                <InputNumber class="form-control" @bind-Value="_form.MaxPallets" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Boxes Per Pallet</label>
+                                <InputNumber class="form-control" @bind-Value="_form.BoxesPerPallet" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Computed Capacity</label>
+                                <input class="form-control" value="@($"{_form.MaxPallets * _form.BoxesPerPallet} boxes")" readonly />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Status</label>
+                                <div class="form-check mt-2">
+                                    <InputCheckbox class="form-check-input" @bind-Value="_form.IsActive" />
+                                    <span class="form-check-label">Active for warehouse operations</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(_formError))
+                        {
+                            <div class="alert alert-danger mt-3 mb-0">@_formError</div>
+                        }
+                    </div>
+                    <div class="slide-over-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check2" aria-hidden="true"></i>
+                            Save Location
+                        </button>
+                    </div>
+                </EditForm>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private PaginatedList<PalletPositionDto>? _page;
+    private int _pageNumber = 1;
+    private string _search = string.Empty;
+    private int? _locationTypeFilter;
+    private int? _locationSubtypeFilter;
+    private int? _zoneTypeFilter;
+    private string _activeFilterText = string.Empty;
+    private string _sortBy = "location";
+    private bool _sortDescending;
+    private bool _showForm;
+    private bool _importing;
+    private PalletPositionDto? _selectedLocation;
+    private LocationFormModel _form = new();
+    private string? _formError;
+    private ImportLocationsResult? _importResult;
+    private IReadOnlyList<LocationSubtypeDto> _locationSubtypes = [];
+    private IReadOnlyList<ZoneTypeDto> _zoneTypes = [];
+    private IReadOnlyList<LocationTypeDto> _locationTypes = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locationSubtypes = await Mediator.Send(new GetLocationSubtypesQuery());
+        _zoneTypes = await Mediator.Send(new GetZoneTypesQuery());
+        _locationTypes = await Mediator.Send(new GetLocationTypesQuery());
+        await LoadPage(1);
+    }
+
+    private IEnumerable<LocationTypeDto> LocationTypeOptions(int? currentId = null) =>
+        _locationTypes
+            .Where(l => l.IsActive || l.Id == currentId)
+            .OrderBy(l => l.SortOrder)
+            .ThenBy(l => l.DisplayName);
+
+    private IEnumerable<LocationSubtypeDto> SubtypeOptions(int? currentId = null) =>
+        _locationSubtypes
+            .Where(s => s.IsActive || s.Id == currentId)
+            .OrderBy(s => s.SortOrder)
+            .ThenBy(s => s.DisplayName);
+
+    private IEnumerable<ZoneTypeDto> ZoneOptions(int? currentId = null) =>
+        _zoneTypes
+            .Where(z => z.IsActive || z.Id == currentId)
+            .OrderBy(z => z.SortOrder)
+            .ThenBy(z => z.DisplayName);
+
+    private async Task LoadPage(int page)
+    {
+        if (page < 1)
+        {
+            return;
+        }
+
+        _pageNumber = page;
+        _page = await Mediator.Send(new GetLocationsQuery(
+            Search: _search,
+            LocationTypeId: _locationTypeFilter,
+            LocationSubtypeId: _locationSubtypeFilter,
+            ZoneTypeId: _zoneTypeFilter,
+            IsActive: bool.TryParse(_activeFilterText, out var isActive) ? isActive : null,
+            SortBy: _sortBy,
+            SortDescending: _sortDescending,
+            PageNumber: page,
+            PageSize: 50));
+    }
+
+    private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadPage(1);
+
+    private async Task OnLocationTypeChanged(ChangeEventArgs e)
+    {
+        _locationTypeFilter = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await LoadPage(1);
+    }
+
+    private async Task OnLocationSubtypeChanged(ChangeEventArgs e)
+    {
+        _locationSubtypeFilter = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await LoadPage(1);
+    }
+
+    private async Task OnZoneTypeChanged(ChangeEventArgs e)
+    {
+        _zoneTypeFilter = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await LoadPage(1);
+    }
+
+    private async Task OnActiveChanged(ChangeEventArgs e)
+    {
+        _activeFilterText = e.Value?.ToString() ?? string.Empty;
+        await LoadPage(1);
+    }
+
+    private async Task SortBy(string column)
+    {
+        if (_sortBy == column)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortBy = column;
+            _sortDescending = false;
+        }
+
+        await LoadPage(1);
+    }
+
+    private void ShowEdit(PalletPositionDto location)
+    {
+        _selectedLocation = location;
+        _formError = null;
+        _form = new LocationFormModel
+        {
+            FlatLabel = location.FlatLabel,
+            LocationTypeId = location.LocationTypeId,
+            LocationSubtypeId = location.LocationSubtypeId,
+            ZoneTypeId = location.ZoneTypeId,
+            DistancePriority = location.DistancePriority,
+            MaxPallets = location.MaxPallets,
+            BoxesPerPallet = location.BoxesPerPallet,
+            IsActive = location.IsActive
+        };
+        _showForm = true;
+    }
+
+    private void CloseForm()
+    {
+        _showForm = false;
+        _formError = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_selectedLocation is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Mediator.Send(new UpdatePalletPositionLabelCommand(
+                _selectedLocation.Id,
+                _form.FlatLabel,
+                _form.LocationTypeId,
+                _form.LocationSubtypeId,
+                _form.ZoneTypeId,
+                _form.DistancePriority,
+                _form.MaxPallets,
+                _form.BoxesPerPallet,
+                _form.IsActive));
+            _showForm = false;
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Location saved.");
+            await LoadPage(_pageNumber);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save location");
+            _formError = ex.Message;
+        }
+    }
+
+    private async Task ExportAsync()
+    {
+        var exportPage = await Mediator.Send(new GetLocationsQuery(
+            Search: _search,
+            LocationTypeId: _locationTypeFilter,
+            LocationSubtypeId: _locationSubtypeFilter,
+            ZoneTypeId: _zoneTypeFilter,
+            IsActive: bool.TryParse(_activeFilterText, out var isActive) ? isActive : null,
+            SortBy: _sortBy,
+            SortDescending: _sortDescending,
+            PageNumber: 1,
+            PageSize: Math.Max(_page?.TotalCount ?? 1, 1)));
+
+        var bytes = ExcelService.WriteLocationMaster(exportPage.Items);
+        var base64 = Convert.ToBase64String(bytes);
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "location-master.xlsx", base64,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadSampleFormatAsync()
+    {
+        var bytes = ExcelService.WriteLocationMasterTemplate();
+        var base64 = Convert.ToBase64String(bytes);
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "location-master-sample-format.xlsx", base64,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task OnImportFileSelected(InputFileChangeEventArgs e)
+    {
+        _importing = true;
+        _importResult = null;
+        try
+        {
+            await using var stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            memory.Position = 0;
+
+            _importResult = await Mediator.Send(new ImportLocationsFromExcelCommand(memory));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Location import complete: {_importResult.Updated} updated.");
+            await LoadPage(1);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to import locations");
+            _importResult = new ImportLocationsResult(0, [$"Import failed: {ex.Message}"]);
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    private string SortIcon(string column) =>
+        _sortBy == column ? (_sortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
+
+    private static string FormatLevel(int level) => level == 1 ? "Ground" : (level - 1).ToString();
+
+    private static string FormatEnum<T>(T value) where T : Enum =>
+        value.ToString().Replace("Near", "-near");
+
+    private static string LocationTypeClass(string code) =>
+        code switch
+        {
+            "Rack" => "info",
+            "Pallet" => "teal",
+            "Floor" => "warning",
+            "Yard" => "slate",
+            _ => "slate"
+        };
+
+    private static string SubtypeClass(string code) =>
+        code switch
+        {
+            "Good" => "success",
+            "Damage" => "danger",
+            "Expire" => "warning",
+            "Hold" => "violet",
+            _ => "slate"
+        };
+
+    private static string ZoneClass(string code) =>
+        code switch
+        {
+            "Fast" => "fast",
+            "Reserve" => "slate",
+            "Seasonal" => "rainy",
+            "DispatchNear" => "success",
+            _ => "slate"
+        };
+
+    private class LocationFormModel
+    {
+        public string? FlatLabel { get; set; }
+        public int LocationTypeId { get; set; } = GodrejWMS.Domain.Entities.LocationTypeIds.Rack;
+        public int LocationSubtypeId { get; set; } = GodrejWMS.Domain.Entities.LocationSubtypeIds.Good;
+        public int ZoneTypeId { get; set; } = GodrejWMS.Domain.Entities.ZoneTypeIds.Reserve;
+        public int DistancePriority { get; set; } = 100;
+        public int MaxPallets { get; set; } = 2;
+        public int BoxesPerPallet { get; set; } = 40;
+        public bool IsActive { get; set; } = true;
+    }
+}
+
+
+
+
+
+
+
+

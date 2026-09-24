@@ -1,0 +1,210 @@
+@page "/pullout/{TransactionId:int}"
+@attribute [Authorize(Roles = "Admin,Operator")]
+@using GodrejWMS.Application.Features.Pullout.Dtos
+@using GodrejWMS.Application.Features.Pullout.Queries
+@using GodrejWMS.Application.Features.Pullout.Commands
+@inject IMediator Mediator
+
+<PageTitle>Pullout Detail - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    @if (_loading)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading pullout transaction...
+        </div>
+    }
+    else if (_detail is null && !string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-danger mb-0">@_error</div>
+        <a class="btn btn-outline-secondary mt-3" href="/pullout">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i>
+            Back to Pullout
+        </a>
+    }
+    else if (_detail is not null)
+    {
+        <div class="page-header">
+            <div>
+                <div class="eyebrow">Picking Audit</div>
+                <h1>@_detail.ReferenceNumber</h1>
+                <p class="page-kicker">Created @_detail.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</p>
+            </div>
+            <div class="toolbar-group">
+                <a class="btn btn-outline-secondary" href="/pullout/history">
+                    <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                    Back
+                </a>
+            </div>
+        </div>
+
+        <div class="putaway-info-bar pullout-status-bar @(_detail.IsConfirmed ? "confirmed" : "pending")" role="status">
+            <div class="info-bar-icon">
+                <i class="bi @(_detail.IsConfirmed ? "bi-check2-circle" : "bi-clock-history")" aria-hidden="true"></i>
+            </div>
+            <div class="info-bar-content">
+                <h2>@(_detail.IsConfirmed ? "Pullout confirmed" : "Confirmation pending")</h2>
+                <p>@(_detail.IsConfirmed ? "Inventory has been updated with the confirmed pick quantities." : "This pullout is saved for later. Inventory will update only after confirmation.")</p>
+            </div>
+            <span class="status-pill @(_detail.IsConfirmed ? "success" : "warning")">@(_detail.IsConfirmed ? "Inventory updated" : "Not confirmed")</span>
+        </div>
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-danger" role="alert">@_error</div>
+        }
+        @if (!_detail.IsConfirmed)
+        {
+            <div class="toolbar-group mb-4">
+                <button class="btn btn-outline-primary" @onclick="() => SaveAsync(false)" disabled="@_saving">Refresh Picks</button>
+                <button class="btn btn-primary" @onclick="() => SaveAsync(true)" disabled="@(_saving || !_detail.Lines.Any(l => l.PickedQuantityBoxes > 0))">@(_saving ? "Saving…" : "Confirm Pullout")</button>
+            </div>
+        }
+
+        <div class="audit-metric-grid mb-4">
+            <div class="audit-summary-card accent-blue">
+                <div class="audit-summary-top">
+                    <span class="audit-summary-icon"><i class="bi bi-list-check" aria-hidden="true"></i></span>
+                    <span class="audit-summary-status">Pick lines</span>
+                </div>
+                <div class="audit-summary-value">@_detail.Lines.Count</div>
+                <div class="audit-summary-label">Request rows captured</div>
+                <div class="audit-summary-meta">Pullout line audit</div>
+            </div>
+            <div class="audit-summary-card accent-indigo">
+                <div class="audit-summary-top">
+                    <span class="audit-summary-icon"><i class="bi bi-box-arrow-up" aria-hidden="true"></i></span>
+                    <span class="audit-summary-status">Demand volume</span>
+                </div>
+                <div class="audit-summary-value">@_detail.Lines.Sum(l => l.RequestedQuantityBoxes).ToString("N0")</div>
+                <div class="audit-summary-label">Boxes requested</div>
+                <div class="audit-summary-meta">FIFO request quantity</div>
+            </div>
+            <div class="audit-summary-card accent-green">
+                <div class="audit-summary-top">
+                    <span class="audit-summary-icon"><i class="bi bi-check2-circle" aria-hidden="true"></i></span>
+                    <span class="audit-summary-status">@CompletionRate(_detail.Lines.Sum(l => l.PickedQuantityBoxes), _detail.Lines.Sum(l => l.RequestedQuantityBoxes)).ToString("0")% picked</span>
+                </div>
+                <div class="audit-summary-value">@_detail.Lines.Sum(l => l.PickedQuantityBoxes).ToString("N0")</div>
+                <div class="audit-summary-label">FIFO boxes allocated</div>
+                <div class="audit-progress" aria-hidden="true"><span style="@($"width: {CompletionRate(_detail.Lines.Sum(l => l.PickedQuantityBoxes), _detail.Lines.Sum(l => l.RequestedQuantityBoxes)):0.##}%")"></span></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">Pick Detail</h2>
+                    <p class="panel-subtitle">FIFO PKM and location splits for each pullout line.</p>
+                </div>
+                <span class="status-pill success">FIFO by PKM</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Material</th>
+                            <th class="text-end">Requested</th>
+                            <th class="text-end">@(_detail.IsConfirmed ? "Picked" : "Allocated")</th>
+                            <th>Status</th>
+                            <th>@(_detail.IsConfirmed ? "Picked From" : "Pick From")</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _detail.Lines)
+                        {
+                            <tr>
+                                <td>
+                                    <span class="record-code">@line.MaterialNumber</span>
+                                    <span>@line.MaterialDescription</span>
+                                </td>
+                                <td class="text-end">@line.RequestedQuantityBoxes.ToString("N0")</td>
+                                <td class="text-end fw-semibold">@line.PickedQuantityBoxes.ToString("N0")</td>
+                                <td>
+                                    <span class="status-pill @AllocationClass(line.Status)">@line.Status</span>
+                                    @if (!string.IsNullOrWhiteSpace(line.Remarks))
+                                    {
+                                        <span class="text-muted ms-2">@line.Remarks</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (line.Picks.Count == 0)
+                                    {
+                                        <span class="text-muted">No pick lines were generated.</span>
+                                    }
+                                    else
+                                    {
+                                        <div class="chip-list">
+                                            @foreach (var pick in line.Picks)
+                                            {
+                                                <span class="status-pill info">@pick.LocationCode [@pick.MfgMonthLabel] (-@pick.QuantityBoxes.ToString("N0"))</span>
+                                            }
+                                        </div>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int TransactionId { get; set; }
+
+    private PulloutDetailDto? _detail;
+    private bool _loading = true;
+    private string? _error;
+    private bool _saving;
+
+    private async Task SaveAsync(bool confirm)
+    {
+        if (_detail is null || _detail.IsConfirmed || _saving) return;
+        _saving = true;
+        _error = null;
+        try
+        {
+            var preview = new PulloutResultDto(_detail.ReferenceNumber, _detail.CreatedAt,
+                _detail.Lines.Select(l => new PulloutLineResultDto(l.MaterialNumber, l.MaterialDescription,
+                    l.RequestedQuantityBoxes, l.PickedQuantityBoxes, l.Status, l.Remarks, l.Picks)).ToList());
+            var lines = preview.Lines.Select(l => new SubmitPulloutLine(l.MaterialNumber, l.RequestedQuantityBoxes)).ToList();
+            await Mediator.Send(new SubmitPulloutCommand(lines, confirm ? preview : null, confirm ? null : preview.ReferenceNumber));
+            _detail = await Mediator.Send(new GetPulloutDetailQuery(TransactionId));
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally { _saving = false; }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _detail = await Mediator.Send(new GetPulloutDetailQuery(TransactionId));
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static decimal CompletionRate(decimal completed, decimal requested) =>
+        requested > 0 ? Math.Min(100, completed / requested * 100) : 0;
+
+    private static string AllocationClass(AllocationStatus status) => status switch
+    {
+        AllocationStatus.Fulfilled => "success",
+        AllocationStatus.Partial => "warning",
+        _ => "danger"
+    };
+}

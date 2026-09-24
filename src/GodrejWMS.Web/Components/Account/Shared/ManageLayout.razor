@@ -1,0 +1,23 @@
+@inherits LayoutComponentBase
+@layout GodrejWMS.Web.Components.Layout.MainLayout
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Account Security</div>
+            <h1>Manage Account</h1>
+            <p class="page-kicker">Maintain your profile, email address, and password.</p>
+        </div>
+    </div>
+
+    <div class="manage-shell">
+        <aside class="manage-sidebar">
+            <nav aria-label="Account settings">
+                <ManageNavMenu />
+            </nav>
+        </aside>
+        <section class="manage-content">
+            @Body
+        </section>
+    </div>
+</div>

@@ -1,0 +1,71 @@
+@if (string.IsNullOrWhiteSpace(Value) || Value == "—")
+{
+    <span>—</span>
+}
+else
+{
+    <span class="status-pill @CssClass">@Value</span>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Kind { get; set; } = string.Empty;
+    [Parameter] public string? Value { get; set; }
+
+    private string CssClass => Kind.ToLowerInvariant() switch
+    {
+        "status" => StatusClass(Value!),
+        "zone" => ZoneClass(Value!),
+        "design" => PaletteClass(Value!),
+        "season" => SeasonClass(Value!),
+        "velocity" => Value!.Contains("fast", StringComparison.OrdinalIgnoreCase) ? "fast" : "slow",
+        "locationtype" => LocationTypeClass(Value!),
+        "source" => "violet",
+        "destination" => "teal",
+        "location" => "info",
+        "pkm" => "neutral",
+        "warehouse" => "slate",
+        "reason" => PaletteClass(Value!),
+        _ => PaletteClass(Value!)
+    };
+
+    private static string StatusClass(string value) => value.ToLowerInvariant() switch
+    {
+        "confirmed" or "completed" or "fulfilled" or "allocated" or "active" => "success",
+        "pending" or "partial" or "reserved" or "not confirmed" => "warning",
+        "failed" or "rejected" or "short" or "inactive" => "danger",
+        _ => "slate"
+    };
+
+    private static string ZoneClass(string value) => value.ToLowerInvariant() switch
+    {
+        "fast" => "fast",
+        "dispatchnear" or "dispatch-near" => "success",
+        "seasonal" => "rainy",
+        "reserve" => "slate",
+        _ => PaletteClass(value)
+    };
+
+    private static string LocationTypeClass(string value) => value.ToLowerInvariant() switch
+    {
+        "rack" => "info",
+        "pallet" => "teal",
+        "floor" => "warning",
+        "yard" => "slate",
+        _ => PaletteClass(value)
+    };
+
+    private static string SeasonClass(string value) => value.ToLowerInvariant() switch
+    {
+        "rainy" => "rainy",
+        "summer" => "summer",
+        "winter" => "winter",
+        _ => PaletteClass(value)
+    };
+
+    private static string PaletteClass(string value)
+    {
+        string[] palette = ["info", "violet", "teal", "pink", "warning", "slate"];
+        var hash = value.Aggregate(0, (current, ch) => current + ch);
+        return palette[Math.Abs(hash) % palette.Length];
+    }
+}

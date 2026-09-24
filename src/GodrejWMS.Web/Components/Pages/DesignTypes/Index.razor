@@ -1,0 +1,272 @@
+@page "/design-types"
+@attribute [Authorize]
+@using GodrejWMS.Application.Features.DesignTypes.Commands
+@using GodrejWMS.Application.Features.DesignTypes.Dtos
+@using GodrejWMS.Application.Features.DesignTypes.Queries
+@inject IMediator Mediator
+@inject ILogger<Index> Logger
+
+<PageTitle>Design Types - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Master Data</div>
+            <h1>Design Type Master</h1>
+            <p class="page-kicker">Maintain the list of valid design type codes materials can be tagged with.</p>
+        </div>
+        <AuthorizeView Roles="Admin,Supervisor" Context="editContext">
+            <button class="btn btn-primary" @onclick="() => ShowForm(null)">
+                <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                New Design Type
+            </button>
+        </AuthorizeView>
+    </div>
+
+    @if (_showForm)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseForm">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="design-type-drawer-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">@(_editingId is null ? "New code" : "Edit code")</div>
+                        <h2 class="slide-over-title" id="design-type-drawer-title">@(_editingId is null ? "Create Design Type" : $"Edit Design Type {_form.Code}")</h2>
+                        <p class="slide-over-subtitle">Design type codes are referenced from the Material Master.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Close design type editor" @onclick="CloseForm">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <EditForm Model="_form" FormName="design-type-form" OnValidSubmit="SaveAsync" class="slide-over-form">
+                    <div class="slide-over-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Code</label>
+                                <InputText class="form-control" @bind-Value="_form.Code" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Description</label>
+                                <InputText class="form-control" @bind-Value="_form.Description" />
+                            </div>
+                            @if (_editingId is not null)
+                            {
+                                <div class="col-12">
+                                    <label class="form-label">Active</label>
+                                    <div class="form-check mt-2">
+                                        <InputCheckbox class="form-check-input" @bind-Value="_form.IsActive" />
+                                        <span class="form-check-label">Available for use on materials</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(_formError))
+                        {
+                            <div class="alert alert-danger mt-3 mb-0">@_formError</div>
+                        }
+                    </div>
+                    <div class="slide-over-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check2" aria-hidden="true"></i>
+                            Save Design Type
+                        </button>
+                    </div>
+                </EditForm>
+            </section>
+        </div>
+    }
+
+    @if (_designTypes is null)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading design types...
+        </div>
+    }
+    else if (_designTypes.Count == 0)
+    {
+        <div class="empty-state">No design types configured yet.</div>
+    }
+    else
+    {
+        <div class="toolbar-panel">
+            <div class="toolbar-group">
+                <div class="input-group search-control">
+                    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                    <input class="form-control" placeholder="Search code or description" @bind="_search" @bind:event="oninput" />
+                </div>
+                <select class="form-select filter-control" @bind="_activeFilter">
+                    <option value="">All statuses</option>
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                </select>
+            </div>
+            <span class="sync-chip">@DisplayDesignTypes.Count().ToString("N0") design types</span>
+        </div>
+
+        <div class="table-responsive panel-table">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("code"))'>Code <i class='bi @SortIcon("code")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("description"))'>Description <i class='bi @SortIcon("description")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("active"))'>Active <i class='bi @SortIcon("active")'></i></button></th>
+                        <th class="table-actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var d in DisplayDesignTypes)
+                    {
+                        <tr>
+                            <td><span class="status-pill @DesignTypeClass(d.Code)">@d.Code</span></td>
+                            <td>@d.Description</td>
+                            <td><span class="status-pill @(d.IsActive ? "success" : "inactive")">@(d.IsActive ? "Active" : "Inactive")</span></td>
+                            <td class="table-actions">
+                                <AuthorizeView Roles="Admin,Supervisor" Context="rowEditContext">
+                                    <button class="btn btn-sm btn-outline-secondary" title="@($"Edit {d.Code}")" aria-label="@($"Edit {d.Code}")" @onclick="() => ShowForm(d)">
+                                        <i class="bi bi-pencil-square" aria-hidden="true"></i>
+                                    </button>
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<DesignTypeDto>? _designTypes;
+    private string _search = string.Empty;
+    private string _activeFilter = string.Empty;
+    private string _sortBy = "code";
+    private bool _sortDescending;
+    private bool _showForm;
+    private int? _editingId;
+    private string _editCode = string.Empty;
+    private DesignTypeFormModel _form = new();
+    private string? _formError;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _designTypes = await Mediator.Send(new GetDesignTypesQuery());
+    }
+
+    private void ShowForm(DesignTypeDto? designType)
+    {
+        _formError = null;
+        if (designType is null)
+        {
+            _editingId = null;
+            _editCode = string.Empty;
+            _form = new DesignTypeFormModel();
+        }
+        else
+        {
+            _editingId = designType.Id;
+            _editCode = designType.Code;
+            _form = new DesignTypeFormModel
+            {
+                Code = designType.Code,
+                Description = designType.Description,
+                IsActive = designType.IsActive
+            };
+        }
+        _showForm = true;
+    }
+
+    private void CloseForm()
+    {
+        _showForm = false;
+        _formError = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            if (_editingId is null)
+            {
+                await Mediator.Send(new CreateDesignTypeCommand(_form.Code, _form.Description));
+            }
+            else
+            {
+                await Mediator.Send(new UpdateDesignTypeCommand(_editingId.Value, _form.Code, _form.Description, _form.IsActive));
+            }
+
+            _showForm = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save design type");
+            _formError = ex.Message;
+        }
+    }
+
+    private IEnumerable<DesignTypeDto> DisplayDesignTypes
+    {
+        get
+        {
+            var query = (_designTypes ?? Array.Empty<DesignTypeDto>()).AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_search))
+            {
+                var term = _search.Trim();
+                query = query.Where(d =>
+                    d.Code.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    (d.Description?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+
+            if (bool.TryParse(_activeFilter, out var isActive))
+            {
+                query = query.Where(d => d.IsActive == isActive);
+            }
+
+            return (_sortBy, _sortDescending) switch
+            {
+                ("description", false) => query.OrderBy(d => d.Description),
+                ("description", true) => query.OrderByDescending(d => d.Description),
+                ("active", false) => query.OrderBy(d => d.IsActive).ThenBy(d => d.Code),
+                ("active", true) => query.OrderByDescending(d => d.IsActive).ThenBy(d => d.Code),
+                (_, true) => query.OrderByDescending(d => d.Code),
+                _ => query.OrderBy(d => d.Code)
+            };
+        }
+    }
+
+    private void SortBy(string column)
+    {
+        if (_sortBy == column)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortBy = column;
+            _sortDescending = false;
+        }
+    }
+
+    private string SortIcon(string column) =>
+        _sortBy == column ? (_sortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
+
+    private static string DesignTypeClass(string value)
+    {
+        var palette = new[] { "info", "violet", "teal", "pink", "warning", "slate" };
+        var hash = value.Aggregate(0, (current, ch) => current + ch);
+        return palette[Math.Abs(hash) % palette.Length];
+    }
+
+    private class DesignTypeFormModel
+    {
+        public string Code { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+}
+

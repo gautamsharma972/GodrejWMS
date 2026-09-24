@@ -1,0 +1,156 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+
+@inject NavigationManager NavigationManager
+
+<div class="page @(sidebarCollapsed ? "sidebar-collapsed" : null)">
+    <aside class="sidebar">
+        <NavMenu />
+    </aside>
+
+    <main class="workspace @(IsPutawayExecution ? "putaway-execution-workspace" : null) @(IsReportPage ? "report-workspace" : null)">
+        <header class="top-row">
+            <div class="top-row-left">
+                <button type="button"
+                        class="sidebar-toggle"
+                        title="Toggle sidebar"
+                        data-bs-toggle="tooltip"
+                        data-bs-placement="right"
+                        aria-label="Toggle sidebar"
+                        data-tour="topbar-toggle"
+                        aria-expanded="@(!sidebarCollapsed)"
+                        @onclick="ToggleSidebar">
+                    <i class="bi bi-list" aria-hidden="true"></i>
+                </button>
+
+                <div>
+                    <div class="eyebrow">Warehouse Management System</div>
+                    <div class="top-row-title">Godrej Operations Console</div>
+                </div>
+            </div>
+
+            <div class="top-row-actions">
+                <AuthorizeView>
+                    <Authorized>
+                        <button type="button"
+                                class="tour-launch"
+                                data-tour="topbar-tour"
+                                data-tour-start
+                                title="Take a tour"
+                                aria-label="Take a tour">
+                            <i class="bi bi-compass" aria-hidden="true"></i>
+                            <span class="tour-launch-text">Take a tour</span>
+                        </button>
+
+                        <span class="live-chip" data-tour="topbar-live" title="Realtime sync active" data-bs-toggle="tooltip" data-bs-placement="bottom">
+                            <span class="live-dot"></span>
+                            Live
+                        </span>
+
+                        <div class="dropdown account-menu">
+                            <button type="button"
+                                    class="account-avatar"
+                                    data-tour="topbar-account"
+                                    title="Account menu"
+                                    data-bs-toggle="dropdown"
+                                    data-bs-auto-close="outside"
+                                    aria-expanded="false"
+                                    aria-label="Account menu">
+                                <i class="bi bi-person" aria-hidden="true"></i>
+                            </button>
+
+                            <div class="dropdown-menu dropdown-menu-end account-dropdown">
+                                <div class="account-dropdown-header">
+                                    <span class="account-avatar account-avatar-sm">
+                                        <i class="bi bi-person" aria-hidden="true"></i>
+                                    </span>
+                                    <div class="account-details">
+                                        <span class="account-label">Signed in as</span>
+                                        <span class="account-name">@context.User.Identity?.Name</span>
+                                    </div>
+                                </div>
+                                <div class="dropdown-divider"></div>
+                                <a class="dropdown-item" href="Account/Manage">
+                                    <i class="bi bi-person-gear" aria-hidden="true"></i>
+                                    Manage account
+                                </a>
+                                <form action="Account/Logout" method="post">
+                                    <AntiforgeryToken />
+                                    <input type="hidden" name="ReturnUrl" value="@currentUrl" />
+                                    <button type="submit" class="dropdown-item">
+                                        <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+                                        Logout
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </Authorized>
+                    <NotAuthorized>
+                        <a class="account-avatar"
+                           href="Account/Login"
+                           title="Login"
+                           data-bs-toggle="tooltip"
+                           data-bs-placement="bottom">
+                            <i class="bi bi-shield-lock" aria-hidden="true"></i>
+                        </a>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </header>
+
+        <article class="content">
+            @Body
+        </article>
+
+        <footer class="app-footer">
+            <span>&copy; 2025 Logivue. All rights reserved.</span>
+        </footer>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">x</span>
+</div>
+
+@code {
+    private bool sidebarCollapsed;
+    private string? currentUrl;
+    private bool IsReportPage => (currentUrl ?? string.Empty).StartsWith("reports/", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsPutawayExecution
+    {
+        get
+        {
+            var path = currentUrl?.Split('?', '#')[0].Trim('/') ?? string.Empty;
+            var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return segments.Length == 3
+                && segments[0].Equals("inward", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(segments[1], out _)
+                && segments[2].Equals("putaway", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private void ToggleSidebar()
+    {
+        sidebarCollapsed = !sidebarCollapsed;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(e.Location);
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
+    }
+}

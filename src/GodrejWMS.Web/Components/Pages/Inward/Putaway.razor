@@ -1,0 +1,295 @@
+@page "/inward/{TransactionId:int}/putaway"
+@attribute [Authorize(Roles = "Admin,Operator,Supervisor")]
+@using GodrejWMS.Application.Features.Inward.Commands
+@using GodrejWMS.Application.Features.Inward.Dtos
+@using GodrejWMS.Application.Features.Inward.Queries
+@using GodrejWMS.Application.Features.Racks.Dtos
+@using GodrejWMS.Application.Features.Racks.Queries
+@inject IMediator Mediator
+@inject ILogger<Putaway> Logger
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Putaway - Godrej WMS</PageTitle>
+
+<div class="page-shell putaway-execute-shell">
+    @if (_loading)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading putaway...
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-danger mb-0">@_error</div>
+        <a class="btn btn-outline-secondary mt-3" href="/inward">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i>
+            Back to Inward
+        </a>
+    }
+    else if (_detail is not null)
+    {
+        <div class="page-header">
+            <div>
+                <div class="eyebrow">Putaway Execution</div>
+                <h1>@_detail.ReferenceNumber</h1>
+                <p class="page-kicker">Confirm one recommended location at a time.</p>
+            </div>
+            <a class="btn btn-outline-secondary" href="@($"/inward/{_detail.Id}")">
+                <i class="bi bi-list-check" aria-hidden="true"></i>
+                Full Detail
+            </a>
+        </div>
+
+        <div class="putaway-execute-progress">
+            <div class="putaway-execute-progress-bar">
+                <div class="putaway-execute-progress-fill" style="width:@ProgressPercent.ToString("0")%"></div>
+            </div>
+            <span>@ConfirmedCount of @TotalCount location(s) confirmed &middot; @ConfirmedBoxes.ToString("0.###") of @TotalBoxes.ToString("0.###") boxes</span>
+        </div>
+
+        @if (CurrentStep is null)
+        {
+            <div class="putaway-execute-card putaway-execute-complete">
+                <i class="bi bi-check-circle" aria-hidden="true"></i>
+                <h2>All locations confirmed</h2>
+                <p>Every recommended put-away for this GRN has been confirmed.</p>
+                <a class="btn btn-primary" href="@($"/inward/{_detail.Id}")">
+                    <i class="bi bi-list-check" aria-hidden="true"></i>
+                    View Full Detail
+                </a>
+            </div>
+        }
+        else
+        {
+            var step = CurrentStep;
+
+            <div class="putaway-execute-card">
+                @if (!string.IsNullOrWhiteSpace(_confirmError))
+                {
+                    <div class="alert alert-danger">@_confirmError</div>
+                }
+
+                <div class="putaway-execute-meta">
+                    <div>
+                        <span class="eyebrow">SKU</span>
+                        <strong>@step.Line.MaterialNumber</strong>
+                        <span>@step.Line.MaterialDescription</span>
+                    </div>
+                    <div>
+                        <span class="eyebrow">Design Code</span>
+                        <strong>@step.Line.DesignType</strong>
+                    </div>
+                    <div>
+                        <span class="eyebrow">PKM</span>
+                        <strong>@step.Line.MfgMonthLabel</strong>
+                    </div>
+                </div>
+
+                <div class="putaway-execute-location">
+                    <span class="eyebrow">Recommended Location</span>
+                    <div class="putaway-execute-location-code">@step.Putaway.LocationCode</div>
+                    <div class="putaway-execute-rcl">
+                        <div><span>Rack</span><strong>@RackOf(step.Putaway.LocationCode)</strong></div>
+                        <div><span>Column</span><strong>@(_currentPosition?.Column.ToString("00") ?? "-")</strong></div>
+                        <div><span>Level</span><strong>@(_currentPosition?.Level.ToString("00") ?? "-")</strong></div>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(step.Putaway.Reason))
+                    {
+                        <p class="putaway-execute-reason">@step.Putaway.Reason</p>
+                    }
+                </div>
+
+                <div class="putaway-execute-grid">
+                    <div>
+                        <span>Recommended Qty</span>
+                        <strong>@step.Putaway.QuantityBoxes.ToString("0.###")</strong>
+                    </div>
+                    <div>
+                        <span>Current Qty</span>
+                        <strong>@(_currentPosition?.OccupiedBoxes.ToString("0.###") ?? "-")</strong>
+                    </div>
+                    <div>
+                        <span>Available</span>
+                        <strong>@(_currentPosition?.FreeBoxes.ToString("0.###") ?? "-")</strong>
+                    </div>
+                </div>
+
+                <div class="putaway-execute-actions">
+                    <button type="button" class="btn btn-primary btn-putaway-confirm" disabled="@_confirming" @onclick="ConfirmCurrentAsync">
+                        @if (_confirming)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            <span>Confirming...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                            <span>Confirm This Location</span>
+                        }
+                    </button>
+                    <a class="btn btn-outline-secondary" href="@($"/inward/{_detail.Id}")">
+                        Re-route instead
+                    </a>
+                </div>
+            </div>
+
+            @if (_rackLayout is not null)
+            {
+                <div class="putaway-execute-card putaway-execute-3d">
+                    <span class="eyebrow">Rack @_rackLayout.RackCode &mdash; recommended slot highlighted</span>
+                    <div class="rack-viewport">
+                        <div class="rack-frame" style="@($"--rack-columns:{_rackLayout.Columns};")">
+                            @for (var level = _rackLayout.Levels; level >= 1; level--)
+                            {
+                                <div class="rack-level-3d">
+                                    <div class="rack-level-label">Level @level</div>
+                                    <div class="rack-bay-row">
+                                        @foreach (var pos in _rackLayout.Positions.Where(p => p.Level == level).OrderBy(p => p.Column))
+                                        {
+                                            <div class="pallet-cell-3d @CellStateClass(pos) @(_currentPosition is not null && pos.Id == _currentPosition.Id ? "recommended" : "") @(!pos.IsActive ? "inactive" : "")"
+                                                 title="@($"{pos.LocationCode} - {pos.OccupiedBoxes:0.###}/{pos.CapacityBoxes} boxes")">
+                                                @if (_currentPosition is not null && pos.Id == _currentPosition.Id)
+                                                {
+                                                    <span class="rack-cell-pin"><i class="bi bi-geo-alt-fill" aria-hidden="true"></i></span>
+                                                }
+                                                <span class="rack-cell-top"></span>
+                                                <span class="rack-cell-face">
+                                                    <span class="rack-cell-code">@pos.LocationCode</span>
+                                                    <span class="rack-cell-meter">
+                                                        <span style="@($"width:{OccupancyPercent(pos):0.##}%;")"></span>
+                                                    </span>
+                                                    <span class="rack-cell-meta">@($"{pos.OccupiedBoxes:0.###}/{pos.CapacityBoxes}")</span>
+                                                </span>
+                                                <span class="rack-cell-side"></span>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="legend-row">
+                        <span><span class="legend-swatch cell-empty"></span> Empty</span>
+                        <span><span class="legend-swatch cell-partial"></span> Partially filled</span>
+                        <span><span class="legend-swatch cell-full"></span> Full</span>
+                        <span><span class="legend-swatch cell-recommended"></span> Recommended</span>
+                    </div>
+                </div>
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public int TransactionId { get; set; }
+
+    private InwardDetailDto? _detail;
+    private PalletPositionDto? _currentPosition;
+    private RackLayoutDto? _rackLayout;
+    private bool _loading = true;
+    private bool _confirming;
+    private string? _error;
+    private string? _confirmError;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadDetailAsync();
+    }
+
+    private async Task LoadDetailAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _detail = await Mediator.Send(new GetInwardDetailQuery(TransactionId));
+            await LoadCurrentPositionAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load inward transaction {TransactionId} for putaway execution", TransactionId);
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadCurrentPositionAsync()
+    {
+        _currentPosition = null;
+        _rackLayout = null;
+        var step = CurrentStep;
+        if (step is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _currentPosition = await Mediator.Send(new GetPalletPositionByCodeQuery(step.Putaway.LocationCode));
+            _rackLayout = await Mediator.Send(new GetRackLayoutQuery(_currentPosition.RackId));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load live location/rack details for {LocationCode}", step.Putaway.LocationCode);
+        }
+    }
+
+    private static string CellStateClass(PalletPositionDto position) =>
+        position.IsFull ? "cell-full" : position.OccupiedBoxes > 0 ? "cell-partial" : "cell-empty";
+
+    private static double OccupancyPercent(PalletPositionDto position) =>
+        position.CapacityBoxes <= 0 ? 0 : Math.Min(100, (double)(position.OccupiedBoxes / position.CapacityBoxes) * 100);
+
+    private async Task ConfirmCurrentAsync()
+    {
+        var step = CurrentStep;
+        if (step is null)
+        {
+            return;
+        }
+
+        _confirming = true;
+        _confirmError = null;
+        try
+        {
+            await Mediator.Send(new ConfirmSingleInwardPutawayCommand(step.Putaway.Id));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Confirmed {step.Putaway.QuantityBoxes:0.###} box(es) at {step.Putaway.LocationCode}.");
+            await LoadDetailAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to confirm putaway {PutawayId}", step.Putaway.Id);
+            _confirmError = ex.Message;
+            await LoadCurrentPositionAsync();
+        }
+        finally
+        {
+            _confirming = false;
+        }
+    }
+
+    private IReadOnlyList<PutawayStep> PendingSteps =>
+        _detail?.Lines
+            .SelectMany(l => l.Putaways.Where(p => !p.IsConfirmed).Select(p => new PutawayStep(l, p)))
+            .ToList() ?? [];
+
+    private PutawayStep? CurrentStep => PendingSteps.FirstOrDefault();
+
+    private int TotalCount => _detail?.Lines.SelectMany(l => l.Putaways).Count() ?? 0;
+
+    private int ConfirmedCount => _detail?.Lines.SelectMany(l => l.Putaways).Count(p => p.IsConfirmed) ?? 0;
+
+    private decimal TotalBoxes => _detail?.Lines.SelectMany(l => l.Putaways).Sum(p => p.QuantityBoxes) ?? 0;
+
+    private decimal ConfirmedBoxes => _detail?.Lines.SelectMany(l => l.Putaways).Where(p => p.IsConfirmed).Sum(p => p.QuantityBoxes) ?? 0;
+
+    private double ProgressPercent => TotalCount == 0 ? 100 : (double)ConfirmedCount / TotalCount * 100;
+
+    private static string RackOf(string locationCode) => locationCode.Split('-').FirstOrDefault() ?? locationCode;
+
+    private sealed record PutawayStep(InwardDetailLineDto Line, InwardPutawayDto Putaway);
+}

@@ -1,0 +1,545 @@
+@page "/pullout"
+@attribute [Authorize(Roles = "Admin,Operator")]
+@implements IAsyncDisposable
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Features.Materials.Dtos
+@using GodrejWMS.Application.Features.Materials.Queries
+@using GodrejWMS.Application.Features.Pullout.Commands
+@using GodrejWMS.Application.Features.Pullout.Dtos
+@using GodrejWMS.Application.Features.StockMaster.Dtos
+@using GodrejWMS.Domain.Enums
+@inject IMediator Mediator
+@inject IExcelService ExcelService
+@inject IJSRuntime JsRuntime
+@inject ILogger<Index> Logger
+
+<PageTitle>Picking - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Picking Operations</div>
+            <h1>Picking Request</h1>
+            <p class="page-kicker">Request material quantities and generate FIFO picks from the oldest PKM first.</p>
+        </div>
+        <div class="header-actions">
+            <button type="button" class="tour-launch page-tour" data-tour-start="pullout" title="Take a tour of this page">
+                <i class="bi bi-compass" aria-hidden="true"></i> Page tour
+            </button>
+            <span class="sync-chip"><span class="live-dot"></span> FIFO by PKM</span>
+        </div>
+    </div>
+
+    <div class="transaction-grid">
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">Manual Lines</h2>
+                    <p class="panel-subtitle">Enter the material and required box quantity.</p>
+                </div>
+            </div>
+            <div class="panel-body line-editor-body">
+                <div class="table-responsive line-editor-table" data-tour="pullout-lines">
+                    <table class="table line-table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Material Code</th>
+                                <th>Qty (boxes)</th>
+                                <th class="table-actions"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < _lines.Count; i++)
+                            {
+                                var index = i;
+                                <tr>
+                                    <td>
+                                        <div class="material-combobox">
+                                            <input class="form-control"
+                                                   autocomplete="off"
+                                                   placeholder="Search material code or description"
+                                                   @bind-value="_lines[index].MaterialCodeText"
+                                                   @bind-value:event="oninput"
+                                                   @onfocus="() => _activeMaterialLineIndex = index" />
+                                            @if (_activeMaterialLineIndex == index)
+                                            {
+                                                var matches = MaterialMatches(_lines[index].MaterialCodeText).ToList();
+                                                if (matches.Count > 0)
+                                                {
+                                                    <div class="material-menu">
+                                                        @foreach (var material in matches)
+                                                        {
+                                                            <button type="button" class="material-option" @onclick="() => SelectMaterial(index, material)">
+                                                                <span class="record-code">@material.MaterialNumber</span>
+                                                                <span>@material.Description</span>
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                }
+                                            }
+                                        </div>
+                                    </td>
+                                    <td><input class="form-control" type="number" step="0.001" @bind="_lines[index].QuantityBoxes" /></td>
+                                    <td class="table-actions">
+                                        <button class="btn btn-sm btn-outline-danger" title="Remove line" aria-label="Remove line" @onclick="() => _lines.RemoveAt(index)">
+                                            <i class="bi bi-x-lg" aria-hidden="true"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+
+                <div class="toolbar-group line-editor-actions" data-tour="pullout-actions">
+                    <button class="btn btn-outline-secondary" @onclick="AddLine">
+                        <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                        Add Line
+                    </button>
+                    <button class="btn btn-primary" @onclick="SubmitAsync" disabled="@_submitting">
+                        <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                        Generate Pick Result
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">Bulk Upload</h2>
+                    <p class="panel-subtitle">Material Code, Total Stock in CFB.</p>
+                </div>
+            </div>
+            <div class="panel-body upload-panel" data-tour="pullout-upload">
+                <InputFile id="pullout-excel-upload" OnChange="OnImportFileSelected" class="visually-hidden" />
+                <div class="bulk-upload-actions">
+                    <label class="btn btn-outline-primary" for="pullout-excel-upload">
+                        <i class="bi bi-upload" aria-hidden="true"></i>
+                        Upload Excel
+                    </label>
+                    <button type="button" class="btn btn-outline-secondary" @onclick="DownloadSampleFormatAsync">
+                        <i class="bi bi-download" aria-hidden="true"></i>
+                        Sample Format
+                    </button>
+                </div>
+                <span class="text-muted small">Accepted columns: Material Code, Total Stock in CFB. Maximum file size: 10 MB.</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="putaway-info-bar" role="status" data-tour="pullout-logic">
+        <div class="info-bar-icon">
+            <i class="bi bi-diagram-3" aria-hidden="true"></i>
+        </div>
+        <div class="info-bar-content">
+            <h2>Picking Logic</h2>
+            <p>Only good stock in active good locations is pickable; the system drains the oldest PKM first, then nearer/easier locations.</p>
+        </div>
+        <span class="status-pill success">FIFO by PKM</span>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-danger mb-0">@_error</div>
+    }
+
+    @if (_result is not null)
+    {
+        <div class="result-ready-bar">
+            <div class="info-bar-icon">
+                <i class="bi bi-clipboard-check" aria-hidden="true"></i>
+            </div>
+            <div class="info-bar-content">
+                <h2>Pick result generated</h2>
+                <p>Reference @_result.ReferenceNumber — @(_confirmed ? "Confirmed. Inventory updated." : "Awaiting confirmation. Inventory has not been updated.")</p>
+            </div>
+            <button type="button" class="btn btn-primary" @onclick="OpenResultModal">
+                <i class="bi bi-eye" aria-hidden="true"></i>
+                View Pick Result
+            </button>
+        </div>
+    }
+
+    @if (_result is not null && _isResultModalOpen)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseResultModal">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="pick-result-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Pick Allocation Audit</div>
+                        <h2 id="pick-result-title" class="slide-over-title">Pick Result</h2>
+                        <p class="slide-over-subtitle">Reference @_result.ReferenceNumber</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close pick result" @onclick="CloseResultModal">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+
+                <div class="slide-over-body">
+                    <div class="alert @(_confirmed ? "alert-success" : "alert-info")" role="status">
+                        @(_confirmed ? "Pullout confirmed. Inventory updated." : "Saved in Pullout History for later. Review the proposed picks, then click Confirm Pullout to update inventory.")
+                    </div>
+                    @if (!string.IsNullOrEmpty(_error))
+                    {
+                        <div class="alert alert-danger" role="alert">@_error</div>
+                    }
+                    <div class="toolbar-panel panel-toolbar pick-result-toolbar">
+                        <div class="toolbar-group">
+                            <select class="form-select filter-control" @bind="_statusFilter">
+                                <option value="">All statuses</option>
+                                @foreach (var status in Enum.GetValues<AllocationStatus>())
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </select>
+                        </div>
+                        <span class="count-pill">@DisplayResultLines.Count() line(s)</span>
+                    </div>
+
+                    <div class="pick-result-list">
+                        @foreach (var line in DisplayResultLines)
+                        {
+                            <article class="pick-result-item">
+                                <div class="pick-result-main">
+                                    <div>
+                                        <span class="record-code">@line.MaterialNumber</span>
+                                        <h3>@line.MaterialDescription</h3>
+                                    </div>
+                                    <span class="status-pill @AllocationClass(line.Status)">@line.Status</span>
+                                </div>
+
+                                <div class="pick-result-metrics">
+                                    <div>
+                                        <span>Requested</span>
+                                        <strong>@line.RequestedQuantityBoxes</strong>
+                                    </div>
+                                    <div>
+                                        <span>@(_confirmed ? "Picked" : "Allocated")</span>
+                                        <strong>@line.PickedQuantityBoxes</strong>
+                                    </div>
+                                    <div>
+                                        <span>Short</span>
+                                        <strong>@Math.Max(0, line.RequestedQuantityBoxes - line.PickedQuantityBoxes)</strong>
+                                    </div>
+                                </div>
+
+                                @if (!string.IsNullOrWhiteSpace(line.Remarks))
+                                {
+                                    <div class="pick-result-note">
+                                        <i class="bi bi-info-circle" aria-hidden="true"></i>
+                                        <span>@line.Remarks</span>
+                                    </div>
+                                }
+
+                                <div class="pick-allocations">
+                                    <div class="pick-allocations-title">@(_confirmed ? "Picked from" : "Pick from")</div>
+                                    @if (line.Picks.Any())
+                                    {
+                                        <div class="pick-allocation-grid">
+                                            @foreach (var pick in line.Picks)
+                                            {
+                                                <div class="pick-allocation-card">
+                                                    <span class="location-chip">@pick.LocationCode</span>
+                                                    <span class="pkm-chip">@pick.MfgMonthLabel</span>
+                                                    <strong>@pick.QuantityBoxes box(es)</strong>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="empty-inline">No pickable stock allocated.</div>
+                                    }
+                                </div>
+                            </article>
+                        }
+                    </div>
+                </div>
+
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseResultModal">Close</button>
+                    @if (!_confirmed)
+                    {
+                        <a class="btn btn-outline-secondary" href="/pullout/history">Saved Pullouts</a>
+                        <button type="button" class="btn btn-primary" @onclick="ConfirmAsync" disabled="@(_submitting || !_result.Lines.Any(l => l.PickedQuantityBoxes > 0))">
+                            @(_submitting ? "Confirming…" : "Confirm Pullout")
+                        </button>
+                    }
+                    <button type="button" class="btn btn-primary" @onclick="DownloadAsync">
+                        <i class="bi bi-download" aria-hidden="true"></i>
+                        Download Pick List
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+</div>
+
+@code {
+    private List<LineModel> _lines = new() { new LineModel() };
+    private IReadOnlyList<MaterialDto> _materials = Array.Empty<MaterialDto>();
+    private int? _activeMaterialLineIndex;
+    private bool _submitting;
+    private bool _confirmed;
+    private string? _error;
+    private PulloutResultDto? _result;
+    private string _statusFilter = string.Empty;
+    private bool _isResultModalOpen;
+    private DotNetObjectReference<Index>? _outsideClickReference;
+    private string? _outsideClickHandlerId;
+    private string _sortBy = "material";
+    private bool _sortDescending;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMaterialsAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        _outsideClickReference = DotNetObjectReference.Create(this);
+        _outsideClickHandlerId = await JsRuntime.InvokeAsync<string>(
+            "godrejWms.registerOutsideClick",
+            ".material-combobox",
+            _outsideClickReference,
+            nameof(CloseMaterialDropdown));
+    }
+
+    private void AddLine() => _lines.Add(new LineModel());
+
+    private void OpenResultModal() => _isResultModalOpen = true;
+
+    private void CloseResultModal() => _isResultModalOpen = false;
+
+    private async Task SubmitAsync()
+    {
+        if (_submitting) return;
+        _confirmed = false;
+        _error = null;
+        _result = null;
+        var validLines = _lines.Where(l => l.MaterialCode > 0 && l.QuantityBoxes > 0).ToList();
+
+        if (validLines.Count == 0)
+        {
+            _error = "Add at least one valid line.";
+            return;
+        }
+
+        _submitting = true;
+        try
+        {
+            var command = new SubmitPulloutCommand(
+                validLines.Select(l => new SubmitPulloutLine(l.MaterialCode, l.QuantityBoxes)).ToList());
+
+            _result = await Mediator.Send(command);
+            _isResultModalOpen = true;
+            _lines = new List<LineModel> { new() };
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Pullout submission failed");
+            _error = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private async Task OnImportFileSelected(InputFileChangeEventArgs e)
+    {
+        if (_submitting) return;
+        _confirmed = false;
+        _error = null;
+        _result = null;
+        _submitting = true;
+        try
+        {
+            await using var stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            memory.Position = 0;
+
+            _result = await Mediator.Send(new ImportPulloutFromExcelCommand(memory));
+            _isResultModalOpen = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Pullout import failed");
+            _error = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_result is null || _confirmed || _submitting) return;
+        _submitting = true;
+        _error = null;
+        try
+        {
+            var lines = _result.Lines.Select(l => new SubmitPulloutLine(l.MaterialNumber, l.RequestedQuantityBoxes)).ToList();
+            _result = await Mediator.Send(new SubmitPulloutCommand(lines, _result));
+            _confirmed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Pullout confirmation failed");
+            _error = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private async Task DownloadSampleFormatAsync()
+    {
+        var bytes = ExcelService.WritePulloutUploadTemplate();
+        var base64 = Convert.ToBase64String(bytes);
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "pullout-upload-sample-format.xlsx", base64,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadAsync()
+    {
+        if (_result is null) return;
+
+        var rows = _result.Lines
+            .SelectMany(l => l.Picks.Select(p => new StockMasterRowDto(
+                l.MaterialNumber, l.MaterialDescription, string.Empty, p.QuantityBoxes, p.MfgMonthLabel, p.LocationCode)))
+            .ToList();
+
+        var bytes = ExcelService.WritePulloutDownload(rows);
+        var base64 = Convert.ToBase64String(bytes);
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"pullout-{_result.ReferenceNumber}.xlsx", base64,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private IEnumerable<PulloutLineResultDto> DisplayResultLines
+    {
+        get
+        {
+            var query = (_result?.Lines ?? Array.Empty<PulloutLineResultDto>()).AsEnumerable();
+
+            if (Enum.TryParse<AllocationStatus>(_statusFilter, out var status))
+            {
+                query = query.Where(l => l.Status == status);
+            }
+
+            return (_sortBy, _sortDescending) switch
+            {
+                ("requested", false) => query.OrderBy(l => l.RequestedQuantityBoxes),
+                ("requested", true) => query.OrderByDescending(l => l.RequestedQuantityBoxes),
+                ("picked", false) => query.OrderBy(l => l.PickedQuantityBoxes),
+                ("picked", true) => query.OrderByDescending(l => l.PickedQuantityBoxes),
+                ("status", false) => query.OrderBy(l => l.Status),
+                ("status", true) => query.OrderByDescending(l => l.Status),
+                (_, true) => query.OrderByDescending(l => l.MaterialNumber),
+                _ => query.OrderBy(l => l.MaterialNumber)
+            };
+        }
+    }
+
+    private void SortBy(string column)
+    {
+        if (_sortBy == column)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortBy = column;
+            _sortDescending = false;
+        }
+    }
+
+    private string SortIcon(string column) =>
+        _sortBy == column ? (_sortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
+
+    private async Task LoadMaterialsAsync()
+    {
+        var page = await Mediator.Send(new GetMaterialsQuery(IsActive: true, PageSize: 1000));
+        _materials = page.Items;
+    }
+
+    private IEnumerable<MaterialDto> MaterialMatches(string search)
+    {
+        var term = search.Trim();
+        var query = _materials.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(term))
+        {
+            query = query.Where(m =>
+                m.MaterialNumber.ToString().Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                m.Description.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return query.Take(8);
+    }
+
+    private void SelectMaterial(int index, MaterialDto material)
+    {
+        _lines[index].MaterialCodeText = material.MaterialNumber.ToString();
+        _activeMaterialLineIndex = null;
+    }
+
+    [JSInvokable]
+    public void CloseMaterialDropdown()
+    {
+        if (_activeMaterialLineIndex is null)
+        {
+            return;
+        }
+
+        _activeMaterialLineIndex = null;
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_outsideClickHandlerId is not null)
+        {
+            try
+            {
+                await JsRuntime.InvokeVoidAsync("godrejWms.unregisterOutsideClick", _outsideClickHandlerId);
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        _outsideClickReference?.Dispose();
+    }
+
+
+    private static string AllocationClass(AllocationStatus status) => status switch
+    {
+        AllocationStatus.Fulfilled => "success",
+        AllocationStatus.Partial => "warning",
+        _ => "danger"
+    };
+
+    private class LineModel
+    {
+        public string MaterialCodeText { get; set; } = string.Empty;
+        public decimal QuantityBoxes { get; set; }
+
+        public long MaterialCode => long.TryParse(MaterialCodeText, out var value) ? value : 0;
+    }
+}
+
+
+
+
+

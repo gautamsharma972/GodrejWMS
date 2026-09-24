@@ -1,0 +1,261 @@
+@page "/inventory-master"
+@page "/stock-master"
+@attribute [Authorize]
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Features.DesignTypes.Dtos
+@using GodrejWMS.Application.Features.DesignTypes.Queries
+@using GodrejWMS.Application.Features.StockMaster.Dtos
+@using GodrejWMS.Application.Features.StockMaster.Queries
+@using GodrejWMS.Application.Features.Seasons.Dtos
+@using GodrejWMS.Application.Features.Seasons.Queries
+@using GodrejWMS.Application.Features.SkuMovementTypes.Dtos
+@using GodrejWMS.Application.Features.SkuMovementTypes.Queries
+@using GodrejWMS.Domain.Entities
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Inventory Master - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Inventory Control</div>
+            <h1>Inventory Master</h1>
+            <p class="page-kicker">Search current stock by material, manufacturing month, and pallet position.</p>
+        </div>
+        <div class="header-actions">
+            <button type="button" class="tour-launch page-tour" data-tour-start="inventory" title="Take a tour of this page">
+                <i class="bi bi-compass" aria-hidden="true"></i> Page tour
+            </button>
+            <button class="btn btn-outline-primary" data-tour="inv-export" @onclick="DownloadAsync">
+                <i class="bi bi-download" aria-hidden="true"></i>
+                Export Excel
+            </button>
+        </div>
+    </div>
+
+    <div class="toolbar-panel">
+        <div class="toolbar-group">
+            <div class="input-group search-control" data-tour="inv-search">
+                <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                <input class="form-control" placeholder="Search material code or description"
+                       @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+            </div>
+            <select class="form-select filter-control" data-tour="inv-filters" value="@_designTypeFilter" @onchange="OnDesignTypeFilterChanged">
+                <option value="">All design types</option>
+                @foreach (var designType in ActiveDesignTypes)
+                {
+                    <option value="@designType.Code">@designType.Code</option>
+                }
+            </select>
+            <select class="form-select filter-control" value="@_movementFilter" @onchange="OnMovementFilterChanged">
+                <option value="">All velocities</option>
+                @foreach (var movementType in MovementTypeOptions())
+                {
+                    <option value="@movementType.Id">@movementType.DisplayName</option>
+                }
+            </select>
+            <select class="form-select filter-control" value="@_seasonFilter" @onchange="OnSeasonFilterChanged">
+                <option value="">All seasons</option>
+                @foreach (var season in SeasonOptions())
+                {
+                    <option value="@season.Id">@season.DisplayName</option>
+                }
+            </select>
+            <select class="form-select filter-control" value="@_activeFilterText" @onchange="OnActiveFilterChanged">
+                <option value="">All statuses</option>
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+            </select>
+        </div>
+        @if (_page is not null)
+        {
+            <span class="sync-chip">@_page.TotalCount.ToString("N0") records</span>
+        }
+    </div>
+
+    @if (_page is null)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading inventory master...
+        </div>
+    }
+    else if (_page.Items.Count == 0)
+    {
+        <div class="empty-state">No stock found for the current search.</div>
+    }
+    else
+    {
+        <div class="table-responsive panel-table" data-tour="inv-table">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("material"))'>Material Code <i class='bi @SortIcon("material")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("description"))'>Material Description <i class='bi @SortIcon("description")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("design"))'>Design Type <i class='bi @SortIcon("design")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("velocity"))'>Velocity <i class='bi @SortIcon("velocity")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("season"))'>Season <i class='bi @SortIcon("season")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("active"))'>Active <i class='bi @SortIcon("active")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("quantity"))'>Stock in CFB <i class='bi @SortIcon("quantity")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("mfg"))'>Mfg Month <i class='bi @SortIcon("mfg")'></i></button></th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("location"))'>Pallet Position <i class='bi @SortIcon("location")'></i></button></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _page.Items)
+                    {
+                        <tr>
+                            <td><span class="record-code">@row.MaterialNumber</span></td>
+                            <td>@row.MaterialDescription</td>
+                            <td><span class="status-pill @DesignTypeClass(row.DesignType)">@row.DesignType</span></td>
+                            <td><span class="status-pill @VelocityClass(row.MovementTypeCode)">@row.MovementTypeName</span></td>
+                            <td><span class="status-pill @SeasonClass(row.SeasonCode)">@row.SeasonName</span></td>
+                            <td><span class="status-pill @(row.IsActive ? "success" : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span></td>
+                            <td class="text-end fw-semibold">@row.QuantityBoxes</td>
+                            <td>@row.MfgMonthLabel</td>
+                            <td><span class="status-pill">@row.PalletPositionCode</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <nav class="pagination-bar" aria-label="Inventory master pagination" data-tour="inv-pagination">
+            <ul class="pagination mb-0">
+                <li class="page-item @(_page.HasPreviousPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadPage(_pageNumber - 1)">Previous</button>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Page @_page.PageNumber of @Math.Max(1, _page.TotalPages)</span></li>
+                <li class="page-item @(_page.HasNextPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadPage(_pageNumber + 1)">Next</button>
+                </li>
+            </ul>
+        </nav>
+    }
+</div>
+
+@code {
+    private PaginatedList<StockMasterRowDto>? _page;
+    private IReadOnlyList<DesignTypeDto> _designTypes = [];
+    private IReadOnlyList<SeasonDto> _seasons = [];
+    private IReadOnlyList<SkuMovementTypeDto> _movementTypes = [];
+    private int _pageNumber = 1;
+    private string _search = string.Empty;
+    private string _designTypeFilter = string.Empty;
+    private int? _movementFilter;
+    private int? _seasonFilter;
+    private string _activeFilterText = string.Empty;
+    private string _sortBy = "material";
+    private bool _sortDescending;
+
+    private IEnumerable<DesignTypeDto> ActiveDesignTypes => _designTypes.Where(d => d.IsActive);
+
+    private IEnumerable<SeasonDto> SeasonOptions() =>
+        _seasons
+            .Where(s => s.IsActive)
+            .OrderBy(s => s.SortOrder)
+            .ThenBy(s => s.DisplayName);
+
+    private IEnumerable<SkuMovementTypeDto> MovementTypeOptions() =>
+        _movementTypes
+            .Where(s => s.IsActive)
+            .OrderBy(s => s.SortOrder)
+            .ThenBy(s => s.DisplayName);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReferenceDataAsync();
+        await LoadPage(1);
+    }
+
+    private async Task LoadReferenceDataAsync()
+    {
+        _designTypes = await Mediator.Send(new GetDesignTypesQuery());
+        _movementTypes = await Mediator.Send(new GetSkuMovementTypesQuery());
+        _seasons = await Mediator.Send(new GetSeasonsQuery());
+    }
+
+    private async Task LoadPage(int page)
+    {
+        if (page < 1) return;
+        _pageNumber = page;
+        _page = await Mediator.Send(new GetStockMasterQuery(
+            MaterialSearch: _search,
+            DesignType: string.IsNullOrWhiteSpace(_designTypeFilter) ? null : _designTypeFilter.Trim(),
+            MovementTypeId: _movementFilter,
+            SeasonId: _seasonFilter,
+            IsActive: bool.TryParse(_activeFilterText, out var isActive) ? isActive : null,
+            SortBy: _sortBy,
+            SortDescending: _sortDescending,
+            PageNumber: page,
+            PageSize: 50));
+    }
+
+    private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadPage(1);
+
+    private async Task OnDesignTypeFilterChanged(ChangeEventArgs e)
+    {
+        _designTypeFilter = e.Value?.ToString() ?? string.Empty;
+        await LoadPage(1);
+    }
+
+    private async Task OnMovementFilterChanged(ChangeEventArgs e)
+    {
+        _movementFilter = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await LoadPage(1);
+    }
+
+    private async Task OnSeasonFilterChanged(ChangeEventArgs e)
+    {
+        _seasonFilter = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await LoadPage(1);
+    }
+
+    private async Task OnActiveFilterChanged(ChangeEventArgs e)
+    {
+        _activeFilterText = e.Value?.ToString() ?? string.Empty;
+        await LoadPage(1);
+    }
+
+    private async Task SortBy(string column)
+    {
+        if (_sortBy == column)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortBy = column;
+            _sortDescending = false;
+        }
+
+        await LoadPage(1);
+    }
+
+    private async Task DownloadAsync()
+    {
+        var bytes = await Mediator.Send(new ExportStockMasterQuery());
+        var base64 = Convert.ToBase64String(bytes);
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "inventory-master.xlsx", base64,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private string SortIcon(string column) =>
+        _sortBy == column ? (_sortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
+
+    private static string VelocityClass(string code) =>
+        code == SkuMovementTypeCodes.FastMoving ? "fast" : "slow";
+
+    private static string SeasonClass(string code) =>
+        code.ToLowerInvariant();
+
+    private static string DesignTypeClass(string value)
+    {
+        var palette = new[] { "info", "violet", "teal", "pink", "warning", "slate" };
+        var hash = value.Aggregate(0, (current, ch) => current + ch);
+        return palette[Math.Abs(hash) % palette.Length];
+    }
+}
+

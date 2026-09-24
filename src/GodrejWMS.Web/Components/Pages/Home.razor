@@ -1,0 +1,246 @@
+@page "/"
+@attribute [Authorize]
+@using GodrejWMS.Application.Features.StockMaster.Dtos
+@using GodrejWMS.Application.Features.StockMaster.Queries
+@using GodrejWMS.Application.Features.Seasons.Dtos
+@using GodrejWMS.Application.Features.Seasons.Queries
+@inject IMediator Mediator
+
+<PageTitle>Dashboard - Godrej WMS</PageTitle>
+
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Control Tower</div>
+        <h1>Warehouse Dashboard</h1>
+    </div>
+    <div class="header-actions">
+        <a class="btn btn-outline-secondary" href="inventory-master"><i class="bi bi-database-check"></i> Inventory</a>
+        <AuthorizeView Roles="Admin,Operator" Context="opsContext">
+            <a class="btn btn-primary" href="inward"><i class="bi bi-box-arrow-in-down"></i> Inward</a>
+        </AuthorizeView>
+    </div>
+</div>
+
+@if (_summary is null)
+{
+    <div class="loading-panel">
+        <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+        Loading live warehouse metrics...
+    </div>
+}
+else
+{
+    <div class="row row-cols-1 row-cols-md-4 g-3 mb-4 metric-grid" data-tour="dash-metrics">
+        <div class="col">
+            <div class="card metric-card h-100">
+                <div class="card-body">
+                    <div class="metric-icon"><i class="bi bi-grid"></i></div>
+                    <h6 class="card-subtitle">Pallet Occupancy</h6>
+                    <p class="card-text metric-value">@_summary.OccupancyPercent%</p>
+                    <div class="progress" role="progressbar" aria-label="Pallet occupancy" aria-valuenow="@_summary.OccupancyPercent" aria-valuemin="0" aria-valuemax="100">
+                        <div class="progress-bar" style="width: @_summary.OccupancyPercent%"></div>
+                    </div>
+                    <p class="card-text text-muted">@_summary.OccupiedPalletPositions / @_summary.TotalPalletPositions positions</p>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card metric-card h-100">
+                <div class="card-body">
+                    <div class="metric-icon"><i class="bi bi-box-seam"></i></div>
+                    <h6 class="card-subtitle">Total Stock</h6>
+                    <p class="card-text metric-value">@_summary.TotalStockBoxes.ToString("N0")</p>
+                    <p class="card-text text-muted">Capacity: @_summary.TotalCapacityBoxes.ToString("N0") boxes</p>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card metric-card h-100">
+                <div class="card-body">
+                    <div class="metric-icon"><i class="bi bi-hdd-rack"></i></div>
+                    <h6 class="card-subtitle">Active Racks</h6>
+                    <p class="card-text metric-value">@_summary.TotalRacks</p>
+                    <p class="card-text text-muted">@_summary.FullLocationCount full location(s)</p>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card metric-card h-100">
+                <div class="card-body">
+                    <div class="metric-icon"><i class="bi bi-tags"></i></div>
+                    <h6 class="card-subtitle">Active Materials</h6>
+                    <p class="card-text metric-value">@_summary.TotalActiveMaterials</p>
+                    <p class="card-text text-muted">SKUs ready for movement</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-header">
+        <h2>Operations Cockpit</h2>
+        <span class="sync-chip"><span class="live-dot"></span> Live workflow signals</span>
+    </div>
+    <div class="audit-metric-grid mb-4" data-tour="dash-cockpit">
+        <div class="audit-summary-card accent-blue">
+            <div class="audit-summary-top">
+                <span class="audit-summary-icon"><i class="bi bi-clipboard-check" aria-hidden="true"></i></span>
+                <span class="audit-summary-status">Put-away queue</span>
+            </div>
+            <div class="audit-summary-value">@_summary.PendingPutawayTransactions</div>
+            <div class="audit-summary-label">GRN(s) awaiting confirmation</div>
+            <div class="audit-summary-meta">@_summary.PendingPutawayBoxes.ToString("N0") boxes reserved across @_summary.ReservedLocationCount location(s)</div>
+        </div>
+        <div class="audit-summary-card accent-indigo">
+            <div class="audit-summary-top">
+                <span class="audit-summary-icon"><i class="bi bi-arrow-left-right" aria-hidden="true"></i></span>
+                <span class="audit-summary-status">Today movement</span>
+            </div>
+            <div class="audit-summary-value">@TodayNetFlow().ToString("N0")</div>
+            <div class="audit-summary-label">Net inbound boxes today</div>
+            <div class="audit-summary-meta">@_summary.TodayInwardBoxes.ToString("N0") received, @_summary.TodayConfirmedBoxes.ToString("N0") confirmed, @_summary.TodayPulloutBoxes.ToString("N0") picked</div>
+        </div>
+        <div class="audit-summary-card @ExceptionAccentClass()">
+            <div class="audit-summary-top">
+                <span class="audit-summary-icon"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i></span>
+                <span class="audit-summary-status">Exceptions</span>
+            </div>
+            <div class="audit-summary-value">@_summary.ExceptionLineCount</div>
+            <div class="audit-summary-label">Partial or failed line(s)</div>
+            <div class="audit-summary-meta">Review allocation and picking history when this is above zero</div>
+        </div>
+        <div class="audit-summary-card accent-green">
+            <div class="audit-summary-top">
+                <span class="audit-summary-icon"><i class="bi bi-box-arrow-in-down" aria-hidden="true"></i></span>
+                <span class="audit-summary-status">Available capacity</span>
+            </div>
+            <div class="audit-summary-value">@_summary.FreeCapacityBoxes.ToString("N0")</div>
+            <div class="audit-summary-label">Boxes free after reservations</div>
+            <div class="audit-summary-meta">@FreeCapacityPercent().ToString("0.#")% of configured capacity available</div>
+            <div class="audit-progress" aria-hidden="true"><span style="@($"width: {FreeCapacityPercent():0.##}%")"></span></div>
+        </div>
+    </div>
+
+    <div class="section-header">
+        <h2>Stock by Season</h2>
+        <div class="toolbar-group">
+            <select class="form-select filter-control" @bind="_seasonFilter">
+                <option value="">All seasons</option>
+                @foreach (var season in SeasonOptions())
+                {
+                    <option value="@season.Id">@season.DisplayName</option>
+                }
+            </select>
+            <span class="sync-chip"><span class="live-dot"></span> Live snapshot</span>
+        </div>
+    </div>
+    @if (DisplaySeasons.Count() == 0)
+    {
+        <div class="empty-state">No stock recorded yet.</div>
+    }
+    else
+    {
+        <div class="table-responsive data-panel">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("season"))'>Season <i class='bi @SortIcon("season")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("boxes"))'>Boxes in Stock <i class='bi @SortIcon("boxes")'></i></button></th>
+                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("materials"))'>Materials <i class='bi @SortIcon("materials")'></i></button></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in DisplaySeasons)
+                    {
+                        <tr>
+                            <td><span class="status-pill @SeasonClass(s.SeasonCode)">@s.SeasonName</span></td>
+                            <td class="text-end fw-semibold">@s.TotalQuantityBoxes.ToString("N0")</td>
+                            <td class="text-end">@s.MaterialCount</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <div class="quick-actions">
+        <a class="btn btn-outline-primary" href="inventory-master"><i class="bi bi-database-check"></i> View Inventory Master</a>
+        <a class="btn btn-outline-secondary" href="racks"><i class="bi bi-grid-3x3-gap"></i> View Rack Layout</a>
+        <AuthorizeView Roles="Admin,Operator" Context="opsContext">
+            <a class="btn btn-primary" href="inward"><i class="bi bi-box-arrow-in-down"></i> Record Inward</a>
+            <a class="btn btn-primary" href="pullout"><i class="bi bi-box-arrow-up"></i> Record Pullout</a>
+        </AuthorizeView>
+    </div>
+}
+
+@code {
+    private StockSummaryDto? _summary;
+    private IReadOnlyList<SeasonDto> _seasons = [];
+    private int? _seasonFilter;
+    private string _sortBy = "season";
+    private bool _sortDescending;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _seasons = await Mediator.Send(new GetSeasonsQuery());
+        _summary = await Mediator.Send(new GetStockSummaryQuery());
+    }
+
+    private IEnumerable<SeasonDto> SeasonOptions() =>
+        _seasons
+            .Where(s => s.IsActive)
+            .OrderBy(s => s.SortOrder)
+            .ThenBy(s => s.DisplayName);
+
+    private IEnumerable<SeasonBreakdownDto> DisplaySeasons
+    {
+        get
+        {
+            var query = (_summary?.BySeason ?? Array.Empty<SeasonBreakdownDto>()).AsEnumerable();
+
+            if (_seasonFilter.HasValue)
+            {
+                query = query.Where(s => s.SeasonId == _seasonFilter.Value);
+            }
+
+            return (_sortBy, _sortDescending) switch
+            {
+                ("boxes", false) => query.OrderBy(s => s.TotalQuantityBoxes),
+                ("boxes", true) => query.OrderByDescending(s => s.TotalQuantityBoxes),
+                ("materials", false) => query.OrderBy(s => s.MaterialCount),
+                ("materials", true) => query.OrderByDescending(s => s.MaterialCount),
+                (_, true) => query.OrderByDescending(s => s.SeasonId),
+                _ => query.OrderBy(s => s.SeasonId)
+            };
+        }
+    }
+
+    private void SortBy(string column)
+    {
+        if (_sortBy == column)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortBy = column;
+            _sortDescending = false;
+        }
+    }
+
+    private string SortIcon(string column) =>
+        _sortBy == column ? (_sortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
+
+    private decimal TodayNetFlow() =>
+        _summary is null ? 0 : _summary.TodayInwardBoxes - _summary.TodayPulloutBoxes;
+
+    private decimal FreeCapacityPercent() =>
+        _summary is null || _summary.TotalCapacityBoxes <= 0 ? 0 : Math.Clamp(_summary.FreeCapacityBoxes / _summary.TotalCapacityBoxes * 100, 0, 100);
+
+    private string ExceptionAccentClass() =>
+        _summary?.ExceptionLineCount > 0 ? "accent-indigo" : "accent-green";
+
+    private static string SeasonClass(string code) =>
+        code.ToLowerInvariant();
+}
+
+

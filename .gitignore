@@ -1,0 +1,35 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+x64/
+x86/
+
+## Rider / VS / VS Code
+.idea/
+.vs/
+.vscode/
+
+## Logs
+Logs/
+*.log
+
+## User secrets / local config overrides
+appsettings.*.local.json
+*.pfx
+DataProtectionKeys/
+
+## Codex / AI assistant local state
+.codex/
+.codex-appdata/
+.claude/
+
+## OS
+.DS_Store
+Thumbs.db
