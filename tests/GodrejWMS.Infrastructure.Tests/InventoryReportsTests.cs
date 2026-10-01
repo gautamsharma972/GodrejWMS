@@ -44,7 +44,7 @@ public class InventoryReportsTests
         db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = position.Id, MfgMonth = 202601, QuantityBoxes = 4 });
         await db.SaveChangesAsync();
 
-        var currentUser = new FakeCurrentUser(isAdmin: true);
+        var currentUser = new FakeCurrentUser("Admin");
         var handler = new GetInventoryValuationHandler(db, currentUser);
         var rows = await handler.Handle(new GetInventoryValuationQuery(), CancellationToken.None);
 
@@ -54,14 +54,14 @@ public class InventoryReportsTests
     }
 
     [Fact]
-    public async Task Valuation_Throws_WhenCallerIsNotAdmin()
+    public async Task Valuation_AllowsOperator()
     {
         var db = SeedWarehouseMasters();
-        var currentUser = new FakeCurrentUser(isAdmin: false);
+        var currentUser = new FakeCurrentUser("Operator");
         var handler = new GetInventoryValuationHandler(db, currentUser);
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            handler.Handle(new GetInventoryValuationQuery(), CancellationToken.None));
+        var rows = await handler.Handle(new GetInventoryValuationQuery(), CancellationToken.None);
+        Assert.Empty(rows);
     }
 
     [Fact]
@@ -117,11 +117,11 @@ public class InventoryReportsTests
         Assert.Equal(50, typeRow.OccupancyPercent);
     }
 
-    private sealed class FakeCurrentUser(bool isAdmin) : ICurrentUserService
+    private sealed class FakeCurrentUser(string role) : ICurrentUserService
     {
         public string? UserId => "test-user";
         public string? UserName => "test@godrejwms.local";
-        public bool IsInRole(string role) => role == "Admin" && isAdmin;
+        public bool IsInRole(string requestedRole) => requestedRole == role;
     }
 
     private sealed class FakeClock : IDateTimeProvider

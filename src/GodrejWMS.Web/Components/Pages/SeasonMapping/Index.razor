@@ -18,7 +18,7 @@
             <h1>Season &amp; Month Mapping</h1>
             <p class="page-kicker">Assign each calendar month to a season. Used to classify material seasonal demand.</p>
         </div>
-        <AuthorizeView Roles="Admin,Supervisor" Context="editContext">
+        <AuthorizeView Roles="Admin,Supervisor,Operator" Context="editContext">
             <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
                 @if (_saving)
                 {
@@ -78,7 +78,7 @@
                         <tr>
                             <td class="fw-semibold">@MonthName(row.Month)</td>
                             <td style="max-width: 220px">
-                                <AuthorizeView Roles="Admin,Supervisor" Context="rowEditContext">
+                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="rowEditContext">
                                     <Authorized>
                                         <select class="form-select" value="@row.SeasonId" @onchange="e => OnSeasonChanged(row.Month, e)">
                                             @foreach (var s in SeasonOptions(row.SeasonId))

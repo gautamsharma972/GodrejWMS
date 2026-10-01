@@ -36,3 +36,6 @@ DataProtectionKeys/
 ## OS
 .DS_Store
 Thumbs.db
+
+## Publish output
+publish/

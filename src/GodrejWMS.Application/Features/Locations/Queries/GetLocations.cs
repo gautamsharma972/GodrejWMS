@@ -1,6 +1,7 @@
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Common.Models;
 using GodrejWMS.Application.Features.Racks.Dtos;
+using GodrejWMS.Domain.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -43,11 +44,13 @@ public sealed class GetLocationsHandler(IApplicationDbContext db)
                 ZoneTypeName = p.ZoneType.DisplayName,
                 p.DistancePriority,
                 p.MaxPallets,
-                p.BoxesPerPallet,
-                p.CapacityBoxes,
                 p.IsActive,
                 RackCode = p.Rack.Code,
-                OccupiedBoxes = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m
+                OccupiedBoxes = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
+                OccupyingPalletCapacityBoxes = p.StockBatches
+                    .Where(b => b.QuantityBoxes > 0)
+                    .Select(b => (int?)b.Material.PalletCapacityBoxes)
+                    .FirstOrDefault()
             });
 
         if (!string.IsNullOrWhiteSpace(request.Search))
@@ -95,8 +98,6 @@ public sealed class GetLocationsHandler(IApplicationDbContext db)
             ("zone", true) => query.OrderByDescending(p => p.ZoneTypeName).ThenBy(p => p.LocationCode),
             ("distance", false) => query.OrderBy(p => p.DistancePriority).ThenBy(p => p.LocationCode),
             ("distance", true) => query.OrderByDescending(p => p.DistancePriority).ThenBy(p => p.LocationCode),
-            ("capacity", false) => query.OrderBy(p => p.CapacityBoxes).ThenBy(p => p.LocationCode),
-            ("capacity", true) => query.OrderByDescending(p => p.CapacityBoxes).ThenBy(p => p.LocationCode),
             ("occupancy", false) => query.OrderBy(p => p.OccupiedBoxes).ThenBy(p => p.LocationCode),
             ("occupancy", true) => query.OrderByDescending(p => p.OccupiedBoxes).ThenBy(p => p.LocationCode),
             ("active", false) => query.OrderBy(p => p.IsActive).ThenBy(p => p.LocationCode),
@@ -106,35 +107,44 @@ public sealed class GetLocationsHandler(IApplicationDbContext db)
         };
 
         var totalCount = await query.CountAsync(cancellationToken);
-        var rows = await query
+        var page = await query
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
-            .Select(p => new PalletPositionDto(
-                p.Id,
-                p.RackId,
-                p.LocationCode,
-                p.FlatLabel,
-                p.Column,
-                p.Level,
-                p.LocationTypeId,
-                p.LocationTypeCode,
-                p.LocationTypeName,
-                p.LocationSubtypeId,
-                p.LocationSubtypeCode,
-                p.LocationSubtypeName,
-                p.ZoneTypeId,
-                p.ZoneTypeCode,
-                p.ZoneTypeName,
-                p.DistancePriority,
-                p.MaxPallets,
-                p.BoxesPerPallet,
-                p.CapacityBoxes,
-                p.OccupiedBoxes,
-                p.CapacityBoxes - p.OccupiedBoxes,
-                p.OccupiedBoxes >= p.CapacityBoxes,
-                p.IsActive,
-                Array.Empty<PalletPositionStockDto>()))
             .ToListAsync(cancellationToken);
+
+        var rows = page
+            .Select(p =>
+            {
+                var capacityBoxes = p.OccupyingPalletCapacityBoxes is { } palletCapacity
+                    ? (int?)PalletCapacityCalculator.EffectiveCapacityBoxes(p.MaxPallets, palletCapacity)
+                    : null;
+
+                return new PalletPositionDto(
+                    p.Id,
+                    p.RackId,
+                    p.LocationCode,
+                    p.FlatLabel,
+                    p.Column,
+                    p.Level,
+                    p.LocationTypeId,
+                    p.LocationTypeCode,
+                    p.LocationTypeName,
+                    p.LocationSubtypeId,
+                    p.LocationSubtypeCode,
+                    p.LocationSubtypeName,
+                    p.ZoneTypeId,
+                    p.ZoneTypeCode,
+                    p.ZoneTypeName,
+                    p.DistancePriority,
+                    p.MaxPallets,
+                    capacityBoxes,
+                    p.OccupiedBoxes,
+                    capacityBoxes is { } cap ? cap - p.OccupiedBoxes : null,
+                    capacityBoxes is { } capForFull && p.OccupiedBoxes >= capForFull,
+                    p.IsActive,
+                    Array.Empty<PalletPositionStockDto>());
+            })
+            .ToList();
 
         return new PaginatedList<PalletPositionDto>(rows, totalCount, request.PageNumber, request.PageSize);
     }

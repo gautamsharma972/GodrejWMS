@@ -42,11 +42,6 @@ public class PalletPosition : AuditableEntity
 
     public int MaxPallets { get; set; } = 2;
 
-    public int BoxesPerPallet { get; set; } = 40;
-
-    /// <summary>Total box capacity for this location. Warehouse standard: 2 pallets x 40 boxes.</summary>
-    public int CapacityBoxes { get; set; } = 80;
-
     public bool IsActive { get; set; } = true;
 
     // MySQL has no native rowversion column, so this is a plain counter that put-away reservation

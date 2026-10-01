@@ -22,7 +22,8 @@ public class AppDbContext(
 {
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
     public DbSet<UserWarehouse> UserWarehouses => Set<UserWarehouse>();
-    private bool HasAllWarehouses => currentUser.IsInRole("Admin");
+    private bool HasAllWarehouses => currentUser.IsInRole("Admin") ||
+        currentUser.IsInRole("Supervisor") || currentUser.IsInRole("Operator");
     private string? AccessUserId => currentUser.UserId;
     public DbSet<Material> Materials => Set<Material>();
 

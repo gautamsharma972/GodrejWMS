@@ -9,35 +9,15 @@ using Microsoft.Extensions.Logging;
 namespace GodrejWMS.Infrastructure.Persistence.Seed;
 
 /// <summary>
-/// Applies pending migrations and seeds roles, a default admin account, and reference master
-/// data (design types, season/month mapping, put-away consolidation levels, demo materials).
-/// Rack/pallet-position/location layout is never auto-seeded — the warehouse layout is entirely
-/// operator-defined.
+/// Applies pending Entity Framework migrations.
 /// </summary>
 public static class DbInitializer
 {
-    public static async Task InitializeAsync(IServiceProvider services)
+    public static async Task MigrateAsync(IServiceProvider services)
     {
         using var scope = services.CreateScope();
-        var provider = scope.ServiceProvider;
-        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(DbInitializer));
-
-        var db = provider.GetRequiredService<AppDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.MigrateAsync();
-
-        await SeedRolesAsync(provider);
-        await SeedAdminUserAsync(provider, logger);
-        await SeedSampleUsersAsync(provider, logger);
-        await AssignUsersToGcplAsync(provider, db);
-        await SeedLocationSubtypesAsync(db);
-        await SeedSkuMovementTypesAsync(db);
-        await SeedZoneTypesAsync(db);
-        await SeedLocationTypesAsync(db);
-        await SeedSeasonsAsync(db);
-        await SeedMasterDataAsync(db);
-        await SeedSeasonMonthMapAsync(db);
-        await SeedMovementReasonsAsync(db);
-        await EnsureDemoMaterialsAsync(db);
     }
 
     private static async Task AssignUsersToGcplAsync(IServiceProvider provider, AppDbContext db)
@@ -407,5 +387,4 @@ public static class DbInitializer
         return material;
     }
 }
-
 

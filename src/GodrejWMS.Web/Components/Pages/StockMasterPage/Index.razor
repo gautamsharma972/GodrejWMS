@@ -5,6 +5,7 @@
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Features.DesignTypes.Dtos
 @using GodrejWMS.Application.Features.DesignTypes.Queries
+@using GodrejWMS.Application.Features.StockMaster.Commands
 @using GodrejWMS.Application.Features.StockMaster.Dtos
 @using GodrejWMS.Application.Features.StockMaster.Queries
 @using GodrejWMS.Application.Features.Seasons.Dtos
@@ -14,6 +15,8 @@
 @using GodrejWMS.Domain.Entities
 @inject IMediator Mediator
 @inject IJSRuntime JsRuntime
+@inject GodrejWMS.Application.Common.Interfaces.IExcelService ExcelService
+@inject ILogger<Index> Logger
 
 <PageTitle>Inventory Master - Godrej WMS</PageTitle>
 
@@ -28,12 +31,44 @@
             <button type="button" class="tour-launch page-tour" data-tour-start="inventory" title="Take a tour of this page">
                 <i class="bi bi-compass" aria-hidden="true"></i> Page tour
             </button>
+            <AuthorizeView Roles="Admin,Supervisor,Operator" Context="headerActionsContext">
+                <button class="btn btn-outline-secondary" @onclick="DownloadTemplateAsync">
+                    <i class="bi bi-file-earmark-arrow-down" aria-hidden="true"></i>
+                    Sample Format
+                </button>
+                <label class="btn btn-outline-primary mb-0" for="stock-master-excel-upload">
+                    @if (_importing)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span>Uploading</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-upload" aria-hidden="true"></i>
+                        <span>Upload Excel</span>
+                    }
+                </label>
+                <InputFile id="stock-master-excel-upload" OnChange="OnImportFileSelected" class="visually-hidden" />
+            </AuthorizeView>
             <button class="btn btn-outline-primary" data-tour="inv-export" @onclick="DownloadAsync">
                 <i class="bi bi-download" aria-hidden="true"></i>
                 Export Excel
             </button>
         </div>
     </div>
+
+    @if (_importResult is not null)
+    {
+        <div class="alert alert-info mb-0">
+            Import complete: @_importResult.Created created, @_importResult.Updated updated.
+            @if (_importResult.Errors.Count > 0)
+            {
+                <ul class="mb-0">
+                    @foreach (var error in _importResult.Errors) { <li>@error</li> }
+                </ul>
+            }
+        </div>
+    }
 
     <div class="toolbar-panel">
         <div class="toolbar-group">
@@ -149,6 +184,8 @@
     private string _activeFilterText = string.Empty;
     private string _sortBy = "material";
     private bool _sortDescending;
+    private bool _importing;
+    private ImportStockMasterResult? _importResult;
 
     private IEnumerable<DesignTypeDto> ActiveDesignTypes => _designTypes.Where(d => d.IsActive);
 
@@ -240,6 +277,41 @@
         var base64 = Convert.ToBase64String(bytes);
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "inventory-master.xlsx", base64,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadTemplateAsync()
+    {
+        var bytes = ExcelService.WriteStockMasterTemplate();
+        var base64 = Convert.ToBase64String(bytes);
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "inventory-master-sample-format.xlsx", base64,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task OnImportFileSelected(InputFileChangeEventArgs e)
+    {
+        _importing = true;
+        _importResult = null;
+        try
+        {
+            await using var stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            memory.Position = 0;
+
+            _importResult = await Mediator.Send(new ImportStockMasterFromExcelCommand(memory));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast",
+                $"Inventory Master import complete: {_importResult.Created} created, {_importResult.Updated} updated.");
+            await LoadPage(1);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to import inventory master");
+            _importResult = new ImportStockMasterResult(0, 0, [ex.Message]);
+        }
+        finally
+        {
+            _importing = false;
+        }
     }
 
     private string SortIcon(string column) =>

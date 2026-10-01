@@ -1,5 +1,5 @@
 @page "/audit-trail"
-@attribute [Authorize(Roles = "Admin")]
+@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Features.ActivityLogs.Dtos
 @using GodrejWMS.Application.Features.ActivityLogs.Queries

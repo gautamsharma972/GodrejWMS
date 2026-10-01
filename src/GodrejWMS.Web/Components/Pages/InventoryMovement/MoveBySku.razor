@@ -5,6 +5,8 @@
 @using GodrejWMS.Application.Features.InventoryMovement.Queries
 @using GodrejWMS.Application.Features.Materials.Dtos
 @using GodrejWMS.Application.Features.Materials.Queries
+@using GodrejWMS.Application.Features.Locations.Queries
+@using GodrejWMS.Application.Features.Racks.Dtos
 @using GodrejWMS.Application.Features.Racks.Queries
 @inject IMediator Mediator
 @inject ILogger<MoveBySku> Logger
@@ -82,7 +84,7 @@
                 }
                 else
                 {
-                    <div class="table-responsive">
+                    <div class="table-responsive sku-move-records">
                         <table class="table table-hover align-middle mb-0">
                             <thead>
                                 <tr>
@@ -103,7 +105,32 @@
                                         <td><span class="record-code">@line.Record.LocationCode</span></td>
                                         <td class="text-end">@line.Record.QuantityBoxes.ToString("0.###")</td>
                                         <td style="max-width:160px">
-                                            <input class="form-control form-control-sm" placeholder="e.g. A-05-01" disabled="@(!line.IsSelected)" @bind="line.NewLocationCode" />
+                                            <div class="position-relative">
+                                                <input class="form-control form-control-sm" placeholder="e.g. A-05-01" autocomplete="off"
+                                                       aria-label="@($"New location for {line.Record.LocationCode}")"
+                                                       disabled="@(!line.IsSelected)"
+                                                       @bind="line.NewLocationCode" @bind:event="oninput"
+                                                       @onkeyup="e => OnNewLocationKeyUp(line, e)"
+                                                       @onfocusout="() => OnNewLocationBlur(line)" />
+                                                @if (line.ShowSuggestions && line.Suggestions.Count > 0)
+                                                {
+                                                    <div class="location-suggestions row-location-suggestions">
+                                                        @foreach (var suggestion in line.Suggestions)
+                                                        {
+                                                            <button type="button" class="location-suggestion-item" @onmousedown="() => SelectLocationSuggestion(line, suggestion)" @onmousedown:preventDefault="true">
+                                                                <span class="record-code">@suggestion.LocationCode</span>
+                                                                <span class="location-suggestion-meta">
+                                                                    @suggestion.ZoneTypeName &middot; Rack @RackOf(suggestion.LocationCode) &middot; @suggestion.OccupiedBoxes.ToString("0.###")/@suggestion.CapacityBoxes
+                                                                    @if (!suggestion.IsActive)
+                                                                    {
+                                                                        <span class="status-pill danger">Inactive</span>
+                                                                    }
+                                                                </span>
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
                                         </td>
                                         <td style="max-width:120px">
                                             <input type="number" class="form-control form-control-sm" min="0" step="0.001" disabled="@(!line.IsSelected)" @bind="line.MoveQuantity" />
@@ -445,6 +472,71 @@
         }
     }
 
+    // Only one location lookup may run at a time: the page shares a single DbContext, so overlapping
+    // lookups from fast typing would collide. If the text changed while a lookup was waiting, only
+    // the latest text is searched.
+    private readonly SemaphoreSlim _locationSearchGate = new(1, 1);
+
+    private async Task OnNewLocationKeyUp(LineDraft line, Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or "Escape")
+        {
+            line.ShowSuggestions = false;
+            return;
+        }
+
+        await SearchLocationSuggestionsAsync(line);
+    }
+
+    private async Task SearchLocationSuggestionsAsync(LineDraft line)
+    {
+        var term = line.NewLocationCode.Trim();
+        if (term.Length == 0)
+        {
+            line.Suggestions = [];
+            line.ShowSuggestions = false;
+            return;
+        }
+
+        await _locationSearchGate.WaitAsync();
+        try
+        {
+            if (!string.Equals(term, line.NewLocationCode.Trim(), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var page = await Mediator.Send(new GetLocationsQuery(Search: term, PageSize: 8));
+            if (!string.Equals(term, line.NewLocationCode.Trim(), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            line.Suggestions = page.Items.Where(p => p.LocationCode != line.Record.LocationCode).ToList();
+            line.ShowSuggestions = line.Suggestions.Count > 0;
+        }
+        finally
+        {
+            _locationSearchGate.Release();
+        }
+    }
+
+    private void SelectLocationSuggestion(LineDraft line, PalletPositionDto suggestion)
+    {
+        line.NewLocationCode = suggestion.LocationCode;
+        line.Suggestions = [];
+        line.ShowSuggestions = false;
+    }
+
+    private async Task OnNewLocationBlur(LineDraft line)
+    {
+        // Let a click on a suggestion register before the list closes.
+        await Task.Delay(150);
+        line.ShowSuggestions = false;
+    }
+
+    private static string RackOf(string locationCode) => locationCode.Split('-').FirstOrDefault() ?? locationCode;
+
     private string SortIcon(string column) =>
         _sortColumn == column ? (_sortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
 
@@ -455,6 +547,8 @@
         public string NewLocationCode { get; set; } = string.Empty;
         public decimal MoveQuantity { get; set; }
         public int? ResolvedDestinationId { get; set; }
+        public List<PalletPositionDto> Suggestions { get; set; } = [];
+        public bool ShowSuggestions { get; set; }
     }
 
     private sealed record ValidatedLine(LineDraft Line, InventoryMovementValidationDto Validation);

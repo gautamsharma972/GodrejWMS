@@ -3,6 +3,7 @@ using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.Racks.Dtos;
 using GodrejWMS.Domain.Entities;
+using GodrejWMS.Domain.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -39,10 +40,12 @@ public sealed class GetRackLayoutHandler(IApplicationDbContext db) : IRequestHan
                 ZoneTypeName = p.ZoneType.DisplayName,
                 p.DistancePriority,
                 p.MaxPallets,
-                p.BoxesPerPallet,
-                p.CapacityBoxes,
                 p.IsActive,
                 OccupiedBoxes = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
+                OccupyingPalletCapacityBoxes = p.StockBatches
+                    .Where(b => b.QuantityBoxes > 0)
+                    .Select(b => (int?)b.Material.PalletCapacityBoxes)
+                    .FirstOrDefault(),
                 Stock = p.StockBatches
                     .Where(b => b.QuantityBoxes > 0)
                     .OrderBy(b => b.Material.MaterialNumber)
@@ -63,18 +66,25 @@ public sealed class GetRackLayoutHandler(IApplicationDbContext db) : IRequestHan
 
         var dtoPositions = positions
             .OrderBy(p => p.Level).ThenBy(p => p.Column)
-            .Select(p => new PalletPositionDto(
-                p.Id, rack.Id, p.LocationCode, p.FlatLabel, p.Column, p.Level,
-                p.LocationTypeId, p.LocationTypeCode, p.LocationTypeName, p.LocationSubtypeId, p.LocationSubtypeCode, p.LocationSubtypeName, p.ZoneTypeId, p.ZoneTypeCode, p.ZoneTypeName, p.DistancePriority, p.MaxPallets, p.BoxesPerPallet, p.CapacityBoxes,
-                p.OccupiedBoxes, Math.Max(0, p.CapacityBoxes - p.OccupiedBoxes), p.OccupiedBoxes >= p.CapacityBoxes, p.IsActive,
-                p.Stock.Select(s => new PalletPositionStockDto(
-                    s.MaterialNumber,
-                    s.MaterialDescription,
-                    s.DesignType,
-                    MfgMonthParser.Format(s.MfgMonth),
-                    s.StockSubtypeCode,
-                    s.StockSubtypeName,
-                    s.QuantityBoxes)).ToList()))
+            .Select(p =>
+            {
+                var capacityBoxes = p.OccupyingPalletCapacityBoxes is { } palletCapacity
+                    ? (int?)PalletCapacityCalculator.EffectiveCapacityBoxes(p.MaxPallets, palletCapacity)
+                    : null;
+
+                return new PalletPositionDto(
+                    p.Id, rack.Id, p.LocationCode, p.FlatLabel, p.Column, p.Level,
+                    p.LocationTypeId, p.LocationTypeCode, p.LocationTypeName, p.LocationSubtypeId, p.LocationSubtypeCode, p.LocationSubtypeName, p.ZoneTypeId, p.ZoneTypeCode, p.ZoneTypeName, p.DistancePriority, p.MaxPallets, capacityBoxes,
+                    p.OccupiedBoxes, capacityBoxes is { } cap ? Math.Max(0, cap - p.OccupiedBoxes) : null, capacityBoxes is { } capForFull && p.OccupiedBoxes >= capForFull, p.IsActive,
+                    p.Stock.Select(s => new PalletPositionStockDto(
+                        s.MaterialNumber,
+                        s.MaterialDescription,
+                        s.DesignType,
+                        MfgMonthParser.Format(s.MfgMonth),
+                        s.StockSubtypeCode,
+                        s.StockSubtypeName,
+                        s.QuantityBoxes)).ToList());
+            })
             .ToList();
 
         return new RackLayoutDto(rack.Id, rack.Code, rack.Columns, rack.Levels, dtoPositions);

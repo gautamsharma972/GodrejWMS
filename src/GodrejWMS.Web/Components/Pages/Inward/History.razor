@@ -6,6 +6,7 @@
 @using GodrejWMS.Domain.Enums
 @inject IMediator Mediator
 @inject IJSRuntime JsRuntime
+@inject GodrejWMS.Application.Common.Interfaces.IExcelService ExcelService
 
 <PageTitle>Inward History - Godrej WMS</PageTitle>
 
@@ -112,6 +113,12 @@
                                     <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {item.ReferenceNumber}")" aria-label="@($"View {item.ReferenceNumber}")" href="@($"/inward/{item.Id}")">
                                         <i class="bi bi-eye" aria-hidden="true"></i>
                                     </a>
+                                    @if (!item.IsRejected)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-secondary table-action-btn" title="@($"Download Excel {item.ReferenceNumber}")" aria-label="@($"Download Excel {item.ReferenceNumber}")" @onclick="() => DownloadExcelAsync(item)">
+                                            <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                                        </button>
+                                    }
                                     @if (!item.IsConfirmed && !item.IsRejected)
                                     {
                                         <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"Putaway {item.ReferenceNumber}")" aria-label="@($"Putaway {item.ReferenceNumber}")" href="@($"/inward/{item.Id}/putaway")">
@@ -233,6 +240,21 @@
 
     private static DateTimeOffset? ParseDate(string value) =>
         DateTime.TryParse(value, out var date) ? new DateTimeOffset(date) : null;
+
+    private async Task DownloadExcelAsync(InwardHistoryDto item)
+    {
+        try
+        {
+            var detail = await Mediator.Send(new GetInwardDetailQuery(item.Id));
+            var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.FromDetail(detail));
+            await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"inward-{item.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch (Exception ex)
+        {
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Could not build the Excel file: {ex.Message}", "danger");
+        }
+    }
 
     private static string Csv(string value)
     {

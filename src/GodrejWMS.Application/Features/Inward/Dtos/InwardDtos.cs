@@ -67,6 +67,22 @@ public sealed record InwardDetailDto(
     DateTimeOffset? RejectedAt = null,
     string? RejectedByUserName = null,
     string? RejectionReason = null);
+/// <summary>
+/// One row of the inward Excel download: one put-away location of one GRN line, or a single row with
+/// no location for a line that received none.
+/// </summary>
+public sealed record InwardDownloadRow(
+    string ReferenceNumber,
+    long MaterialNumber,
+    string MaterialDescription,
+    string MfgMonthLabel,
+    decimal RequestedQuantityBoxes,
+    decimal AllocatedQuantityBoxes,
+    string LineStatus,
+    string LocationCode,
+    decimal QuantityBoxes,
+    string PutawayStatus);
+
 public sealed record InwardPalletChangeOptionDto(
     int Id,
     string LocationCode,

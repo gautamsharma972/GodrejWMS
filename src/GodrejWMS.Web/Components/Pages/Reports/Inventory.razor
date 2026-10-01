@@ -1,5 +1,5 @@
 @page "/reports/inventory"
-@attribute [Authorize(Roles = "Admin,Supervisor")]
+@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
 @using GodrejWMS.Application.Features.Reports.Dtos
 @using GodrejWMS.Application.Features.Reports.Queries
 @inject IMediator Mediator
@@ -25,7 +25,7 @@
                 <button type="button" class="btn @(_activeTab == ReportTab.Utilization ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchTab(ReportTab.Utilization)'>
                     Warehouse Utilization
                 </button>
-                <AuthorizeView Roles="Admin" Context="valuationTabContext">
+                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="valuationTabContext">
                     <button type="button" class="btn @(_activeTab == ReportTab.Valuation ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchTab(ReportTab.Valuation)'>
                         Valuation (at MRP)
                     </button>

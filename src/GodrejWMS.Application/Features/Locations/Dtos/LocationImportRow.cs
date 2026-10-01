@@ -8,7 +8,6 @@ public sealed record LocationImportRow(
     string ZoneTypeCode,
     int DistancePriority,
     int MaxPallets,
-    int BoxesPerPallet,
     bool IsActive,
     int RowNumber);
 

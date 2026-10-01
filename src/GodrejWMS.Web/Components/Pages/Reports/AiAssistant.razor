@@ -1,0 +1,224 @@
+@page "/reports/ai-assistant"
+@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
+@using GodrejWMS.Application.Features.Reports.Queries
+@using GodrejWMS.Application.Common.Exceptions
+@inject IMediator Mediator
+
+<PageTitle>AI Assistant - Godrej WMS</PageTitle>
+
+<div class="page-shell report-page">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Reports</div>
+            <h1>AI Assistant</h1>
+            <p class="page-kicker">
+                Ask a question in plain English and it's routed to the matching report - any of the
+                Operational Reports or the specialized Inventory/Inward/Pullout/Movement reports.
+            </p>
+            <div class="ai-security-bar" role="note" aria-label="Data privacy information">
+                <div class="ai-security-icon" aria-hidden="true">
+                    <i class="bi bi-shield-check"></i>
+                </div>
+                <div class="ai-security-content">
+                    <strong>Your data stays secure</strong>
+                    <span>AI processing runs locally on this server using Ollama. Your questions and warehouse data never leave this environment.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <form class="ai-ask-form" @onsubmit="AskAsync">
+                <AntiforgeryToken />
+                <input class="form-control" placeholder="e.g. Show inward discrepancies from the last 7 days"
+                       @bind="_question" @bind:event="oninput" />
+                <button type="submit" class="btn btn-primary" disabled="@(_loading || string.IsNullOrWhiteSpace(_question))">
+                    @if (_loading) { <span class="spinner-border spinner-border-sm" role="status"></span> }
+                    else { <i class="bi bi-stars"></i> }
+                    Ask
+                </button>
+            </form>
+        </div>
+
+        <div class="ai-examples">
+            @foreach (var example in Examples)
+            {
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => UseExample(example)">@example</button>
+            }
+        </div>
+
+        @if (_loading)
+        {
+            <div class="loading-panel"><div class="spinner-border spinner-border-sm"></div> Thinking...</div>
+        }
+        else if (_error is not null)
+        {
+            <div class="alert alert-warning m-3">@_error</div>
+        }
+        else if (_answer is not null)
+        {
+            <div class="ai-answer">
+                <div class="ai-summary">
+                    <span class="badge text-bg-secondary">@_answer.Target</span>
+                    <p>@_answer.Summary</p>
+                </div>
+
+                @if (_answer.Rows.Count == 0)
+                {
+                    <div class="empty-state">No matching rows.</div>
+                }
+                else
+                {
+                    <div class="table-responsive operational-report-table">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    @foreach (var column in _answer.Columns) { <th>@column</th> }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in _answer.Rows)
+                                {
+                                    <tr>
+                                        @foreach (var column in _answer.Columns) { <td>@row.GetValueOrDefault(column, "")</td> }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="ai-row-count">Showing @_answer.Rows.Count of @_answer.TotalCount row(s).</p>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="empty-state">Ask a question above to get started.</div>
+        }
+    </div>
+</div>
+
+<style>
+    .ai-security-bar {
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        max-width: 58rem;
+        margin-top: .85rem;
+        padding: .75rem .9rem;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        background:
+            linear-gradient(135deg, rgba(239, 246, 255, .98), rgba(255, 255, 255, .98)),
+            radial-gradient(circle at 100% 0%, rgba(37, 99, 235, .12), transparent 34%);
+        box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+    }
+
+    .ai-security-icon {
+        width: 38px;
+        height: 38px;
+        flex: 0 0 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #dbeafe;
+        border-radius: 8px;
+        background: #fff;
+        color: var(--wms-primary);
+        font-size: 1rem;
+    }
+
+    .ai-security-content {
+        display: grid;
+        gap: .15rem;
+        min-width: 0;
+    }
+
+    .ai-security-content strong {
+        color: #0f172a;
+        font-size: .92rem;
+        font-weight: 850;
+    }
+
+    .ai-security-content span {
+        color: #475569;
+        font-size: .86rem;
+        line-height: 1.45;
+    }
+
+    .ai-ask-form { display: flex; gap: .5rem; width: 100%; }
+    .ai-ask-form input { flex: 1; }
+    .ai-examples { display: flex; flex-wrap: wrap; gap: .4rem; padding: .75rem 1rem; }
+    .ai-summary { padding: 1rem; }
+    .ai-summary p { margin: .5rem 0 0; }
+    .ai-row-count { padding: .5rem 1rem; color: var(--bs-secondary-color); font-size: .875rem; }
+</style>
+
+@code {
+    private static readonly string[] Examples =
+    [
+        "Show inward discrepancies from the last 7 days",
+        "Which SKUs are slow-moving and aging?",
+        "Was FIFO followed on recent pullouts?",
+        "How full is warehouse capacity by zone?"
+    ];
+
+    [SupplyParameterFromQuery(Name = "q")]
+    public string? InitialQuestion { get; set; }
+
+    private string _question = "";
+    private bool _loading;
+    private string? _error;
+    private AiReportAnswer? _answer;
+
+    private bool _initialQuestionAsked;
+
+    protected override void OnInitialized()
+    {
+        if (!string.IsNullOrWhiteSpace(InitialQuestion))
+        {
+            _question = InitialQuestion;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Deferred to after the interactive circuit connects (never during static prerendering):
+        // running this from OnInitializedAsync instead would block prerender on a live Ollama
+        // call, leaving the page's <form> in its static, not-yet-interactive state for longer and
+        // widening the window where a stray Enter/submit falls back to a real, unprotected POST.
+        if (firstRender && !_initialQuestionAsked && !string.IsNullOrWhiteSpace(_question))
+        {
+            _initialQuestionAsked = true;
+            await AskAsync();
+            StateHasChanged();
+        }
+    }
+
+    private void UseExample(string example) => _question = example;
+
+    private async Task AskAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_question)) return;
+
+        _loading = true;
+        _error = null;
+        _answer = null;
+        try
+        {
+            _answer = await Mediator.Send(new AskAiReportQuery(_question));
+        }
+        catch (AiAssistantUnavailableException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Something went wrong: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

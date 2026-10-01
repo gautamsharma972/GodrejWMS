@@ -79,17 +79,19 @@
                         <i class="bi bi-cloud-sun" aria-hidden="true"></i> <span class="nav-link-text">Seasons</span>
                     </NavLink>
                 </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="audit-trail" aria-label="Audit Trail" data-bs-title="Audit Trail" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-clipboard-data" aria-hidden="true"></i> <span class="nav-link-text">Audit Trail</span>
-                    </NavLink>
-                </div>
+                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="auditTrailContext">
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="audit-trail" aria-label="Audit Trail" data-bs-title="Audit Trail" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-clipboard-data" aria-hidden="true"></i> <span class="nav-link-text">Audit Trail</span>
+                        </NavLink>
+                    </div>
+                </AuthorizeView>
 
                 <AuthorizeView Roles="Admin,Operator,Supervisor" Context="transactionsLabelContext">
                     <div class="nav-section-label">Transactions</div>
                 </AuthorizeView>
 
-                <AuthorizeView Roles="Admin,Operator" Context="opsContext">
+                <AuthorizeView Roles="Admin,Operator,Supervisor" Context="inwardContext">
                     <div class="nav-item nav-group">
                         <button type="button"
                                 class="nav-link nav-parent @(IsInwardSection() ? "active" : string.Empty)"
@@ -116,6 +118,9 @@
                             </NavLink>
                         </div>
                     </div>
+                </AuthorizeView>
+
+                <AuthorizeView Roles="Admin,Operator,Supervisor" Context="pulloutContext">
                     <div class="nav-item nav-group">
                         <button type="button"
                                 class="nav-link nav-parent @(IsPulloutSection() ? "active" : string.Empty)"
@@ -182,10 +187,10 @@
                     </div>
                 </AuthorizeView>
 
-                <AuthorizeView Roles="Admin,Supervisor" Context="reportsLabelContext">
+                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="reportsLabelContext">
                     <div class="nav-section-label">Reports</div>
                 </AuthorizeView>
-                <AuthorizeView Roles="Admin,Supervisor" Context="reportsContext">
+                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="reportsContext">
                     <div class="nav-item">
                         <NavLink class="nav-link" href="reports/operations" aria-label="Operational Reports" data-tour="nav-reports"data-bs-title="Operational Reports" data-bs-toggle="tooltip" data-bs-placement="right">
                             <i class="bi bi-table" aria-hidden="true"></i> <span class="nav-link-text">Operational Reports</span>
@@ -263,4 +268,3 @@
         return path.StartsWith("inventory-movement", StringComparison.OrdinalIgnoreCase);
     }
 }
-

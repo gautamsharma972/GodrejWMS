@@ -1,11 +1,12 @@
 @page "/pullout/history"
-@attribute [Authorize(Roles = "Admin,Operator")]
+@attribute [Authorize(Roles = "Admin,Operator,Supervisor")]
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Features.Pullout.Dtos
 @using GodrejWMS.Application.Features.Pullout.Queries
 @using GodrejWMS.Domain.Enums
 @inject IMediator Mediator
 @inject IJSRuntime JsRuntime
+@inject GodrejWMS.Application.Common.Interfaces.IExcelService ExcelService
 
 <PageTitle>Pullout History - Godrej WMS</PageTitle>
 
@@ -109,6 +110,12 @@
                                     <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {item.ReferenceNumber}")" aria-label="@($"View {item.ReferenceNumber}")" href="@($"/pullout/{item.Id}")">
                                         <i class="bi bi-eye" aria-hidden="true"></i>
                                     </a>
+                                    @if (!item.IsRejected)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-secondary table-action-btn" title="@($"Download Excel {item.ReferenceNumber}")" aria-label="@($"Download Excel {item.ReferenceNumber}")" @onclick="() => DownloadExcelAsync(item)">
+                                            <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                                        </button>
+                                    }
                                 </td>
                             </tr>
                         }
@@ -223,6 +230,25 @@
         var csv = "Reference,Created,Status,Confirmation,Lines,Allocated Boxes\r\n" + string.Join("\r\n", rows);
         var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(csv));
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "pullout-history.csv", base64, "text/csv");
+    }
+
+    private async Task DownloadExcelAsync(PulloutHistoryDto item)
+    {
+        try
+        {
+            var detail = await Mediator.Send(new GetPulloutDetailQuery(item.Id));
+            var rows = detail.Lines
+                .SelectMany(l => l.Picks.Select(p => new GodrejWMS.Application.Features.StockMaster.Dtos.StockMasterRowDto(
+                    l.MaterialNumber, l.MaterialDescription, string.Empty, p.QuantityBoxes, p.MfgMonthLabel, p.LocationCode)))
+                .ToList();
+            var bytes = ExcelService.WritePulloutDownload(rows);
+            await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"pullout-{item.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch (Exception ex)
+        {
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Could not build the Excel file: {ex.Message}", "danger");
+        }
     }
 
     private static DateTimeOffset? ParseDate(string value) =>

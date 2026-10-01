@@ -15,7 +15,7 @@
     </div>
     <div class="header-actions">
         <a class="btn btn-outline-secondary" href="inventory-master"><i class="bi bi-database-check"></i> Inventory</a>
-        <AuthorizeView Roles="Admin,Operator" Context="opsContext">
+        <AuthorizeView Roles="Admin,Operator,Supervisor" Context="opsContext">
             <a class="btn btn-primary" href="inward"><i class="bi bi-box-arrow-in-down"></i> Inward</a>
         </AuthorizeView>
     </div>
@@ -165,7 +165,7 @@ else
     <div class="quick-actions">
         <a class="btn btn-outline-primary" href="inventory-master"><i class="bi bi-database-check"></i> View Inventory Master</a>
         <a class="btn btn-outline-secondary" href="racks"><i class="bi bi-grid-3x3-gap"></i> View Rack Layout</a>
-        <AuthorizeView Roles="Admin,Operator" Context="opsContext">
+        <AuthorizeView Roles="Admin,Operator,Supervisor" Context="opsContext">
             <a class="btn btn-primary" href="inward"><i class="bi bi-box-arrow-in-down"></i> Record Inward</a>
             <a class="btn btn-primary" href="pullout"><i class="bi bi-box-arrow-up"></i> Record Pullout</a>
         </AuthorizeView>
@@ -242,5 +242,3 @@ else
     private static string SeasonClass(string code) =>
         code.ToLowerInvariant();
 }
-
-

@@ -28,7 +28,7 @@
             <h1>Material Master</h1>
             <p class="page-kicker">Maintain SKU dimensions, pack sizes, pallet capacity, velocity, and seasonal classification.</p>
         </div>
-        <AuthorizeView Roles="Admin,Supervisor" Context="headerActionsContext">
+        <AuthorizeView Roles="Admin,Supervisor,Operator" Context="headerActionsContext">
             <div class="header-actions">
                 <button class="btn btn-outline-secondary" @onclick="DownloadSampleFormatAsync">
                     <i class="bi bi-download" aria-hidden="true"></i>
@@ -248,18 +248,27 @@
     }
     else
     {
-        <div class="table-responsive panel-table">
+        <div class="table-responsive panel-table materials-table-wide">
             <table class="table table-hover align-middle mb-0">
                 <thead>
                     <tr>
                         <th><button class="sort-button" @onclick='@(() => SortBy("material"))'>Material Code <i class='bi @SortIcon("material")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("description"))'>Description <i class='bi @SortIcon("description")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("design"))'>Design Type <i class='bi @SortIcon("design")'></i></button></th>
+                        <th>Characteristic Value</th>
                         <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("pack"))'>Pack <i class='bi @SortIcon("pack")'></i></button></th>
                         <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("mrp"))'>MRP <i class='bi @SortIcon("mrp")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("velocity"))'>Velocity <i class='bi @SortIcon("velocity")'></i></button></th>
+                        <th class="text-end">Length</th>
+                        <th class="text-end">Width</th>
+                        <th class="text-end">Height</th>
+                        <th class="text-end">Volume</th>
+                        <th class="text-end">Net Weight</th>
+                        <th class="text-end">Gross Weight</th>
                         <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("boxWeight"))'>Box Weight <i class='bi @SortIcon("boxWeight")'></i></button></th>
+                        <th class="text-end">Pallet Size</th>
                         <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("palletWeight"))'>Pallet Weight <i class='bi @SortIcon("palletWeight")'></i></button></th>
+                        <th>Preferred Zone</th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("season"))'>Season <i class='bi @SortIcon("season")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("active"))'>Active <i class='bi @SortIcon("active")'></i></button></th>
                         <th class="table-actions"></th>
@@ -272,15 +281,24 @@
                             <td><span class="record-code">@m.MaterialNumber</span></td>
                             <td>@m.Description</td>
                             <td><span class="status-pill @DesignTypeClass(m.DesignType)">@m.DesignType</span></td>
+                            <td>@(m.CharacteristicValue ?? "-")</td>
                             <td class="text-end">@m.PackSize</td>
                             <td class="text-end">@m.MrpPrice.ToString("N2")</td>
                             <td><span class="status-pill @VelocityClass(m.MovementTypeCode)">@m.MovementTypeName</span></td>
+                            <td class="text-end">@m.LengthMm.ToString("N2") mm</td>
+                            <td class="text-end">@m.WidthMm.ToString("N2") mm</td>
+                            <td class="text-end">@m.HeightMm.ToString("N2") mm</td>
+                            <td class="text-end">@m.VolumeMm3.ToString("N0") mm3</td>
+                            <td class="text-end">@m.NetWeightKg.ToString("N3") kg</td>
+                            <td class="text-end">@m.GrossWeightKg.ToString("N3") kg</td>
                             <td class="text-end">@m.BoxWeightKg.ToString("N2") kg</td>
+                            <td class="text-end">@m.PalletCapacityBoxes</td>
                             <td class="text-end">@m.PalletWeightKg.ToString("N2") kg</td>
+                            <td>@(m.PreferredZoneTypeName ?? "No preference")@(m.RequirePreferredZone ? " (required)" : "")</td>
                             <td><span class="status-pill @SeasonClass(m.SeasonCode)">@m.SeasonName</span></td>
                             <td><span class="status-pill @(m.IsActive ? "success" : "inactive")">@(m.IsActive ? "Active" : "Inactive")</span></td>
                             <td class="table-actions">
-                                <AuthorizeView Roles="Admin,Supervisor" Context="rowEditContext">
+                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="rowEditContext">
                                     <button class="btn btn-sm btn-outline-secondary" title="@($"Edit {m.MaterialNumber}")" aria-label="@($"Edit {m.MaterialNumber}")" @onclick="() => ShowForm(m)">
                                         <i class="bi bi-pencil-square" aria-hidden="true"></i>
                                     </button>

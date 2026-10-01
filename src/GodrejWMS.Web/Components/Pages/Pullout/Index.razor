@@ -1,5 +1,5 @@
 @page "/pullout"
-@attribute [Authorize(Roles = "Admin,Operator")]
+@attribute [Authorize(Roles = "Admin,Operator,Supervisor")]
 @implements IAsyncDisposable
 @using GodrejWMS.Application.Common.Interfaces
 @using GodrejWMS.Application.Features.Materials.Dtos
@@ -620,7 +620,6 @@
         public long MaterialCode => long.TryParse(MaterialCodeText, out var value) ? value : 0;
     }
 }
-
 
 
 

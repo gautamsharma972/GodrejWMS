@@ -29,7 +29,7 @@ public class OperationalReportsTests
     }
 
     [Fact]
-    public async Task Supervisor_OnlySeesAssignedWarehouse_AndCannotRequestAnother()
+    public async Task Supervisor_CanRequestAnyWarehouse()
     {
         var user = new User("supervisor", false);
         using var db = Create(user);
@@ -39,17 +39,19 @@ public class OperationalReportsTests
         var handler = new GetOperationalReportHandler(db, user, new DisplayNames());
 
         Assert.Equal(2, (await handler.Handle(new(ReportKind.CurrentStock, new(), Sort: "sku"), default)).TotalCount);
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => handler.Handle(
-            new(ReportKind.CurrentStock, new(WarehouseId: 2), Sort: "sku"), default));
+        var otherWarehouse = await handler.Handle(
+            new(ReportKind.CurrentStock, new(WarehouseId: 2), Sort: "sku"), default);
+        Assert.Equal(0, otherWarehouse.TotalCount);
     }
 
     [Fact]
-    public async Task Operator_CannotExecuteReportQuery()
+    public async Task Operator_CanExecuteReportQuery()
     {
         var user = new User("operator", false, false);
         using var db = Create(user);
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            new GetOperationalReportHandler(db, user, new DisplayNames()).Handle(new(ReportKind.CurrentStock, new()), default));
+        var result = await new GetOperationalReportHandler(db, user, new DisplayNames())
+            .Handle(new(ReportKind.CurrentStock, new()), default);
+        Assert.Equal(0, result.TotalCount);
     }
 
     private static AppDbContext Create(User user)
@@ -89,7 +91,8 @@ public class OperationalReportsTests
     private sealed class User(string id, bool admin, bool supervisor = true) : ICurrentUserService
     {
         public string? UserId => id; public string? UserName => id;
-        public bool IsInRole(string role) => role == "Admin" ? admin : role == "Supervisor" && supervisor;
+        public bool IsInRole(string role) => role == "Admin" ? admin :
+            role == "Supervisor" ? supervisor : role == "Operator" && !admin && !supervisor;
     }
     private sealed class Clock : IDateTimeProvider
     { public DateTimeOffset UtcNow => DateTimeOffset.UtcNow; public DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow); }

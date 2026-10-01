@@ -25,9 +25,9 @@
         <div>
             <div class="eyebrow">Warehouse Master Data</div>
             <h1>Location Master</h1>
-            <p class="page-kicker">Review rack, pallet, floor, and yard locations with zone, subtype, distance, capacity, and occupancy controls.</p>
+            <p class="page-kicker">Review rack, pallet, floor, and yard locations with zone, subtype, distance, and occupancy controls.</p>
         </div>
-        <AuthorizeView Roles="Admin,Supervisor" Context="headerActionsContext">
+        <AuthorizeView Roles="Admin,Supervisor,Operator" Context="headerActionsContext">
             <div class="header-actions">
                 <button class="btn btn-outline-secondary" @onclick="DownloadSampleFormatAsync">
                     <i class="bi bi-download" aria-hidden="true"></i>
@@ -135,7 +135,6 @@
                         <th><button class="sort-button" @onclick='@(() => SortBy("subtype"))'>Subtype <i class='bi @SortIcon("subtype")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("zone"))'>Zone <i class='bi @SortIcon("zone")'></i></button></th>
                         <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("distance"))'>Distance <i class='bi @SortIcon("distance")'></i></button></th>
-                        <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("capacity"))'>Capacity <i class='bi @SortIcon("capacity")'></i></button></th>
                         <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("occupancy"))'>Occupied <i class='bi @SortIcon("occupancy")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("active"))'>Status <i class='bi @SortIcon("active")'></i></button></th>
                         <th class="table-actions"></th>
@@ -153,11 +152,10 @@
                             <td><span class="status-pill @SubtypeClass(location.LocationSubtypeCode)">@location.LocationSubtypeName</span></td>
                             <td><span class="status-pill @ZoneClass(location.ZoneTypeCode)">@location.ZoneTypeName</span></td>
                             <td class="text-end">@location.DistancePriority</td>
-                            <td class="text-end">@location.CapacityBoxes boxes</td>
                             <td class="text-end">@location.OccupiedBoxes.ToString("N0") boxes</td>
                             <td><span class="status-pill @(location.IsActive ? "success" : "inactive")">@(location.IsActive ? "Active" : "Inactive")</span></td>
                             <td class="table-actions">
-                                <AuthorizeView Roles="Admin,Supervisor" Context="rowEditContext">
+                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="rowEditContext">
                                     <button class="btn btn-sm btn-outline-secondary" title="@($"Edit {location.LocationCode}")" aria-label="@($"Edit {location.LocationCode}")" @onclick="() => ShowEdit(location)">
                                         <i class="bi bi-pencil-square" aria-hidden="true"></i>
                                     </button>
@@ -241,14 +239,6 @@
                             <div class="col-md-6">
                                 <label class="form-label">Max Pallets</label>
                                 <InputNumber class="form-control" @bind-Value="_form.MaxPallets" />
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Boxes Per Pallet</label>
-                                <InputNumber class="form-control" @bind-Value="_form.BoxesPerPallet" />
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Computed Capacity</label>
-                                <input class="form-control" value="@($"{_form.MaxPallets * _form.BoxesPerPallet} boxes")" readonly />
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Status</label>
@@ -396,7 +386,6 @@
             ZoneTypeId = location.ZoneTypeId,
             DistancePriority = location.DistancePriority,
             MaxPallets = location.MaxPallets,
-            BoxesPerPallet = location.BoxesPerPallet,
             IsActive = location.IsActive
         };
         _showForm = true;
@@ -425,7 +414,6 @@
                 _form.ZoneTypeId,
                 _form.DistancePriority,
                 _form.MaxPallets,
-                _form.BoxesPerPallet,
                 _form.IsActive));
             _showForm = false;
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Location saved.");
@@ -537,7 +525,6 @@
         public int ZoneTypeId { get; set; } = GodrejWMS.Domain.Entities.ZoneTypeIds.Reserve;
         public int DistancePriority { get; set; } = 100;
         public int MaxPallets { get; set; } = 2;
-        public int BoxesPerPallet { get; set; } = 40;
         public bool IsActive { get; set; } = true;
     }
 }

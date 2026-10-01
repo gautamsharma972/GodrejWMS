@@ -167,8 +167,7 @@ public class ClosedXmlExcelService : IExcelService
                 ZoneTypeCode: ParseZoneTypeCode(ws.Cell(row, 7).GetString()),
                 DistancePriority: ReadInt(ws.Cell(row, 8), 100),
                 MaxPallets: ReadInt(ws.Cell(row, 9), 2),
-                BoxesPerPallet: ReadInt(ws.Cell(row, 10), 40),
-                IsActive: ParseActive(ws.Cell(row, 12).GetString()),
+                IsActive: ParseActive(ws.Cell(row, 10).GetString()),
                 RowNumber: row));
 
             row++;
@@ -190,8 +189,6 @@ public class ClosedXmlExcelService : IExcelService
             "Zone Type",
             "Distance Priority",
             "Max Pallets",
-            "Boxes Per Pallet",
-            "Capacity Boxes",
             "Active"
         ];
 
@@ -201,8 +198,8 @@ public class ClosedXmlExcelService : IExcelService
 
         var samples = new object[][]
         {
-            ["A-01-01", "A1", "Ground", 1, "Rack", "Good", "Fast", 1, 2, 40, 80, "Active"],
-            ["A-02-01", "A2", "Ground", 2, "Rack", "Hold", "DispatchNear", 2, 2, 40, 80, "Inactive"]
+            ["A-01-01", "A1", "Ground", 1, "Rack", "Good", "Fast", 1, 2, "Active"],
+            ["A-02-01", "A2", "Ground", 2, "Rack", "Hold", "DispatchNear", 2, 2, "Inactive"]
         };
 
         for (var r = 0; r < samples.Length; r++)
@@ -233,10 +230,9 @@ public class ClosedXmlExcelService : IExcelService
             "Zone Type",
             "Distance Priority",
             "Max Pallets",
-            "Boxes Per Pallet",
-            "Capacity Boxes",
             "Active",
             "Occupied Boxes",
+            "Capacity Boxes",
             "Free Boxes"
         ];
 
@@ -256,11 +252,12 @@ public class ClosedXmlExcelService : IExcelService
             ws.Cell(rowNum, 7).Value = item.ZoneTypeCode;
             ws.Cell(rowNum, 8).Value = item.DistancePriority;
             ws.Cell(rowNum, 9).Value = item.MaxPallets;
-            ws.Cell(rowNum, 10).Value = item.BoxesPerPallet;
-            ws.Cell(rowNum, 11).Value = item.CapacityBoxes;
-            ws.Cell(rowNum, 12).Value = item.IsActive ? "Active" : "Inactive";
-            ws.Cell(rowNum, 13).Value = item.OccupiedBoxes;
-            ws.Cell(rowNum, 14).Value = item.FreeBoxes;
+            ws.Cell(rowNum, 10).Value = item.IsActive ? "Active" : "Inactive";
+            ws.Cell(rowNum, 11).Value = item.OccupiedBoxes;
+            // Capacity depends on whichever material occupies this location (a position only
+            // ever holds one material at a time); blank when the location is empty.
+            ws.Cell(rowNum, 12).Value = XLCellValue.FromObject(item.CapacityBoxes);
+            ws.Cell(rowNum, 13).Value = XLCellValue.FromObject(item.FreeBoxes);
             rowNum++;
         }
 
@@ -424,6 +421,67 @@ public class ClosedXmlExcelService : IExcelService
         });
     }
 
+    public IReadOnlyList<StockMasterImportRow> ReadStockMaster(Stream fileStream)
+    {
+        using var workbook = LoadWorkbook(fileStream);
+        var ws = workbook.Worksheets.First();
+
+        var headerRow = FindHeaderRow(ws, "Material Code");
+        var rows = new List<StockMasterImportRow>();
+
+        var row = headerRow + 1;
+        while (true)
+        {
+            var cellA = ws.Cell(row, 1);
+            if (cellA.IsEmpty() || !cellA.TryGetValue(out long materialNumber) || materialNumber <= 0)
+            {
+                break;
+            }
+
+            rows.Add(new StockMasterImportRow(
+                MaterialNumber: materialNumber,
+                QuantityBoxes: (decimal)ws.Cell(row, 3).GetValue<double>(),
+                MfgMonthText: ws.Cell(row, 4).GetString().Trim(),
+                PalletPositionCode: ws.Cell(row, 5).GetString().Trim(),
+                RowNumber: row));
+
+            row++;
+        }
+
+        return rows;
+    }
+
+    public byte[] WriteStockMasterTemplate()
+    {
+        string[] headers = ["Material Code", "Active", "Total Stock in CFB", "Mfg Month", "Pallet Position"];
+
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Inventory Master");
+        WriteHeader(ws, headers);
+
+        var samples = new object[][]
+        {
+            [40034354, "Active", 40, "MAR|2026", "A-01-01"],
+            [40058047, "Active", 80, "MAR|2026", "A-01-02"],
+            [40063045, "Active", 25, "JUN|2026", "B-02-01"]
+        };
+
+        for (var r = 0; r < samples.Length; r++)
+        {
+            for (var c = 0; c < samples[r].Length; c++)
+            {
+                ws.Cell(r + 2, c + 1).Value = XLCellValue.FromObject(samples[r][c]);
+            }
+        }
+
+        ws.SheetView.FreezeRows(1);
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
     public byte[] WritePulloutDownload(IReadOnlyList<StockMasterRowDto> rows)
     {
         string[] headers = ["Material Code", "Material Desc.", "Total Stock in CFB", "Mfg Month", "Pallet Position"];
@@ -436,6 +494,42 @@ public class ClosedXmlExcelService : IExcelService
             ws.Cell(r, 4).Value = i.MfgMonthLabel;
             ws.Cell(r, 5).Value = i.PalletPositionCode;
         });
+    }
+
+    public byte[] WriteInwardDownload(IReadOnlyList<InwardDownloadRow> rows)
+    {
+        string[] headers =
+        [
+            "GRN Reference", "Material Code", "Material Desc.", "Mfg Month", "Requested (CFB)", "Allocated (CFB)",
+            "Line Status", "Pallet Position", "Qty at Position (CFB)", "Put-away Status"
+        ];
+
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Inward Download");
+        WriteHeader(ws, headers);
+
+        var rowNum = 2;
+        foreach (var item in rows)
+        {
+            ws.Cell(rowNum, 1).Value = item.ReferenceNumber;
+            ws.Cell(rowNum, 2).Value = item.MaterialNumber;
+            ws.Cell(rowNum, 3).Value = item.MaterialDescription;
+            ws.Cell(rowNum, 4).Value = item.MfgMonthLabel;
+            ws.Cell(rowNum, 5).Value = item.RequestedQuantityBoxes;
+            ws.Cell(rowNum, 6).Value = item.AllocatedQuantityBoxes;
+            ws.Cell(rowNum, 7).Value = item.LineStatus;
+            ws.Cell(rowNum, 8).Value = item.LocationCode;
+            ws.Cell(rowNum, 9).Value = item.QuantityBoxes;
+            ws.Cell(rowNum, 10).Value = item.PutawayStatus;
+            rowNum++;
+        }
+
+        ws.SheetView.FreezeRows(1);
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
     }
 
     private static byte[] WriteRows(

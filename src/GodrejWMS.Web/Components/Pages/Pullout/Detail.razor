@@ -1,5 +1,5 @@
 @page "/pullout/{TransactionId:int}"
-@attribute [Authorize(Roles = "Admin,Operator")]
+@attribute [Authorize(Roles = "Admin,Operator,Supervisor")]
 @using GodrejWMS.Application.Features.Pullout.Dtos
 @using GodrejWMS.Application.Features.Pullout.Queries
 @using GodrejWMS.Application.Features.Pullout.Commands

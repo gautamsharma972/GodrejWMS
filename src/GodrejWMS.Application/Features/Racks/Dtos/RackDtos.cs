@@ -33,10 +33,12 @@ public sealed record PalletPositionDto(
     string ZoneTypeName,
     int DistancePriority,
     int MaxPallets,
-    int BoxesPerPallet,
-    int CapacityBoxes,
+    /// <summary>Null when the location is empty - capacity depends entirely on whichever
+    /// material occupies it (MaxPallets x that material's Pallet Size), so it's undefined until
+    /// something is stored there.</summary>
+    int? CapacityBoxes,
     decimal OccupiedBoxes,
-    decimal FreeBoxes,
+    decimal? FreeBoxes,
     bool IsFull,
     bool IsActive,
     IReadOnlyList<PalletPositionStockDto> Stock);

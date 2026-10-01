@@ -39,9 +39,9 @@ builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSe
 
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("RequireAdmin", policy => policy.RequireRole(RoleNames.Admin));
-    options.AddPolicy("RequireSupervisorOrAdmin", policy => policy.RequireRole(RoleNames.Admin, RoleNames.Supervisor));
-    options.AddPolicy("RequireOperatorOrAdmin", policy => policy.RequireRole(RoleNames.Admin, RoleNames.Operator));
+    options.AddPolicy("RequireAdmin", policy => policy.RequireRole(RoleNames.Admin, RoleNames.Supervisor, RoleNames.Operator));
+    options.AddPolicy("RequireSupervisorOrAdmin", policy => policy.RequireRole(RoleNames.Admin, RoleNames.Supervisor, RoleNames.Operator));
+    options.AddPolicy("RequireOperatorOrAdmin", policy => policy.RequireRole(RoleNames.Admin, RoleNames.Supervisor, RoleNames.Operator));
 });
 
 var app = builder.Build();
@@ -71,6 +71,6 @@ app.MapRazorComponents<App>()
 
 app.MapAdditionalIdentityEndpoints();
 
-await DbInitializer.InitializeAsync(app.Services);
+//await DbInitializer.MigrateAsync(app.Services);
 
 app.Run();

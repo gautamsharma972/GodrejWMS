@@ -1,0 +1,288 @@
+@implements IAsyncDisposable
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JsRuntime
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="global-search">
+    <div class="global-search-box">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input class="global-search-input"
+               placeholder="Search pages, or ask a question..."
+               value="@_query"
+               @oninput="OnInput"
+               @onfocus="OnFocus"
+               @onkeydown="OnKeyDown"
+               aria-label="Search the application or ask the AI assistant" />
+        <span class="global-search-kbd">/</span>
+        @if (!string.IsNullOrEmpty(_query))
+        {
+            <button type="button" class="global-search-clear" @onclick="Clear" aria-label="Clear search">
+                <i class="bi bi-x-lg" aria-hidden="true"></i>
+            </button>
+        }
+    </div>
+
+    @if (_open)
+    {
+        <div class="global-search-panel">
+            @if (string.IsNullOrWhiteSpace(_query))
+            {
+                <div class="global-search-section-label">Frequently visited</div>
+                @if (_frequent.Count == 0)
+                {
+                    <div class="global-search-empty">Pages you visit often will show up here.</div>
+                }
+                else
+                {
+                    @for (var i = 0; i < _frequent.Count; i++)
+                    {
+                        var entry = _frequent[i];
+                        var index = i;
+                        <button type="button" class="global-search-item @(index == _highlighted ? "highlighted" : "")" @onclick="() => Go(entry.Route)">
+                            <i class="bi @entry.Icon" aria-hidden="true"></i>
+                            <span class="global-search-item-title">@entry.Title</span>
+                            <span class="global-search-group">@entry.Group</span>
+                        </button>
+                    }
+                }
+            }
+            else
+            {
+                @if (_matches.Count > 0)
+                {
+                    <div class="global-search-section-label">Pages</div>
+                    @for (var i = 0; i < _matches.Count; i++)
+                    {
+                        var entry = _matches[i];
+                        var index = i;
+                        <button type="button" class="global-search-item @(index == _highlighted ? "highlighted" : "")" @onclick="() => Go(entry.Route)">
+                            <i class="bi @entry.Icon" aria-hidden="true"></i>
+                            <span class="global-search-item-title">@entry.Title</span>
+                            <span class="global-search-group">@entry.Group</span>
+                        </button>
+                    }
+                }
+                else
+                {
+                    <div class="global-search-empty">No matching pages.</div>
+                }
+
+                @if (_aiVisible)
+                {
+                    <div class="global-search-section-label">AI Assistant</div>
+                    <button type="button" class="global-search-item global-search-ai @(_highlighted == _matches.Count ? "highlighted" : "")" @onclick="AskAi">
+                        <i class="bi bi-stars" aria-hidden="true"></i>
+                        <span class="global-search-item-title">Ask: "@_query"</span>
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private const int FrequentLimit = 6;
+    private const int MatchLimit = 6;
+
+    private string _query = "";
+    private bool _open;
+    private int _highlighted = -1;
+    private IReadOnlyList<SearchCatalogEntry> _allowedEntries = [];
+    private bool _canUseAi;
+    private List<SearchCatalogEntry> _matches = [];
+    private List<SearchCatalogEntry> _frequent = [];
+    private bool _aiVisible;
+    private DotNetObjectReference<GlobalSearch>? _outsideClickReference;
+    private string? _outsideClickHandlerId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var roles = new HashSet<string>(state.User.FindAll(System.Security.Claims.ClaimTypes.Role).Select(c => c.Value));
+        _allowedEntries = [.. AppSearchCatalog.Entries.Where(e => AppSearchCatalog.IsVisibleTo(e, roles))];
+        _canUseAi = _allowedEntries.Any(e => e.Route == "reports/ai-assistant");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        _outsideClickReference = DotNetObjectReference.Create(this);
+        _outsideClickHandlerId = await JsRuntime.InvokeAsync<string>(
+            "godrejWms.registerOutsideClick", ".global-search", _outsideClickReference, nameof(CloseFromOutside));
+    }
+
+    private async Task OnFocus()
+    {
+        _open = true;
+        if (string.IsNullOrWhiteSpace(_query))
+        {
+            await LoadFrequentAsync();
+        }
+        _highlighted = -1;
+    }
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? "";
+        _highlighted = -1;
+        _open = true;
+
+        if (string.IsNullOrWhiteSpace(_query))
+        {
+            await LoadFrequentAsync();
+            return;
+        }
+
+        _matches = [.. Rank(_query, _allowedEntries).Take(MatchLimit)];
+        _aiVisible = _query.Trim().Length >= 3 && _canUseAi;
+    }
+
+    private async Task LoadFrequentAsync()
+    {
+        try
+        {
+            var routes = await JsRuntime.InvokeAsync<string[]>("godrejWms.getFrequentVisits", FrequentLimit);
+            var byRoute = _allowedEntries.ToDictionary(e => e.Route, StringComparer.OrdinalIgnoreCase);
+            _frequent = [.. routes.Where(byRoute.ContainsKey).Select(r => byRoute[r])];
+        }
+        catch (JSException)
+        {
+            _frequent = [];
+        }
+
+        if (_frequent.Count == 0)
+        {
+            _frequent = [.. _allowedEntries.Where(e => e.Route is "" or "inventory-master" or "reports/operations")];
+        }
+    }
+
+    private static IEnumerable<SearchCatalogEntry> Rank(string query, IReadOnlyList<SearchCatalogEntry> entries)
+    {
+        var q = query.Trim();
+
+        return entries
+            .Select(e => (Entry: e, Score: Score(q, e)))
+            .Where(x => x.Score > 0)
+            .OrderByDescending(x => x.Score)
+            .Select(x => x.Entry);
+    }
+
+    private static int Score(string query, SearchCatalogEntry entry)
+    {
+        if (entry.Title.Equals(query, StringComparison.OrdinalIgnoreCase))
+        {
+            return 100;
+        }
+
+        if (entry.Title.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+        {
+            return 80;
+        }
+
+        if (entry.Title.Contains(query, StringComparison.OrdinalIgnoreCase))
+        {
+            return 60;
+        }
+
+        if (entry.Keywords.Any(k => k.Contains(query, StringComparison.OrdinalIgnoreCase)))
+        {
+            return 40;
+        }
+
+        if (entry.Group.Contains(query, StringComparison.OrdinalIgnoreCase))
+        {
+            return 20;
+        }
+
+        return 0;
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        var visible = string.IsNullOrWhiteSpace(_query) ? _frequent : _matches;
+        var count = visible.Count + (string.IsNullOrWhiteSpace(_query) ? 0 : (_aiVisible ? 1 : 0));
+
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                if (count > 0) _highlighted = (_highlighted + 1) % count;
+                break;
+            case "ArrowUp":
+                if (count > 0) _highlighted = (_highlighted - 1 + count) % count;
+                break;
+            case "Escape":
+                _open = false;
+                break;
+            case "Enter":
+                if (_highlighted >= 0 && _highlighted < visible.Count)
+                {
+                    _ = Go(visible[_highlighted].Route);
+                }
+                else if (!string.IsNullOrWhiteSpace(_query) && _aiVisible)
+                {
+                    _ = AskAi();
+                }
+                else if (visible.Count > 0)
+                {
+                    _ = Go(visible[0].Route);
+                }
+                break;
+        }
+    }
+
+    private Task Go(string route)
+    {
+        _open = false;
+        _query = "";
+        NavigationManager.NavigateTo(route);
+        return Task.CompletedTask;
+    }
+
+    private Task AskAi()
+    {
+        var question = _query;
+        _open = false;
+        _query = "";
+        NavigationManager.NavigateTo($"reports/ai-assistant?q={Uri.EscapeDataString(question)}");
+        return Task.CompletedTask;
+    }
+
+    private void Clear()
+    {
+        _query = "";
+        _highlighted = -1;
+    }
+
+    [JSInvokable]
+    public void CloseFromOutside()
+    {
+        if (!_open)
+        {
+            return;
+        }
+
+        _open = false;
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_outsideClickHandlerId is not null)
+        {
+            try
+            {
+                await JsRuntime.InvokeVoidAsync("godrejWms.unregisterOutsideClick", _outsideClickHandlerId);
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit already gone (page navigated away/tab closed) - nothing to clean up.
+            }
+        }
+
+        _outsideClickReference?.Dispose();
+    }
+}

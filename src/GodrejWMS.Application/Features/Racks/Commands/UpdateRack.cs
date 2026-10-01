@@ -20,8 +20,7 @@ public sealed record UpdateRackCommand(
     int LocationSubtypeId,
     int ZoneTypeId,
     int StartingDistancePriority,
-    int MaxPallets,
-    int BoxesPerPallet) : IRequest;
+    int MaxPallets) : IRequest;
 
 public sealed class UpdateRackValidator : AbstractValidator<UpdateRackCommand>
 {
@@ -50,7 +49,6 @@ public sealed class UpdateRackValidator : AbstractValidator<UpdateRackCommand>
             .WithMessage("Zone type is invalid.");
         RuleFor(x => x.StartingDistancePriority).InclusiveBetween(1, 9999);
         RuleFor(x => x.MaxPallets).InclusiveBetween(1, 10);
-        RuleFor(x => x.BoxesPerPallet).GreaterThan(0);
     }
 }
 
@@ -125,8 +123,6 @@ public sealed class UpdateRackHandler(
                 position.ZoneTypeId = request.ZoneTypeId;
                 position.DistancePriority = ((level - 1) * 10) + (request.StartingDistancePriority + column - 1);
                 position.MaxPallets = request.MaxPallets;
-                position.BoxesPerPallet = request.BoxesPerPallet;
-                position.CapacityBoxes = request.MaxPallets * request.BoxesPerPallet;
             }
         }
 

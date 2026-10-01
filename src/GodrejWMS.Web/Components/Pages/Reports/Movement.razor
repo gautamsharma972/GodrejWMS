@@ -1,5 +1,5 @@
 @page "/reports/movement"
-@attribute [Authorize(Roles = "Admin,Supervisor")]
+@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
 @using GodrejWMS.Application.Features.Reports.Dtos
 @using GodrejWMS.Application.Features.Reports.Queries
 @inject IMediator Mediator

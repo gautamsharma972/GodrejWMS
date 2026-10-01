@@ -18,7 +18,26 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db) : IRequestH
 
         var totalRacks = await db.Racks.CountAsync(r => r.IsActive, cancellationToken);
         var totalPositions = await db.PalletPositions.CountAsync(p => p.IsActive, cancellationToken);
-        var totalCapacityBoxes = await db.PalletPositions.Where(p => p.IsActive).SumAsync(p => p.CapacityBoxes, cancellationToken);
+
+        // Capacity is driven entirely by whichever material occupies (or is reserved against, via
+        // a pending put-away) a position - a position only ever holds one material at a time. A
+        // position with neither has no material context, so it contributes 0.
+        var positionCapacities = await db.PalletPositions
+            .Where(p => p.IsActive)
+            .Select(p => new
+            {
+                p.MaxPallets,
+                Occupied = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
+                Reserved = db.InwardPutaways.Where(r => !r.IsConfirmed && r.PalletPositionId == p.Id).Sum(r => (decimal?)r.QuantityBoxes) ?? 0m,
+                PalletCapacityBoxes = p.StockBatches.Where(b => b.QuantityBoxes > 0).Select(b => (int?)b.Material.PalletCapacityBoxes).FirstOrDefault()
+                    ?? db.InwardPutaways.Where(r => !r.IsConfirmed && r.PalletPositionId == p.Id)
+                        .Select(r => (int?)r.InwardTransactionLine.Material.PalletCapacityBoxes).FirstOrDefault()
+            })
+            .ToListAsync(cancellationToken);
+
+        var totalCapacityBoxes = (int)positionCapacities.Sum(p => p.MaxPallets * (p.PalletCapacityBoxes ?? 0));
+        var fullLocationCount = positionCapacities.Count(p =>
+            p.PalletCapacityBoxes is { } cap && p.Occupied + p.Reserved >= p.MaxPallets * cap);
 
         var occupiedPositions = await db.PalletPositions
             .Where(p => p.IsActive && p.StockBatches.Sum(b => b.QuantityBoxes) > 0)
@@ -60,12 +79,6 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db) : IRequestH
             .Where(l => l.PulloutTransaction.IsConfirmed)
             .Where(l => l.PulloutTransaction.CreatedAt >= today && l.PulloutTransaction.CreatedAt < tomorrow)
             .SumAsync(l => (decimal?)l.PickedQuantityBoxes, cancellationToken) ?? 0m;
-
-        var fullLocationCount = await db.PalletPositions
-            .Where(p => p.IsActive &&
-                p.StockBatches.Sum(b => b.QuantityBoxes) +
-                db.InwardPutaways.Where(r => !r.IsConfirmed && r.PalletPositionId == p.Id).Sum(r => r.QuantityBoxes) >= p.CapacityBoxes)
-            .CountAsync(cancellationToken);
 
         var freeCapacityBoxes = Math.Max(0, totalCapacityBoxes - totalStockBoxes - pendingPutawayBoxes);
 

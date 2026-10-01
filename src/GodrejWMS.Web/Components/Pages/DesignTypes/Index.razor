@@ -15,7 +15,7 @@
             <h1>Design Type Master</h1>
             <p class="page-kicker">Maintain the list of valid design type codes materials can be tagged with.</p>
         </div>
-        <AuthorizeView Roles="Admin,Supervisor" Context="editContext">
+        <AuthorizeView Roles="Admin,Supervisor,Operator" Context="editContext">
             <button class="btn btn-primary" @onclick="() => ShowForm(null)">
                 <i class="bi bi-plus-lg" aria-hidden="true"></i>
                 New Design Type
@@ -123,7 +123,7 @@
                             <td>@d.Description</td>
                             <td><span class="status-pill @(d.IsActive ? "success" : "inactive")">@(d.IsActive ? "Active" : "Inactive")</span></td>
                             <td class="table-actions">
-                                <AuthorizeView Roles="Admin,Supervisor" Context="rowEditContext">
+                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="rowEditContext">
                                     <button class="btn btn-sm btn-outline-secondary" title="@($"Edit {d.Code}")" aria-label="@($"Edit {d.Code}")" @onclick="() => ShowForm(d)">
                                         <i class="bi bi-pencil-square" aria-hidden="true"></i>
                                     </button>

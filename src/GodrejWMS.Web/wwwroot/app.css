@@ -345,6 +345,23 @@ h2 {
     overflow: hidden;
 }
 
+/* Materials page only: show every column at full width and scroll horizontally instead of
+   wrapping cell text, which the shared .panel-table's overflow:hidden would otherwise clip. */
+.table-responsive.panel-table.materials-table-wide {
+    overflow-x: auto;
+    overflow-y: visible;
+}
+
+.materials-table-wide table {
+    width: max-content;
+    min-width: 100%;
+}
+
+.materials-table-wide th,
+.materials-table-wide td {
+    white-space: nowrap;
+}
+
 .table-actions {
     width: 1%;
     white-space: nowrap;
@@ -2012,19 +2029,22 @@ h2 {
     color: #1d4ed8;
 }
 
-.pullout-status-bar.confirmed {
+.pullout-status-bar.confirmed,
+.transaction-status-bar.confirmed {
     border-color: #bbf7d0;
     background:
         linear-gradient(135deg, rgba(240, 253, 244, 0.98), rgba(255, 255, 255, 0.98)),
         radial-gradient(circle at 100% 0%, rgba(22, 163, 74, 0.12), transparent 34%);
 }
 
-.pullout-status-bar.confirmed .info-bar-icon {
+.pullout-status-bar.confirmed .info-bar-icon,
+.transaction-status-bar.confirmed .info-bar-icon {
     border-color: #bbf7d0;
     color: #15803d;
 }
 
-.pullout-status-bar.confirmed .status-pill {
+.pullout-status-bar.confirmed .status-pill,
+.transaction-status-bar.confirmed .status-pill {
     background: #dcfce7;
     color: #166534;
 }
@@ -2717,6 +2737,7 @@ h2 {
 .putaway-execute-shell {
     width: 100%;
     max-width: 1440px;
+    min-width: 0;
     margin-inline: auto;
 }
 
@@ -2747,6 +2768,9 @@ h2 {
 }
 
 .putaway-execute-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     background: var(--wms-surface);
     border: 1px solid var(--wms-border);
     border-radius: 12px;
@@ -2911,7 +2935,35 @@ h2 {
 }
 
 .putaway-execute-3d .rack-viewport {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     padding: 0.85rem 0.35rem 1.15rem 0;
+    overscroll-behavior-inline: contain;
+}
+
+/* The rack has an intentionally wide inner frame. Keep that intrinsic width in
+   the rack scroller instead of allowing it to widen the card/page. */
+.putaway-execute-3d {
+    min-width: 0;
+    overflow: hidden;
+}
+
+@media (max-width: 640px) {
+    .putaway-execute-card {
+        padding: 1rem;
+    }
+
+    .putaway-execute-3d .rack-viewport {
+        margin-inline: -1rem;
+        width: calc(100% + 2rem);
+        max-width: none;
+        padding-inline: 1rem;
+    }
+
+    .putaway-execute-3d .legend-row {
+        gap: 0.6rem 1rem;
+    }
 }
 
 .pallet-cell-3d.recommended {
@@ -3547,4 +3599,14 @@ h2 {
         transition: none;
         animation: none;
     }
+}
+
+/* Move by SKU: per-row location dropdown must overflow the table wrapper and be wider than the cell. */
+.table-responsive.sku-move-records {
+    overflow: visible;
+}
+
+.row-location-suggestions {
+    right: auto;
+    min-width: 320px;
 }

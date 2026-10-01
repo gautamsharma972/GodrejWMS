@@ -69,7 +69,7 @@ else
                                     {
                                         <button type="button"
                                                 class="pallet-cell-3d @CellStateClass(pos) @(_selected?.Id == pos.Id ? "selected" : "") @(!pos.IsActive ? "inactive" : "") @(MatchesRackFilters(pos) ? "" : "filtered-out") @(_rackSearch.Length > 0 && MatchesRackSearch(pos) ? "search-hit" : "")"
-                                                title="@($"{pos.LocationCode} - {pos.LocationSubtypeName}, {pos.OccupiedBoxes:0.###}/{pos.CapacityBoxes} boxes")"
+                                                title="@($"{pos.LocationCode} - {pos.LocationSubtypeName}, {pos.OccupiedBoxes:0.###}/{(pos.CapacityBoxes?.ToString() ?? "—")} boxes")"
                                                 @onclick="() => SelectPosition(pos)">
                                             <span class="rack-cell-top"></span>
                                             <span class="rack-cell-face">
@@ -81,7 +81,7 @@ else
                                                 <span class="rack-cell-meter">
                                                     <span style="@($"width:{OccupancyPercent(pos):0.##}%;")"></span>
                                                 </span>
-                                                <span class="rack-cell-meta">@($"{pos.OccupiedBoxes:0.###}/{pos.CapacityBoxes} boxes")</span>
+                                                <span class="rack-cell-meta">@($"{pos.OccupiedBoxes:0.###}/{(pos.CapacityBoxes?.ToString() ?? "—")} boxes")</span>
                                             </span>
                                             <span class="rack-cell-side"></span>
                                         </button>
@@ -133,7 +133,7 @@ else
                                 <div class="position-progress-block">
                                     <div>
                                         <span>Occupied</span>
-                                        <strong>@_selected.OccupiedBoxes.ToString("0.###") / @_selected.CapacityBoxes boxes</strong>
+                                        <strong>@_selected.OccupiedBoxes.ToString("0.###") / @(_selected.CapacityBoxes?.ToString() ?? "—") boxes</strong>
                                     </div>
                                     <span>@OccupancyPercent(_selected).ToString("0.#")%</span>
                                 </div>
@@ -145,7 +145,7 @@ else
                             <div class="position-metric-grid">
                                 <div class="position-metric">
                                     <span>Capacity</span>
-                                    <strong>@_selected.CapacityBoxes</strong>
+                                    <strong>@(_selected.CapacityBoxes?.ToString() ?? "—")</strong>
                                 </div>
                                 <div class="position-metric">
                                     <span>Occupied</span>
@@ -153,7 +153,7 @@ else
                                 </div>
                                 <div class="position-metric success">
                                     <span>Free</span>
-                                    <strong>@_selected.FreeBoxes.ToString("0.###")</strong>
+                                    <strong>@(_selected.FreeBoxes?.ToString("0.###") ?? "—")</strong>
                                 </div>
                                 <div class="position-metric">
                                     <span>Priority</span>
@@ -162,10 +162,6 @@ else
                                 <div class="position-metric">
                                     <span>Pallets</span>
                                     <strong>@_selected.MaxPallets</strong>
-                                </div>
-                                <div class="position-metric">
-                                    <span>Boxes / pallet</span>
-                                    <strong>@_selected.BoxesPerPallet</strong>
                                 </div>
                             </div>
 
@@ -218,7 +214,7 @@ else
                                     <div class="eyebrow">Physical Label</div>
                                     <div class="position-label-value">@(!string.IsNullOrWhiteSpace(_selected.FlatLabel) ? _selected.FlatLabel : "Not assigned")</div>
                                 </div>
-                                <AuthorizeView Roles="Admin" Context="adminContext">
+                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="adminContext">
                                     <button type="button" class="btn btn-outline-secondary" @onclick="OpenLabelEditor">
                                         <i class="bi bi-pencil-square" aria-hidden="true"></i>
                                         Edit Location
@@ -289,10 +285,6 @@ else
                                 <div class="col-md-6">
                                     <label class="form-label">Max Pallets</label>
                                     <InputNumber class="form-control" @bind-Value="_labelForm.MaxPallets" />
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Boxes Per Pallet</label>
-                                    <InputNumber class="form-control" @bind-Value="_labelForm.BoxesPerPallet" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Active</label>
@@ -395,7 +387,6 @@ else
             _labelForm.ZoneTypeId,
             _labelForm.DistancePriority,
             _labelForm.MaxPallets,
-            _labelForm.BoxesPerPallet,
             _labelForm.IsActive));
         await LoadAsync();
         _selected = _layout!.Positions.FirstOrDefault(p => p.Id == _selected.Id);
@@ -410,7 +401,6 @@ else
         ZoneTypeId = position.ZoneTypeId,
         DistancePriority = position.DistancePriority,
         MaxPallets = position.MaxPallets,
-        BoxesPerPallet = position.BoxesPerPallet,
         IsActive = position.IsActive
     };
 
@@ -475,7 +465,9 @@ else
     };
 
     private static decimal OccupancyPercent(PalletPositionDto position) =>
-        position.CapacityBoxes <= 0 ? 0 : Math.Clamp(position.OccupiedBoxes / position.CapacityBoxes * 100, 0, 100);
+        position.CapacityBoxes is not { } capacity || capacity <= 0
+            ? 0
+            : Math.Clamp(position.OccupiedBoxes / capacity * 100, 0, 100);
 
     private class LabelFormModel
     {
@@ -485,7 +477,6 @@ else
         public int ZoneTypeId { get; set; } = ZoneTypeIds.Reserve;
         public int DistancePriority { get; set; } = 100;
         public int MaxPallets { get; set; } = 2;
-        public int BoxesPerPallet { get; set; } = 40;
         public bool IsActive { get; set; } = true;
     }
 }

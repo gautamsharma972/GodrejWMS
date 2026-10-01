@@ -44,8 +44,6 @@ public class PalletPositionConfiguration : IEntityTypeConfiguration<PalletPositi
         builder.Property(p => p.FlatLabel).HasMaxLength(20);
         builder.Property(p => p.DistancePriority).HasDefaultValue(100);
         builder.Property(p => p.MaxPallets).HasDefaultValue(2);
-        builder.Property(p => p.BoxesPerPallet).HasDefaultValue(40);
-        builder.Property(p => p.CapacityBoxes).HasDefaultValue(80);
 
         builder.Property(p => p.CreatedByUserId).HasMaxLength(450);
         builder.Property(p => p.UpdatedByUserId).HasMaxLength(450);

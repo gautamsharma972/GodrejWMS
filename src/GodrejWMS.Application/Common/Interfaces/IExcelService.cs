@@ -45,8 +45,20 @@ public interface IExcelService
     /// <summary>Writes the "Format inventory master" / "Format invent pullout-download" layout.</summary>
     byte[] WriteStockMaster(IReadOnlyList<StockMasterRowDto> rows);
 
+    /// <summary>Writes a sample Inventory Master upload workbook: the same layout as
+    /// <see cref="WriteStockMaster"/>, pre-filled with example rows.</summary>
+    byte[] WriteStockMasterTemplate();
+
+    /// <summary>Parses an Inventory Master upload: Material Code, Total Stock in CFB, Mfg Month,
+    /// Pallet Position. Directly places/replaces stock at an existing location - unlike the
+    /// "inward" upload, it does not run the put-away allocation engine.</summary>
+    IReadOnlyList<StockMasterImportRow> ReadStockMaster(Stream fileStream);
+
     /// <summary>Writes a pullout download workbook, mirroring "Format invent pullout-download".</summary>
     byte[] WritePulloutDownload(IReadOnlyList<StockMasterRowDto> rows);
+
+    /// <summary>Writes an inward (GRN) allocation workbook: one row per put-away location.</summary>
+    byte[] WriteInwardDownload(IReadOnlyList<InwardDownloadRow> rows);
 
     byte[] WriteOperationalReport(string title, IReadOnlyList<(string Header, Func<ReportRow, string> Value)> columns,
         IReadOnlyList<ReportRow> rows);

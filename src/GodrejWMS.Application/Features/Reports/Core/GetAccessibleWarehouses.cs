@@ -12,7 +12,8 @@ public sealed class GetAccessibleWarehousesHandler(IApplicationDbContext db, ICu
 {
     public async Task<IReadOnlyList<WarehouseOption>> Handle(GetAccessibleWarehousesQuery request, CancellationToken ct) =>
         await db.Warehouses.AsNoTracking().Where(w => w.IsActive &&
-                (user.IsInRole("Admin") || db.UserWarehouses.Any(a => a.UserId == user.UserId && a.WarehouseId == w.Id)))
+                ((user.IsInRole("Admin") || user.IsInRole("Supervisor") || user.IsInRole("Operator")) ||
+                 db.UserWarehouses.Any(a => a.UserId == user.UserId && a.WarehouseId == w.Id)))
             .OrderBy(w => w.Code)
             .Select(w => new WarehouseOption(w.Id, w.Code, w.Name)).ToListAsync(ct);
 }

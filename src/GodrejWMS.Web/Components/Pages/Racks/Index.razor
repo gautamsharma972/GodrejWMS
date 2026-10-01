@@ -22,7 +22,7 @@
             <h1>Racks &amp; Pallet Positions</h1>
             <p class="page-kicker">Manage rack definitions and generated location master records for warehouse storage.</p>
         </div>
-        <AuthorizeView Roles="Admin" Context="adminContext">
+        <AuthorizeView Roles="Admin,Supervisor,Operator" Context="adminContext">
             <button class="btn btn-primary" @onclick="ShowCreateForm">
                 <i class="bi bi-plus-lg" aria-hidden="true"></i>
                 New Rack
@@ -62,10 +62,6 @@
                             <div class="col-md-4">
                                 <label class="form-label">Levels</label>
                                 <input type="number" class="form-control" @bind="_form.Levels" @bind:event="oninput" />
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Boxes/Pallet</label>
-                                <InputNumber class="form-control" @bind-Value="_form.BoxesPerPallet" />
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Max Pallets/Location</label>
@@ -196,7 +192,7 @@
                             <td class="text-end">@r.OccupiedPositions</td>
                             <td class="text-end"><span class="status-pill @OccupancyClass(r.OccupancyPercent)">@r.OccupancyPercent%</span></td>
                             <td class="table-actions">
-                                <AuthorizeView Roles="Admin" Context="rowAdminContext">
+                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="rowAdminContext">
                                     <button type="button" class="btn btn-sm btn-outline-secondary" title="@($"Edit rack {r.Code}")" aria-label="@($"Edit rack {r.Code}")" @onclick="() => ShowEditFormAsync(r)">
                                         <i class="bi bi-pencil-square" aria-hidden="true"></i>
                                     </button>
@@ -285,8 +281,7 @@
             LocationSubtypeId = defaults?.LocationSubtypeId ?? LocationSubtypeIds.Good,
             ZoneTypeId = defaults?.ZoneTypeId ?? ZoneTypeIds.Fast,
             StartingDistancePriority = defaults?.DistancePriority ?? 1,
-            MaxPallets = defaults?.MaxPallets ?? 2,
-            BoxesPerPallet = defaults?.BoxesPerPallet ?? 40
+            MaxPallets = defaults?.MaxPallets ?? 2
         };
 
         _showForm = true;
@@ -315,7 +310,7 @@
                     _form.Code, _form.Name, _form.Columns, _form.Levels,
                     _form.ShelfLengthMm, _form.ShelfWidthMm, _form.ShelfHeightMm,
                     _form.LocationTypeId, _form.LocationSubtypeId, _form.ZoneTypeId,
-                    _form.StartingDistancePriority, _form.MaxPallets, _form.BoxesPerPallet));
+                    _form.StartingDistancePriority, _form.MaxPallets));
             }
             else
             {
@@ -323,7 +318,7 @@
                     _form.Code, _form.Name, _form.Columns, _form.Levels,
                     _form.ShelfLengthMm, _form.ShelfWidthMm, _form.ShelfHeightMm,
                     _form.LocationTypeId, _form.LocationSubtypeId, _form.ZoneTypeId,
-                    _form.StartingDistancePriority, _form.MaxPallets, _form.BoxesPerPallet));
+                    _form.StartingDistancePriority, _form.MaxPallets));
             }
 
             _showForm = false;
@@ -437,7 +432,6 @@
         public int ZoneTypeId { get; set; } = ZoneTypeIds.Fast;
         public int StartingDistancePriority { get; set; } = 1;
         public int MaxPallets { get; set; } = 2;
-        public int BoxesPerPallet { get; set; } = 40;
     }
 }
 

@@ -9,6 +9,7 @@
 @inject IMediator Mediator
 @inject ILogger<Detail> Logger
 @inject IJSRuntime JsRuntime
+@inject GodrejWMS.Application.Common.Interfaces.IExcelService ExcelService
 
 <PageTitle>Inward Detail - Godrej WMS</PageTitle>
 
@@ -65,6 +66,14 @@
                         Reject GRN
                     </button>
                 }
+                @if (!_detail.IsRejected)
+                {
+                    <button type="button" class="btn btn-outline-secondary" @onclick="DownloadExcelAsync"
+                            title="Download this GRN's allocation as Excel@(_detail.IsConfirmed ? string.Empty : " (before confirming)")">
+                        <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                        Download Excel
+                    </button>
+                }
                 <a class="btn btn-outline-secondary" href="/inward">
                     <i class="bi bi-arrow-left" aria-hidden="true"></i>
                     Back
@@ -72,9 +81,18 @@
             </div>
         </div>
 
-        @if (!string.IsNullOrWhiteSpace(_confirmationMessage))
+        @if (_detail.IsConfirmed)
         {
-            <div class="alert alert-success">@_confirmationMessage</div>
+            <div class="putaway-info-bar transaction-status-bar confirmed" role="status" aria-live="polite">
+                <div class="info-bar-icon">
+                    <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                </div>
+                <div class="info-bar-content">
+                    <h2>Stock confirmed</h2>
+                    <p>@(_confirmationMessage ?? "Dashboard and inventory views now reflect this GRN.")</p>
+                </div>
+                <span class="status-pill success">Inventory updated</span>
+            </div>
         }
 
         @if (!string.IsNullOrWhiteSpace(_reallocationMessage))
@@ -372,7 +390,7 @@
                                     <div class="position-progress-block">
                                         <div>
                                             <span>Occupied</span>
-                                            <strong>@_selectedPalletPosition.OccupiedBoxes.ToString("0.###") / @_selectedPalletPosition.CapacityBoxes boxes</strong>
+                                            <strong>@_selectedPalletPosition.OccupiedBoxes.ToString("0.###") / @(_selectedPalletPosition.CapacityBoxes?.ToString() ?? "—") boxes</strong>
                                         </div>
                                         <span>@OccupancyPercent(_selectedPalletPosition).ToString("0.#")%</span>
                                     </div>
@@ -382,12 +400,11 @@
                                 </div>
 
                                 <div class="position-metric-grid">
-                                    <div class="position-metric"><span>Capacity</span><strong>@_selectedPalletPosition.CapacityBoxes</strong></div>
+                                    <div class="position-metric"><span>Capacity</span><strong>@(_selectedPalletPosition.CapacityBoxes?.ToString() ?? "—")</strong></div>
                                     <div class="position-metric"><span>Occupied</span><strong>@_selectedPalletPosition.OccupiedBoxes.ToString("0.###")</strong></div>
-                                    <div class="position-metric success"><span>Free</span><strong>@_selectedPalletPosition.FreeBoxes.ToString("0.###")</strong></div>
+                                    <div class="position-metric success"><span>Free</span><strong>@(_selectedPalletPosition.FreeBoxes?.ToString("0.###") ?? "—")</strong></div>
                                     <div class="position-metric"><span>Priority</span><strong>@_selectedPalletPosition.DistancePriority</strong></div>
                                     <div class="position-metric"><span>Pallets</span><strong>@_selectedPalletPosition.MaxPallets</strong></div>
-                                    <div class="position-metric"><span>Boxes / pallet</span><strong>@_selectedPalletPosition.BoxesPerPallet</strong></div>
                                 </div>
 
                                 <section class="position-section">
@@ -849,6 +866,15 @@
         }
     }
 
+    private async Task DownloadExcelAsync()
+    {
+        if (_detail is null) return;
+
+        var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.FromDetail(_detail));
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"inward-{_detail.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
     private void ToggleRejectPanel()
     {
         _showRejectPanel = !_showRejectPanel;
@@ -910,7 +936,7 @@
     };
 
     private static decimal OccupancyPercent(PalletPositionDto position) =>
-        position.CapacityBoxes <= 0 ? 0 : Math.Clamp(position.OccupiedBoxes / position.CapacityBoxes * 100, 0, 100);
+        position.CapacityBoxes is not { } capacity || capacity <= 0 ? 0 : Math.Clamp(position.OccupiedBoxes / capacity * 100, 0, 100);
     private static string AllocationClass(AllocationStatus status) => status switch
     {
         AllocationStatus.Fulfilled => "success",
@@ -923,8 +949,6 @@
         public decimal AllocatedQuantityBoxes => Putaway?.QuantityBoxes ?? Line.AllocatedQuantityBoxes;
     }
 }
-
-
 
 
 

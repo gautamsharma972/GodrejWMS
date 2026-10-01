@@ -543,16 +543,6 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("BoxesPerPallet")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(40);
-
-                    b.Property<int>("CapacityBoxes")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(80);
-
                     b.Property<int>("Column")
                         .HasColumnType("int");
 

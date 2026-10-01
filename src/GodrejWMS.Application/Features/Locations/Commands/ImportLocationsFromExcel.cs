@@ -53,12 +53,6 @@ public sealed class ImportLocationsFromExcelHandler(IExcelService excel, IApplic
                 continue;
             }
 
-            if (row.BoxesPerPallet <= 0)
-            {
-                errors.Add($"Row {row.RowNumber}: Boxes Per Pallet must be greater than zero.");
-                continue;
-            }
-
             if (!subtypesByCode.TryGetValue(row.LocationSubtypeCode.Trim(), out var locationSubtypeId))
             {
                 errors.Add($"Row {row.RowNumber}: Location Subtype '{row.LocationSubtypeCode}' was not recognized.");
@@ -83,8 +77,6 @@ public sealed class ImportLocationsFromExcelHandler(IExcelService excel, IApplic
             position.ZoneTypeId = zoneTypeId;
             position.DistancePriority = Math.Clamp(row.DistancePriority, 1, 9999);
             position.MaxPallets = row.MaxPallets;
-            position.BoxesPerPallet = row.BoxesPerPallet;
-            position.CapacityBoxes = row.MaxPallets * row.BoxesPerPallet;
             position.IsActive = row.IsActive;
             updated++;
         }

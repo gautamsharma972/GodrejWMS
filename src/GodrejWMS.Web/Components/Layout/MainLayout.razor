@@ -2,6 +2,7 @@
 @implements IDisposable
 
 @inject NavigationManager NavigationManager
+@inject IJSRuntime JsRuntime
 
 <div class="page @(sidebarCollapsed ? "sidebar-collapsed" : null)">
     <aside class="sidebar">
@@ -28,6 +29,14 @@
                     <div class="top-row-title">Godrej Operations Console</div>
                 </div>
             </div>
+
+            <AuthorizeView>
+                <Authorized>
+                    <div class="top-row-center">
+                        <GlobalSearch />
+                    </div>
+                </Authorized>
+            </AuthorizeView>
 
             <div class="top-row-actions">
                 <AuthorizeView>
@@ -119,12 +128,38 @@
     private string? currentUrl;
     private bool IsReportPage => (currentUrl ?? string.Empty).StartsWith("reports/", StringComparison.OrdinalIgnoreCase);
 
+    private static readonly HashSet<string> WideTableRoutes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "inventory-master",
+        "stock-master",
+        "locations",
+        "materials",
+        "racks",
+        "audit-trail",
+        "inward/history",
+        "pullout/history",
+        "inventory-movement/history",
+        "inventory-movement/by-location",
+        "inventory-movement/by-sku"
+    };
+
+    private bool IsWideTablePage
+    {
+        get
+        {
+            var path = CurrentPath;
+            return path.StartsWith("reports/", StringComparison.OrdinalIgnoreCase)
+                || WideTableRoutes.Contains(path);
+        }
+    }
+
+    private string CurrentPath => (currentUrl ?? string.Empty).Split('?', '#')[0].Trim('/');
+
     private bool IsPutawayExecution
     {
         get
         {
-            var path = currentUrl?.Split('?', '#')[0].Trim('/') ?? string.Empty;
-            var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var segments = CurrentPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
             return segments.Length == 3
                 && segments[0].Equals("inward", StringComparison.OrdinalIgnoreCase)
                 && int.TryParse(segments[1], out _)
@@ -132,10 +167,34 @@
         }
     }
 
+    private static readonly HashSet<string> CatalogRoutes = new(
+        AppSearchCatalog.Entries.Select(e => e.Route), StringComparer.OrdinalIgnoreCase);
+
     protected override void OnInitialized()
     {
         currentUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        sidebarCollapsed = IsWideTablePage;
         NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // JS interop (localStorage) isn't available during static prerendering, so the initial
+        // page's visit is only tracked once the interactive circuit actually connects here;
+        // later navigations are tracked from OnLocationChanged instead, which only ever fires
+        // after that point.
+        if (firstRender)
+        {
+            TrackVisit();
+        }
+    }
+
+    private void TrackVisit()
+    {
+        if (CatalogRoutes.Contains(CurrentPath))
+        {
+            _ = JsRuntime.InvokeVoidAsync("godrejWms.trackVisit", CurrentPath);
+        }
     }
 
     private void ToggleSidebar()
@@ -146,6 +205,8 @@
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         currentUrl = NavigationManager.ToBaseRelativePath(e.Location);
+        sidebarCollapsed = IsWideTablePage;
+        TrackVisit();
         StateHasChanged();
     }
 

@@ -3,6 +3,7 @@ using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.Racks.Dtos;
 using GodrejWMS.Domain.Entities;
+using GodrejWMS.Domain.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -38,10 +39,14 @@ public sealed class GetPalletPositionByCodeHandler(IApplicationDbContext db)
                 ZoneTypeName = p.ZoneType.DisplayName,
                 p.DistancePriority,
                 p.MaxPallets,
-                p.BoxesPerPallet,
-                p.CapacityBoxes,
                 p.IsActive,
                 OccupiedBoxes = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
+                // A position only ever holds one material at a time, so the first occupied
+                // batch's material (if any) defines this location's effective capacity.
+                OccupyingPalletCapacityBoxes = p.StockBatches
+                    .Where(b => b.QuantityBoxes > 0)
+                    .Select(b => (int?)b.Material.PalletCapacityBoxes)
+                    .FirstOrDefault(),
                 Stock = p.StockBatches
                     .Where(b => b.QuantityBoxes > 0)
                     .OrderBy(b => b.Material.MaterialNumber)
@@ -62,6 +67,10 @@ public sealed class GetPalletPositionByCodeHandler(IApplicationDbContext db)
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException(nameof(PalletPosition), locationCode);
 
+        var capacityBoxes = position.OccupyingPalletCapacityBoxes is { } palletCapacity
+            ? (int?)PalletCapacityCalculator.EffectiveCapacityBoxes(position.MaxPallets, palletCapacity)
+            : null;
+
         return new PalletPositionDto(
             position.Id,
             position.RackId,
@@ -80,11 +89,10 @@ public sealed class GetPalletPositionByCodeHandler(IApplicationDbContext db)
             position.ZoneTypeName,
             position.DistancePriority,
             position.MaxPallets,
-            position.BoxesPerPallet,
-            position.CapacityBoxes,
+            capacityBoxes,
             position.OccupiedBoxes,
-            Math.Max(0, position.CapacityBoxes - position.OccupiedBoxes),
-            position.OccupiedBoxes >= position.CapacityBoxes,
+            capacityBoxes is { } cap ? Math.Max(0, cap - position.OccupiedBoxes) : null,
+            capacityBoxes is { } capForFull && position.OccupiedBoxes >= capForFull,
             position.IsActive,
             position.Stock.Select(s => new PalletPositionStockDto(
                 s.MaterialNumber,

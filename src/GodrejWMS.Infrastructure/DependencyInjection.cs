@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace GodrejWMS.Infrastructure;
 
@@ -44,6 +45,14 @@ public static class DependencyInjection
         services.AddScoped<IPalletAllocationService, PalletAllocationService>();
         services.AddScoped<IPulloutAllocationService, PulloutAllocationService>();
         services.AddScoped<IInventoryMovementService, InventoryMovementService>();
+
+        services.Configure<AiOptions>(configuration.GetSection("Ai"));
+        services.AddHttpClient<IAiAssistantService, OllamaAiAssistantService>((sp, client) =>
+        {
+            var baseUrl = sp.GetRequiredService<IOptions<AiOptions>>().Value.OllamaBaseUrl;
+            client.BaseAddress = new Uri(baseUrl.EndsWith('/') ? baseUrl : baseUrl + "/");
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
 
         return services;
     }

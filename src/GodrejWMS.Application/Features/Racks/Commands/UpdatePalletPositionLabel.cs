@@ -16,7 +16,6 @@ public sealed record UpdatePalletPositionLabelCommand(
     int ZoneTypeId,
     int DistancePriority,
     int MaxPallets,
-    int BoxesPerPallet,
     bool IsActive) : IRequest;
 
 public sealed class UpdatePalletPositionLabelValidator : AbstractValidator<UpdatePalletPositionLabelCommand>
@@ -36,7 +35,6 @@ public sealed class UpdatePalletPositionLabelValidator : AbstractValidator<Updat
             .WithMessage("Zone type is invalid.");
         RuleFor(x => x.DistancePriority).InclusiveBetween(1, 9999);
         RuleFor(x => x.MaxPallets).InclusiveBetween(1, 10);
-        RuleFor(x => x.BoxesPerPallet).GreaterThan(0);
     }
 }
 
@@ -54,8 +52,6 @@ public sealed class UpdatePalletPositionLabelHandler(IApplicationDbContext db)
         position.ZoneTypeId = request.ZoneTypeId;
         position.DistancePriority = request.DistancePriority;
         position.MaxPallets = request.MaxPallets;
-        position.BoxesPerPallet = request.BoxesPerPallet;
-        position.CapacityBoxes = request.MaxPallets * request.BoxesPerPallet;
         position.IsActive = request.IsActive;
         await db.SaveChangesAsync(cancellationToken);
     }

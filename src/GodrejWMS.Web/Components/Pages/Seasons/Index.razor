@@ -16,13 +16,13 @@
             <p class="page-kicker">Manage the seasons (Rainy/Summer/Winter and any you add) - display name, description, sort order, and active status.</p>
         </div>
         <div class="header-actions">
-            <AuthorizeView Roles="Admin,Supervisor" Context="createContext">
+            <AuthorizeView Roles="Admin,Supervisor,Operator" Context="createContext">
                 <button class="btn btn-outline-primary" @onclick="ShowCreateForm">
                     <i class="bi bi-plus-lg" aria-hidden="true"></i>
                     New Season
                 </button>
             </AuthorizeView>
-            <AuthorizeView Roles="Admin,Supervisor" Context="editContext">
+            <AuthorizeView Roles="Admin,Supervisor,Operator" Context="editContext">
                 <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
                     @if (_saving)
                     {
@@ -164,7 +164,7 @@
                         <tr>
                             <td><span class="record-code">@row.Code</span></td>
                             <td style="max-width: 220px">
-                                <AuthorizeView Roles="Admin,Supervisor" Context="nameEditContext">
+                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="nameEditContext">
                                     <Authorized>
                                         <input class="form-control" value="@row.DisplayName"
                                                @onchange="e => OnDisplayNameChanged(row.Id, e)" />
@@ -175,7 +175,7 @@
                                 </AuthorizeView>
                             </td>
                             <td>
-                                <AuthorizeView Roles="Admin,Supervisor" Context="descEditContext">
+                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="descEditContext">
                                     <Authorized>
                                         <input class="form-control" value="@row.Description"
                                                @onchange="e => OnDescriptionChanged(row.Id, e)" />
@@ -186,7 +186,7 @@
                                 </AuthorizeView>
                             </td>
                             <td class="text-end" style="max-width: 120px">
-                                <AuthorizeView Roles="Admin,Supervisor" Context="sortEditContext">
+                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="sortEditContext">
                                     <Authorized>
                                         <input type="number" min="0" class="form-control" value="@row.SortOrder"
                                                @onchange="e => OnSortOrderChanged(row.Id, e)" />
@@ -197,7 +197,7 @@
                                 </AuthorizeView>
                             </td>
                             <td>
-                                <AuthorizeView Roles="Admin,Supervisor" Context="activeEditContext">
+                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="activeEditContext">
                                     <Authorized>
                                         <div class="form-check">
                                             <input type="checkbox" class="form-check-input" checked="@row.IsActive"
@@ -210,7 +210,7 @@
                                 </AuthorizeView>
                             </td>
                             <td class="table-actions">
-                                <AuthorizeView Roles="Admin,Supervisor" Context="rowDeleteContext">
+                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="rowDeleteContext">
                                     <button class="btn btn-sm btn-outline-danger" title="@($"Delete {row.DisplayName}")" aria-label="@($"Delete {row.DisplayName}")" @onclick="() => ShowDeleteConfirm(row)">
                                         <i class="bi bi-trash" aria-hidden="true"></i>
                                     </button>

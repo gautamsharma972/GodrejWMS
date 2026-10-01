@@ -7,9 +7,8 @@ namespace GodrejWMS.Application.Features.Reports.Queries;
 
 /// <summary>Inventory Reports - "Valuation (at MRP)" tab: total stock value per material, computed
 /// as QuantityBoxes x Material.PackSize x Material.MrpPrice - retail MRP, not a landed-cost field
-/// (none exists on Material today), so this is deliberately labeled "at MRP". Admin-only: enforced
-/// here server-side, not just by hiding the tab client-side, matching this app's established
-/// defense-in-depth pattern for sensitive data.</summary>
+/// (none exists on Material today), so this is deliberately labeled "at MRP". Access is enforced
+/// here server-side as well as in the UI.</summary>
 public sealed record GetInventoryValuationQuery(string? Search = null) : IRequest<IReadOnlyList<InventoryValuationRowDto>>;
 
 public sealed class GetInventoryValuationHandler(IApplicationDbContext db, ICurrentUserService currentUser)
@@ -18,9 +17,11 @@ public sealed class GetInventoryValuationHandler(IApplicationDbContext db, ICurr
     public async Task<IReadOnlyList<InventoryValuationRowDto>> Handle(
         GetInventoryValuationQuery request, CancellationToken cancellationToken)
     {
-        if (!currentUser.IsInRole("Admin"))
+        if (!currentUser.IsInRole("Admin") &&
+            !currentUser.IsInRole("Supervisor") &&
+            !currentUser.IsInRole("Operator"))
         {
-            throw new UnauthorizedAccessException("Inventory valuation is restricted to Admin users.");
+            throw new UnauthorizedAccessException("Inventory valuation requires an authorized warehouse role.");
         }
 
         var query = db.StockBatches.AsNoTracking().Where(b => b.QuantityBoxes > 0);

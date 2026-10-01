@@ -111,7 +111,7 @@
                     </div>
                     <div>
                         <span>Available</span>
-                        <strong>@(_currentPosition?.FreeBoxes.ToString("0.###") ?? "-")</strong>
+                        <strong>@(_currentPosition?.FreeBoxes?.ToString("0.###") ?? "-")</strong>
                     </div>
                 </div>
 
@@ -148,7 +148,7 @@
                                         @foreach (var pos in _rackLayout.Positions.Where(p => p.Level == level).OrderBy(p => p.Column))
                                         {
                                             <div class="pallet-cell-3d @CellStateClass(pos) @(_currentPosition is not null && pos.Id == _currentPosition.Id ? "recommended" : "") @(!pos.IsActive ? "inactive" : "")"
-                                                 title="@($"{pos.LocationCode} - {pos.OccupiedBoxes:0.###}/{pos.CapacityBoxes} boxes")">
+                                                 title="@($"{pos.LocationCode} - {pos.OccupiedBoxes:0.###}/{(pos.CapacityBoxes?.ToString() ?? "—")} boxes")">
                                                 @if (_currentPosition is not null && pos.Id == _currentPosition.Id)
                                                 {
                                                     <span class="rack-cell-pin"><i class="bi bi-geo-alt-fill" aria-hidden="true"></i></span>
@@ -159,7 +159,7 @@
                                                     <span class="rack-cell-meter">
                                                         <span style="@($"width:{OccupancyPercent(pos):0.##}%;")"></span>
                                                     </span>
-                                                    <span class="rack-cell-meta">@($"{pos.OccupiedBoxes:0.###}/{pos.CapacityBoxes}")</span>
+                                                    <span class="rack-cell-meta">@($"{pos.OccupiedBoxes:0.###}/{(pos.CapacityBoxes?.ToString() ?? "—")}")</span>
                                                 </span>
                                                 <span class="rack-cell-side"></span>
                                             </div>
@@ -242,7 +242,9 @@
         position.IsFull ? "cell-full" : position.OccupiedBoxes > 0 ? "cell-partial" : "cell-empty";
 
     private static double OccupancyPercent(PalletPositionDto position) =>
-        position.CapacityBoxes <= 0 ? 0 : Math.Min(100, (double)(position.OccupiedBoxes / position.CapacityBoxes) * 100);
+        position.CapacityBoxes is not { } capacity || capacity <= 0
+            ? 0
+            : Math.Min(100, (double)(position.OccupiedBoxes / capacity) * 100);
 
     private async Task ConfirmCurrentAsync()
     {

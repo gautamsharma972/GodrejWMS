@@ -62,6 +62,20 @@
     min-width: 0;
 }
 
+.top-row-center {
+    flex: 1 1 auto;
+    display: flex;
+    justify-content: center;
+    min-width: 0;
+    padding: 0 1rem;
+}
+
+@media (max-width: 900px) {
+    .top-row-center {
+        display: none;
+    }
+}
+
 .sidebar-toggle {
     width: 42px;
     height: 42px;
@@ -264,6 +278,7 @@
     padding: 1.5rem 2rem 2.5rem;
 }
 
+.putaway-execution-workspace .content,
 .report-workspace .content {
     min-width: 0;
     max-width: 100%;

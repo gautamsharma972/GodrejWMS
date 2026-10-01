@@ -25,8 +25,7 @@ public sealed record CreateRackCommand(
     int LocationSubtypeId,
     int ZoneTypeId,
     int StartingDistancePriority,
-    int MaxPallets,
-    int BoxesPerPallet) : IRequest<int>;
+    int MaxPallets) : IRequest<int>;
 
 public sealed class CreateRackValidator : AbstractValidator<CreateRackCommand>
 {
@@ -53,7 +52,6 @@ public sealed class CreateRackValidator : AbstractValidator<CreateRackCommand>
             .WithMessage("Zone type is invalid.");
         RuleFor(x => x.StartingDistancePriority).InclusiveBetween(1, 9999);
         RuleFor(x => x.MaxPallets).InclusiveBetween(1, 10);
-        RuleFor(x => x.BoxesPerPallet).GreaterThan(0);
     }
 }
 
@@ -91,8 +89,6 @@ public sealed class CreateRackHandler(IApplicationDbContext db, IDateTimeProvide
                     ZoneTypeId = request.ZoneTypeId,
                     DistancePriority = ((level - 1) * 10) + (request.StartingDistancePriority + column - 1),
                     MaxPallets = request.MaxPallets,
-                    BoxesPerPallet = request.BoxesPerPallet,
-                    CapacityBoxes = request.MaxPallets * request.BoxesPerPallet,
                     IsActive = true,
                     CreatedAt = clock.UtcNow,
                     CreatedByUserId = currentUser.UserId

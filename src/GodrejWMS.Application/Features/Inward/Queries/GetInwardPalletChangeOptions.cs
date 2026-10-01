@@ -80,7 +80,6 @@ public sealed class GetInwardPalletChangeOptionsHandler(IApplicationDbContext db
                 ZoneTypeName = p.ZoneType.DisplayName,
                 p.DistancePriority,
                 p.MaxPallets,
-                p.CapacityBoxes,
                 OccupiedBoxes = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m
             })
             .ToListAsync(cancellationToken);
@@ -90,7 +89,7 @@ public sealed class GetInwardPalletChangeOptionsHandler(IApplicationDbContext db
             {
                 var reserved = reservedByPosition.GetValueOrDefault(p.Id);
                 var occupied = p.OccupiedBoxes + reserved;
-                var effectiveCapacity = PalletCapacityCalculator.EffectiveCapacityBoxes(p.CapacityBoxes, p.MaxPallets, material.PalletCapacityBoxes);
+                var effectiveCapacity = PalletCapacityCalculator.EffectiveCapacityBoxes(p.MaxPallets, material.PalletCapacityBoxes);
                 var free = Math.Max(0, effectiveCapacity - occupied);
                 var isCurrent = p.Id == putaway.PalletPositionId;
 

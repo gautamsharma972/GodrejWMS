@@ -13,7 +13,8 @@ public sealed class GetOperationalReportHandler(
 {
     public async Task<PaginatedList<ReportRow>> Handle(GetOperationalReportQuery request, CancellationToken ct)
     {
-        if (!user.IsInRole("Admin") && !user.IsInRole("Supervisor")) throw new UnauthorizedAccessException("Reports require Admin or Supervisor access.");
+        if (!user.IsInRole("Admin") && !user.IsInRole("Supervisor") && !user.IsInRole("Operator"))
+            throw new UnauthorizedAccessException("Reports require an authorized warehouse role.");
         if (!Enum.IsDefined(request.Kind) || request.Page < 1 || request.PageSize is < 1 or > 10000)
             throw new ArgumentException("Invalid report or pagination.");
         if (request.Filter.From > request.Filter.To) throw new ArgumentException("From date must be before To date.");
@@ -21,7 +22,7 @@ public sealed class GetOperationalReportHandler(
             throw new ArgumentException("PKM must be yyyyMM.");
         if (request.Filter.WarehouseId is int warehouse &&
             (!await db.Warehouses.AnyAsync(w => w.Id == warehouse, ct) ||
-             (!user.IsInRole("Admin") && !await db.UserWarehouses.AnyAsync(a => a.UserId == user.UserId && a.WarehouseId == warehouse, ct))))
+             (!HasFullAccess(user) && !await db.UserWarehouses.AnyAsync(a => a.UserId == user.UserId && a.WarehouseId == warehouse, ct))))
             throw new UnauthorizedAccessException("Warehouse is not assigned to you.");
         if (request.Sort is not ("date" or "sku" or "location" or "quantity" or "reference"))
         {
@@ -73,6 +74,9 @@ public sealed class GetOperationalReportHandler(
         return new PaginatedList<ReportRow>(page, totalCount, request.Page, request.PageSize);
     }
 
+    private static bool HasFullAccess(ICurrentUserService user) =>
+        user.IsInRole("Admin") || user.IsInRole("Supervisor") || user.IsInRole("Operator");
+
     private IQueryable<ReportRow> Apply(IQueryable<ReportRow> q, ReportFilter f)
     {
         if (f.WarehouseId.HasValue) q = q.Where(r => r.WarehouseId == f.WarehouseId);
@@ -103,13 +107,19 @@ public sealed class GetOperationalReportHandler(
         Status = b.StockSubtype.Code
     });
 
+    // Capacity is driven entirely by whichever material occupies a position (a position only
+    // ever holds one material at a time): MaxPallets x that material's Pallet Size. An empty
+    // location has no material context, so it reports 0 capacity/available rather than a
+    // location-level default.
     private IQueryable<ReportRow> Positions() => db.PalletPositions.AsNoTracking().Where(p => p.IsActive).Select(p => new ReportRow
     {
         Id = p.Id, WarehouseId = p.Rack.WarehouseId, Warehouse = p.Rack.Warehouse.Code, Location = p.LocationCode,
         Zone = p.ZoneType.Code, Rack = p.Rack.Code, Column = p.Column, Level = p.Level,
-        Capacity = p.CapacityBoxes, Quantity = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0,
+        Capacity = p.MaxPallets * (p.StockBatches.Where(b => b.QuantityBoxes > 0).Select(b => (int?)b.Material.PalletCapacityBoxes).FirstOrDefault() ?? 0),
+        Quantity = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0,
         ReservedCapacity = db.InwardPutaways.Where(a => a.PalletPositionId == p.Id && !a.IsConfirmed && !a.InwardTransactionLine.InwardTransaction.IsRejected).Sum(a => (decimal?)a.QuantityBoxes) ?? 0,
-        Available = p.CapacityBoxes - (p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0) -
+        Available = (p.MaxPallets * (p.StockBatches.Where(b => b.QuantityBoxes > 0).Select(b => (int?)b.Material.PalletCapacityBoxes).FirstOrDefault() ?? 0))
+            - (p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0) -
             (db.InwardPutaways.Where(a => a.PalletPositionId == p.Id && !a.IsConfirmed && !a.InwardTransactionLine.InwardTransaction.IsRejected).Sum(a => (decimal?)a.QuantityBoxes) ?? 0),
         Status = "Active", Locations = 1,
         OccupiedLocations = p.StockBatches.Any(b => b.QuantityBoxes > 0) ? 1 : 0,

@@ -16,6 +16,16 @@ document.addEventListener('click', (event) => {
     });
 }, true);
 
+const VISITS_STORAGE_KEY = 'godrejWms.visits';
+
+function readVisits() {
+    try {
+        return JSON.parse(window.localStorage.getItem(VISITS_STORAGE_KEY) || '{}');
+    } catch {
+        return {};
+    }
+}
+
 window.godrejWms = {
     downloadFile: function (fileName, base64Content, contentType) {
         const link = document.createElement('a');
@@ -24,6 +34,28 @@ window.godrejWms = {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    },
+
+    trackVisit: function (route) {
+        try {
+            const visits = readVisits();
+            visits[route] = (visits[route] || 0) + 1;
+            window.localStorage.setItem(VISITS_STORAGE_KEY, JSON.stringify(visits));
+        } catch {
+            // Private browsing / quota exceeded / storage disabled - frequent visits is a
+            // convenience feature, never worth breaking navigation over.
+        }
+    },
+
+    getFrequentVisits: function (limit) {
+        try {
+            return Object.entries(readVisits())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, limit)
+                .map(([route]) => route);
+        } catch {
+            return [];
+        }
     },
 
     registerOutsideClick: function (selector, dotNetObject, methodName) {
