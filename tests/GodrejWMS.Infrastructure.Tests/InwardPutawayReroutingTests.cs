@@ -221,4 +221,68 @@ public class InwardPutawayReroutingTests
 
         Assert.True(result.IsValid);
     }
+
+    [Fact]
+    public async Task ChangeRack_MovesAllSelectedReservations_InOneRequest()
+    {
+        var (db, _, _, _, _, firstPutaway) = SeedScenario();
+        var destinationRack = new Rack { Code = "B", Columns = 2, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
+        destinationRack.PalletPositions.Add(new PalletPosition { Column = 1, Level = 1, LocationCode = "B-01-01" });
+        destinationRack.PalletPositions.Add(new PalletPosition { Column = 2, Level = 1, LocationCode = "B-02-01" });
+        db.Racks.Add(destinationRack);
+
+        var line = firstPutaway.InwardTransactionLine;
+        var secondPutaway = new InwardPutaway
+        {
+            InwardTransactionLine = line,
+            PalletPositionId = firstPutaway.PalletPositionId,
+            QuantityBoxes = 5,
+            AllocationReason = "test seed"
+        };
+        line.Putaways.Add(secondPutaway);
+        await db.SaveChangesAsync();
+
+        var handler = new ChangeInwardPutawayRackHandler(db);
+        await handler.Handle(
+            new ChangeInwardPutawayRackCommand([firstPutaway.Id, secondPutaway.Id], "B", "Use Rack B"),
+            CancellationToken.None);
+
+        var destinationPositionIds = destinationRack.PalletPositions.Select(p => p.Id).ToHashSet();
+        var moved = db.InwardPutaways.Where(p => p.Id == firstPutaway.Id || p.Id == secondPutaway.Id).ToList();
+        Assert.All(moved, p => Assert.Contains(p.PalletPositionId, destinationPositionIds));
+        Assert.All(moved, p => Assert.Equal("Use Rack B", p.OverrideReason));
+    }
+
+    [Fact]
+    public async Task ChangeRack_MakesNoChanges_WhenRackCannotFitCompleteSelection()
+    {
+        var (db, material, _, _, _, firstPutaway) = SeedScenario();
+        firstPutaway.QuantityBoxes = 50;
+        var destinationRack = new Rack { Code = "B", Columns = 1, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
+        destinationRack.PalletPositions.Add(new PalletPosition { Column = 1, Level = 1, LocationCode = "B-01-01", MaxPallets = 2 });
+        db.Racks.Add(destinationRack);
+
+        var line = firstPutaway.InwardTransactionLine;
+        var secondPutaway = new InwardPutaway
+        {
+            InwardTransactionLine = line,
+            PalletPositionId = firstPutaway.PalletPositionId,
+            QuantityBoxes = 50,
+            AllocationReason = "test seed"
+        };
+        line.Putaways.Add(secondPutaway);
+        await db.SaveChangesAsync();
+        var originalPositionId = firstPutaway.PalletPositionId;
+
+        var handler = new ChangeInwardPutawayRackHandler(db);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new ChangeInwardPutawayRackCommand([firstPutaway.Id, secondPutaway.Id], "B", "Use Rack B"),
+            CancellationToken.None));
+
+        Assert.Equal(originalPositionId, firstPutaway.PalletPositionId);
+        Assert.Equal(originalPositionId, secondPutaway.PalletPositionId);
+        Assert.Null(firstPutaway.OverrideReason);
+        Assert.Null(secondPutaway.OverrideReason);
+        Assert.Equal(40, material.PalletCapacityBoxes);
+    }
 }

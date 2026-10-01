@@ -4,12 +4,30 @@
     background: var(--wms-bg);
 }
 
+.sidebar-state-control {
+    position: fixed;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.sidebar-state-control:focus-visible + .page .sidebar-toggle {
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 0.22rem rgba(37, 99, 235, 0.16);
+}
+
 .sidebar {
     width: 280px;
+    height: 100vh;
     min-height: 100vh;
     position: sticky;
     top: 0;
     align-self: flex-start;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     background:
         radial-gradient(circle at 16% 8%, rgba(59, 130, 246, 0.12), transparent 28%),
         radial-gradient(circle at 92% 58%, rgba(22, 163, 74, 0.08), transparent 26%),
@@ -21,7 +39,7 @@
     transition: width 180ms ease;
 }
 
-.page.sidebar-collapsed .sidebar {
+.sidebar-state-control:checked + .page .sidebar {
     width: 88px;
 }
 
@@ -98,55 +116,77 @@
     color: var(--wms-primary);
 }
 
-.page.sidebar-collapsed ::deep .brand-panel {
+.sidebar-state-control:checked + .page ::deep .brand-panel {
     justify-content: center;
     padding-left: 0.75rem;
     padding-right: 0.75rem;
 }
 
-.page.sidebar-collapsed ::deep .brand-name,
-.page.sidebar-collapsed ::deep .brand-subtitle,
-.page.sidebar-collapsed ::deep .nav-section-label,
-.page.sidebar-collapsed ::deep .nav-link-text,
-.page.sidebar-collapsed ::deep .nav-status-text {
+.sidebar-state-control:checked + .page ::deep .brand-name,
+.sidebar-state-control:checked + .page ::deep .brand-subtitle,
+.sidebar-state-control:checked + .page ::deep .nav-section-label,
+.sidebar-state-control:checked + .page ::deep .nav-link-text,
+.sidebar-state-control:checked + .page ::deep .nav-status-text {
     display: none;
 }
 
-.page.sidebar-collapsed ::deep .navbar-brand,
-.page.sidebar-collapsed ::deep .nav-item .nav-link,
-.page.sidebar-collapsed ::deep .nav-status {
+.sidebar-state-control:checked + .page ::deep .sidebar-user-details,
+.sidebar-state-control:checked + .page ::deep .sidebar-logout-text {
+    display: none;
+}
+
+.sidebar-state-control:checked + .page ::deep .sidebar-user-footer {
+    flex-direction: column;
+    gap: 0.45rem;
+    padding: 0.65rem;
+}
+
+.sidebar-state-control:checked + .page ::deep .sidebar-user-profile {
+    flex: 0 0 auto;
+    justify-content: center;
+    padding: 0;
+}
+
+.sidebar-state-control:checked + .page ::deep .sidebar-logout {
+    width: 38px;
+    padding: 0;
+}
+
+.sidebar-state-control:checked + .page ::deep .navbar-brand,
+.sidebar-state-control:checked + .page ::deep .nav-item .nav-link,
+.sidebar-state-control:checked + .page ::deep .nav-status {
     justify-content: center;
 }
 
-.page.sidebar-collapsed ::deep .nav-item .nav-link {
+.sidebar-state-control:checked + .page ::deep .nav-item .nav-link {
     min-height: 46px;
     padding-left: 0;
     padding-right: 0;
 }
 
-.page.sidebar-collapsed ::deep .nav-item .nav-link i {
+.sidebar-state-control:checked + .page ::deep .nav-item .nav-link i {
     width: auto;
     font-size: 1.08rem;
 }
 
-.page.sidebar-collapsed ::deep .nav-status {
+.sidebar-state-control:checked + .page ::deep .nav-status {
     padding-left: 0;
     padding-right: 0;
 }
 
 /* Collapsed rail has no room for an expand/collapse interaction, so submenu icons
    (e.g. Inward > Entry/History) always show regardless of the toggle's expanded state. */
-.page.sidebar-collapsed ::deep .nav-submenu {
+.sidebar-state-control:checked + .page ::deep .nav-submenu {
     display: grid;
     margin-left: 0;
     padding-left: 0;
 }
 
-.page.sidebar-collapsed ::deep .nav-submenu::before {
+.sidebar-state-control:checked + .page ::deep .nav-submenu::before {
     display: none;
 }
 
-.page.sidebar-collapsed ::deep .nav-parent .nav-chevron {
+.sidebar-state-control:checked + .page ::deep .nav-parent .nav-chevron {
     display: none;
 }
 
@@ -334,11 +374,13 @@
 
     .sidebar {
         width: 100%;
+        height: auto;
         min-height: auto;
         position: relative;
+        overflow: visible;
     }
 
-    .page.sidebar-collapsed .sidebar {
+    .sidebar-state-control:checked + .page .sidebar {
         width: 100%;
     }
 

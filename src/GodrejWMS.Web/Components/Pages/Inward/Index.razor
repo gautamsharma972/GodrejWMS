@@ -32,8 +32,8 @@
         </div>
     </div>
 
-    <div class="transaction-grid">
-        <div class="panel">
+    <div class="transaction-grid inward-entry-grid">
+        <div class="panel inward-entry-panel inward-manual-panel">
             <div class="panel-header">
                 <div>
                     <h2 class="panel-title">Manual Lines</h2>
@@ -124,7 +124,7 @@
             </div>
         </div>
 
-        <div class="panel">
+        <div class="panel inward-entry-panel inward-upload-panel">
             <div class="panel-header">
                 <div>
                     <h2 class="panel-title">Bulk Upload</h2>
@@ -143,7 +143,10 @@
                         Sample Format
                     </button>
                 </div>
-                <span class="text-muted small">Accepted columns: Material Code, Total Stock in CFB(qty), Mfg Year, Mfg Month. Maximum file size: 10 MB.</span>
+                <div class="upload-guidance">
+                    <i class="bi bi-info-circle" aria-hidden="true"></i>
+                    <span>Accepted columns: Material Code, Total Stock in CFB(qty), Mfg Year, Mfg Month. Maximum file size: 10 MB.</span>
+                </div>
             </div>
         </div>
     </div>
@@ -208,7 +211,16 @@
                 <div class="slide-over-body">
                     @if (!string.IsNullOrWhiteSpace(_confirmationMessage))
                     {
-                        <div class="alert alert-success">@_confirmationMessage</div>
+                        <div class="putaway-info-bar transaction-status-bar confirmed allocation-confirmation-bar" role="status" aria-live="polite">
+                            <div class="info-bar-icon">
+                                <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                            </div>
+                            <div class="info-bar-content">
+                                <h2>Stock confirmed</h2>
+                                <p>Dashboard and inventory views now reflect this GRN.</p>
+                            </div>
+                            <span class="status-pill success">Inventory updated</span>
+                        </div>
                     }
 
                     @if (_result.IsRejected)
@@ -257,6 +269,13 @@
                                     <option value="@status">@status</option>
                                 }
                             </select>
+                            @if (_selectedPutawayIds.Count > 0)
+                            {
+                                <button type="button" class="btn btn-outline-primary" @onclick="OpenBulkRackChangeAsync">
+                                    <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+                                    Change rack (@_selectedPutawayIds.Count)
+                                </button>
+                            }
                         </div>
                         <span class="count-pill">@DisplayResultAllocationRows.Count() line(s)</span>
                     </div>
@@ -265,6 +284,13 @@
                         <table class="table table-hover align-middle mb-0">
                             <thead>
                                 <tr>
+                                    <th class="selection-column">
+                                        <input class="form-check-input" type="checkbox"
+                                               aria-label="Select all unconfirmed allocations"
+                                               checked="@AreAllVisibleResultPutawaysSelected"
+                                               disabled="@(!SelectableResultPutawayIds.Any())"
+                                               @onchange="ToggleAllVisibleResultPutaways" />
+                                    </th>
                                     <th><button class="sort-button" @onclick='@(() => SortBy("material"))'>Material <i class='bi @SortIcon("material")'></i></button></th>
                                     <th><button class="sort-button" @onclick='@(() => SortBy("mfgmonth"))'>Mfg Month <i class='bi @SortIcon("mfgmonth")'></i></button></th>
                                     <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("requested"))'>Requested <i class='bi @SortIcon("requested")'></i></button></th>
@@ -277,6 +303,15 @@
                                 @foreach (var row in DisplayResultAllocationRows)
                                 {
                                     <tr>
+                                        <td class="selection-column">
+                                            @if (row.Allocation is { IsConfirmed: false, PutawayId: not null })
+                                            {
+                                                <input class="form-check-input" type="checkbox"
+                                                       aria-label="Select allocation at @row.Allocation.LocationCode"
+                                                       checked="@_selectedPutawayIds.Contains(row.Allocation.PutawayId.Value)"
+                                                       @onchange="e => ToggleResultPutaway(row.Allocation.PutawayId.Value, e)" />
+                                            }
+                                        </td>
                                         <td><span class="record-code">@row.Line.MaterialNumber</span> @row.Line.MaterialDescription</td>
                                         <td><span class="status-pill neutral">@row.Line.MfgMonthLabel</span></td>
                                         <td class="text-end">@row.Line.RequestedQuantityBoxes</td>
@@ -305,11 +340,12 @@
                                                     @if (!row.Allocation.IsConfirmed && row.Allocation.PutawayId is not null)
                                                     {
                                                         <button type="button"
-                                                                class="btn btn-sm btn-outline-secondary"
-                                                                title="Change put-away location"
-                                                                aria-label="Change put-away location"
+                                                                class="btn btn-sm btn-outline-secondary allocation-change-button"
+                                                                title="Change rack or put-away location"
+                                                                aria-label="Change rack or put-away location"
                                                                 @onclick="() => OpenChangeLocationAsync(row.Allocation.PutawayId!.Value, row.Allocation.LocationCode)">
                                                             <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+                                                            <span>Change</span>
                                                         </button>
                                                     }
                                                 </div>
@@ -502,8 +538,8 @@
                 <div class="slide-over-header">
                     <div>
                         <div class="eyebrow">Put-away Reservation</div>
-                        <h2 id="change-location-title" class="slide-over-title">Change Location</h2>
-                        <p class="slide-over-subtitle">Currently reserved at @_changeCurrentLocationCode</p>
+                        <h2 id="change-location-title" class="slide-over-title">Change Rack or Location</h2>
+                        <p class="slide-over-subtitle">Currently reserved at @_changeCurrentLocationCode in Rack @RackCodeOf(_changeCurrentLocationCode)</p>
                     </div>
                     <button type="button" class="slide-over-close" aria-label="Close change location" @onclick="CloseChangeLocation">
                         <i class="bi bi-x-lg" aria-hidden="true"></i>
@@ -535,13 +571,20 @@
                     }
                     else
                     {
-                        <div class="toolbar-panel">
+                        <div class="toolbar-panel change-location-toolbar">
                             <div class="toolbar-group">
                                 <div class="input-group search-control">
                                     <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
                                     <input class="form-control" placeholder="Search location, subtype, or zone"
                                            @bind="_changeLocationSearch" @bind:event="oninput" />
                                 </div>
+                                <select class="form-select change-rack-filter" aria-label="Filter alternate locations by rack" @bind="_changeRackFilter">
+                                    <option value="">All racks</option>
+                                    @foreach (var rackCode in ChangeRackOptions)
+                                    {
+                                        <option value="@rackCode">Rack @rackCode@(rackCode.Equals(RackCodeOf(_changeCurrentLocationCode), StringComparison.OrdinalIgnoreCase) ? " (current)" : string.Empty)</option>
+                                    }
+                                </select>
                             </div>
                             <span class="sync-chip">@DisplayChangeOptions.Count().ToString("N0") location(s)</span>
                         </div>
@@ -551,6 +594,7 @@
                                 <thead>
                                     <tr>
                                         <th>Location</th>
+                                        <th>Rack</th>
                                         <th>Subtype</th>
                                         <th>Zone</th>
                                         <th class="text-end">Free / Capacity</th>
@@ -562,6 +606,7 @@
                                     {
                                         <tr class="@(option.IsCurrent ? "table-active" : null)">
                                             <td><span class="record-code">@option.LocationCode</span></td>
+                                            <td><span class="status-pill neutral">@RackCodeOf(option.LocationCode)</span></td>
                                             <td><span class="status-pill @SubtypeClass(option.LocationSubtypeCode)">@option.LocationSubtypeName</span></td>
                                             <td><span class="status-pill @ZoneClass(option.ZoneTypeCode)">@option.ZoneTypeName</span></td>
                                             <td class="text-end">@option.FreeBoxes.ToString("0.###") / @option.CapacityBoxes</td>
@@ -587,6 +632,55 @@
 
                 <div class="slide-over-footer">
                     <button type="button" class="btn btn-outline-secondary" @onclick="CloseChangeLocation">Close</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_isBulkRackChangeOpen)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseBulkRackChange">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="bulk-rack-change-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Put-away Reservations</div>
+                        <h2 id="bulk-rack-change-title" class="slide-over-title">Move Selected to Rack</h2>
+                        <p class="slide-over-subtitle">Move @_selectedPutawayIds.Count selected unconfirmed allocation(s) at once.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close bulk rack change" @onclick="CloseBulkRackChange">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    @if (!string.IsNullOrWhiteSpace(_bulkRackChangeError))
+                    {
+                        <div class="alert alert-danger mb-3">@_bulkRackChangeError</div>
+                    }
+                    <div class="mb-3">
+                        <label class="form-label">Destination rack <span class="text-danger">*</span></label>
+                        <select class="form-select" @bind="_bulkRackCode">
+                            <option value="">Select rack</option>
+                            @foreach (var rack in _bulkRacks.Where(r => r.IsActive))
+                            {
+                                <option value="@rack.Code">Rack @rack.Code</option>
+                            }
+                        </select>
+                        <div class="form-text">The system will use compatible available positions within this rack.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reason for override <span class="text-danger">*</span></label>
+                        <input class="form-control" maxlength="250" placeholder="e.g. Move this receipt to another rack"
+                               @bind="_bulkRackReason" @bind:event="oninput" />
+                    </div>
+                </div>
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseBulkRackChange">Close</button>
+                    <button type="button" class="btn btn-primary"
+                            disabled="@(_movingSelectedPutaways || string.IsNullOrWhiteSpace(_bulkRackCode) || string.IsNullOrWhiteSpace(_bulkRackReason))"
+                            @onclick="MoveSelectedPutawaysAsync">
+                        <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+                        @(_movingSelectedPutaways ? "Moving..." : $"Move {_selectedPutawayIds.Count} allocation(s)")
+                    </button>
                 </div>
             </div>
         </div>
@@ -617,9 +711,17 @@
     private string _changeCurrentLocationCode = string.Empty;
     private IReadOnlyList<InwardPalletChangeOptionDto>? _changeOptions;
     private string _changeLocationSearch = string.Empty;
+    private string _changeRackFilter = string.Empty;
     private string _changeReason = string.Empty;
     private string? _changeError;
     private bool _changingLocation;
+    private readonly HashSet<int> _selectedPutawayIds = [];
+    private bool _isBulkRackChangeOpen;
+    private IReadOnlyList<RackDto> _bulkRacks = Array.Empty<RackDto>();
+    private string _bulkRackCode = string.Empty;
+    private string _bulkRackReason = string.Empty;
+    private string? _bulkRackChangeError;
+    private bool _movingSelectedPutaways;
     private DotNetObjectReference<Index>? _outsideClickReference;
     private string? _outsideClickHandlerId;
     private string _sortBy = "material";
@@ -658,7 +760,99 @@
 
     private void OpenResultModal() => _isResultModalOpen = true;
 
-    private void CloseResultModal() => _isResultModalOpen = false;
+    private void CloseResultModal()
+    {
+        _isResultModalOpen = false;
+        _selectedPutawayIds.Clear();
+    }
+
+    private IEnumerable<int> SelectableResultPutawayIds =>
+        DisplayResultAllocationRows
+            .Where(row => row.Allocation is { IsConfirmed: false, PutawayId: not null })
+            .Select(row => row.Allocation!.PutawayId!.Value);
+
+    private bool AreAllVisibleResultPutawaysSelected
+    {
+        get
+        {
+            var ids = SelectableResultPutawayIds.ToArray();
+            return ids.Length > 0 && ids.All(_selectedPutawayIds.Contains);
+        }
+    }
+
+    private void ToggleResultPutaway(int putawayId, ChangeEventArgs args)
+    {
+        if (args.Value is true)
+        {
+            _selectedPutawayIds.Add(putawayId);
+        }
+        else
+        {
+            _selectedPutawayIds.Remove(putawayId);
+        }
+    }
+
+    private void ToggleAllVisibleResultPutaways(ChangeEventArgs args)
+    {
+        var ids = SelectableResultPutawayIds.ToArray();
+        if (args.Value is true)
+        {
+            _selectedPutawayIds.UnionWith(ids);
+        }
+        else
+        {
+            _selectedPutawayIds.ExceptWith(ids);
+        }
+    }
+
+    private async Task OpenBulkRackChangeAsync()
+    {
+        if (_selectedPutawayIds.Count == 0) return;
+        _bulkRackChangeError = null;
+        _bulkRackCode = string.Empty;
+        _bulkRackReason = string.Empty;
+        _isBulkRackChangeOpen = true;
+        try
+        {
+            _bulkRacks = await Mediator.Send(new GetRacksQuery());
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load racks for bulk put-away change");
+            _bulkRackChangeError = ex.Message;
+        }
+    }
+
+    private void CloseBulkRackChange()
+    {
+        _isBulkRackChangeOpen = false;
+        _bulkRackChangeError = null;
+    }
+
+    private async Task MoveSelectedPutawaysAsync()
+    {
+        if (_selectedPutawayIds.Count == 0) return;
+        _movingSelectedPutaways = true;
+        _bulkRackChangeError = null;
+        try
+        {
+            var count = _selectedPutawayIds.Count;
+            _result = await Mediator.Send(new ChangeInwardPutawayRackCommand(
+                _selectedPutawayIds.ToArray(), _bulkRackCode, _bulkRackReason));
+            _selectedPutawayIds.Clear();
+            CloseBulkRackChange();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"{count} put-away allocation(s) moved to Rack {_bulkRackCode}.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to move selected put-away allocations to rack {RackCode}", _bulkRackCode);
+            _bulkRackChangeError = ex.Message;
+        }
+        finally
+        {
+            _movingSelectedPutaways = false;
+        }
+    }
 
 
     private async Task OpenPalletDetailsAsync(string locationCode)
@@ -691,6 +885,7 @@
         _changeCurrentLocationCode = currentLocationCode;
         _changeOptions = null;
         _changeLocationSearch = string.Empty;
+        _changeRackFilter = RackCodeOf(currentLocationCode);
         _changeReason = string.Empty;
         _changeError = null;
         _isChangeLocationOpen = true;
@@ -710,6 +905,7 @@
     {
         _isChangeLocationOpen = false;
         _changeOptions = null;
+        _changeRackFilter = string.Empty;
         _changeError = null;
     }
 
@@ -749,8 +945,26 @@
                     o.ZoneTypeName.Contains(term, StringComparison.OrdinalIgnoreCase));
             }
 
+            if (!string.IsNullOrWhiteSpace(_changeRackFilter))
+            {
+                query = query.Where(o => RackCodeOf(o.LocationCode).Equals(_changeRackFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
             return query;
         }
+    }
+
+    private IEnumerable<string> ChangeRackOptions =>
+        (_changeOptions ?? Array.Empty<InwardPalletChangeOptionDto>())
+            .Select(o => RackCodeOf(o.LocationCode))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(code => code, StringComparer.OrdinalIgnoreCase);
+
+    private static string RackCodeOf(string locationCode)
+    {
+        var lastSeparator = locationCode.LastIndexOf('-');
+        var rackSeparator = lastSeparator > 0 ? locationCode.LastIndexOf('-', lastSeparator - 1) : -1;
+        return rackSeparator > 0 ? locationCode[..rackSeparator] : locationCode;
     }
 
     private async Task SubmitAsync()
@@ -1074,9 +1288,6 @@
         public decimal AllocatedQuantityBoxes => Allocation?.QuantityBoxes ?? 0;
     }
 }
-
-
-
 
 
 

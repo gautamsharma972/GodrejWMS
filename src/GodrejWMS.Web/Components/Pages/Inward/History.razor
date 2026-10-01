@@ -85,9 +85,9 @@
                             <th><button class="sort-button" @onclick='@(() => SortHistoryBy("created"))'>Created <i class='bi @HistorySortIcon("created")'></i></button></th>
                             <th><button class="sort-button" @onclick='@(() => SortHistoryBy("status"))'>Status <i class='bi @HistorySortIcon("status")'></i></button></th>
                             <th>Put-away</th>
-                            <th class="text-end"><button class="sort-button" @onclick='@(() => SortHistoryBy("lines"))'>Lines <i class='bi @HistorySortIcon("lines")'></i></button></th>
-                            <th class="text-end"><button class="sort-button" @onclick='@(() => SortHistoryBy("quantity"))'>Allocated Boxes <i class='bi @HistorySortIcon("quantity")'></i></button></th>
-                            <th class="table-actions">Action</th>
+                            <th class="text-end history-number-column"><button class="sort-button" @onclick='@(() => SortHistoryBy("lines"))'>Lines <i class='bi @HistorySortIcon("lines")'></i></button></th>
+                            <th class="text-end history-number-column"><button class="sort-button" @onclick='@(() => SortHistoryBy("quantity"))'>Allocated Boxes <i class='bi @HistorySortIcon("quantity")'></i></button></th>
+                            <th class="table-actions history-actions-column">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -107,24 +107,26 @@
                                         <span class="status-pill @(item.IsConfirmed ? "success" : "warning")">@(item.IsConfirmed ? "Confirmed" : "Reserved")</span>
                                     }
                                 </td>
-                                <td class="text-end">@item.LineCount</td>
-                                <td class="text-end fw-semibold">@item.TotalQuantityBoxes.ToString("N0")</td>
-                                <td class="table-actions">
-                                    <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {item.ReferenceNumber}")" aria-label="@($"View {item.ReferenceNumber}")" href="@($"/inward/{item.Id}")">
-                                        <i class="bi bi-eye" aria-hidden="true"></i>
-                                    </a>
-                                    @if (!item.IsRejected)
-                                    {
-                                        <button type="button" class="btn btn-sm btn-outline-secondary table-action-btn" title="@($"Download Excel {item.ReferenceNumber}")" aria-label="@($"Download Excel {item.ReferenceNumber}")" @onclick="() => DownloadExcelAsync(item)">
-                                            <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
-                                        </button>
-                                    }
-                                    @if (!item.IsConfirmed && !item.IsRejected)
-                                    {
-                                        <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"Putaway {item.ReferenceNumber}")" aria-label="@($"Putaway {item.ReferenceNumber}")" href="@($"/inward/{item.Id}/putaway")">
-                                            <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
+                                <td class="text-end history-number-column">@item.LineCount</td>
+                                <td class="text-end fw-semibold history-number-column">@item.TotalQuantityBoxes.ToString("N0")</td>
+                                <td class="table-actions history-actions-column">
+                                    <div class="history-row-actions">
+                                        <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {item.ReferenceNumber}")" aria-label="@($"View {item.ReferenceNumber}")" href="@($"/inward/{item.Id}")">
+                                            <i class="bi bi-eye" aria-hidden="true"></i>
                                         </a>
-                                    }
+                                        @if (!item.IsRejected)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-secondary table-action-btn history-download-btn" title="@($"Download Excel {item.ReferenceNumber}")" aria-label="@($"Download Excel {item.ReferenceNumber}")" @onclick="() => DownloadExcelAsync(item)">
+                                                <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                                            </button>
+                                        }
+                                        @if (!item.IsConfirmed && !item.IsRejected)
+                                        {
+                                            <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"Putaway {item.ReferenceNumber}")" aria-label="@($"Putaway {item.ReferenceNumber}")" href="@($"/inward/{item.Id}/putaway")">
+                                                <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
+                                            </a>
+                                        }
+                                    </div>
                                 </td>
                             </tr>
                         }
@@ -269,5 +271,4 @@
         _ => "danger"
     };
 }
-
 

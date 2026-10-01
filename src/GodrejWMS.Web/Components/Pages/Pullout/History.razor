@@ -90,10 +90,10 @@
                             <th><button class="sort-button" @onclick='@(() => SortHistoryBy("reference"))'>Reference <i class='bi @HistorySortIcon("reference")'></i></button></th>
                             <th><button class="sort-button" @onclick='@(() => SortHistoryBy("created"))'>Created <i class='bi @HistorySortIcon("created")'></i></button></th>
                             <th><button class="sort-button" @onclick='@(() => SortHistoryBy("status"))'>Status <i class='bi @HistorySortIcon("status")'></i></button></th>
-                            <th class="text-end"><button class="sort-button" @onclick='@(() => SortHistoryBy("lines"))'>Lines <i class='bi @HistorySortIcon("lines")'></i></button></th>
-                            <th class="text-end"><button class="sort-button" @onclick='@(() => SortHistoryBy("quantity"))'>Allocated Boxes <i class='bi @HistorySortIcon("quantity")'></i></button></th>
+                            <th class="text-end history-number-column"><button class="sort-button" @onclick='@(() => SortHistoryBy("lines"))'>Lines <i class='bi @HistorySortIcon("lines")'></i></button></th>
+                            <th class="text-end history-number-column"><button class="sort-button" @onclick='@(() => SortHistoryBy("quantity"))'>Allocated Boxes <i class='bi @HistorySortIcon("quantity")'></i></button></th>
                             <th>Confirmation</th>
-                            <th class="table-actions">Action</th>
+                            <th class="table-actions history-actions-column">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -103,19 +103,21 @@
                                 <td><a class="record-code history-reference" href="@($"/pullout/{item.Id}")">@item.ReferenceNumber</a></td>
                                 <td class="history-created">@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
                                 <td><span class="status-pill @AllocationClass(item.Status)">@item.Status</span></td>
-                                <td class="text-end">@item.LineCount</td>
-                                <td class="text-end fw-semibold">@item.TotalQuantityBoxes.ToString("N0")</td>
+                                <td class="text-end history-number-column">@item.LineCount</td>
+                                <td class="text-end fw-semibold history-number-column">@item.TotalQuantityBoxes.ToString("N0")</td>
                                 <td><span class="status-pill @ConfirmationClass(item)">@ConfirmationLabel(item)</span></td>
-                                <td class="table-actions">
-                                    <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {item.ReferenceNumber}")" aria-label="@($"View {item.ReferenceNumber}")" href="@($"/pullout/{item.Id}")">
-                                        <i class="bi bi-eye" aria-hidden="true"></i>
-                                    </a>
-                                    @if (!item.IsRejected)
-                                    {
-                                        <button type="button" class="btn btn-sm btn-outline-secondary table-action-btn" title="@($"Download Excel {item.ReferenceNumber}")" aria-label="@($"Download Excel {item.ReferenceNumber}")" @onclick="() => DownloadExcelAsync(item)">
-                                            <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
-                                        </button>
-                                    }
+                                <td class="table-actions history-actions-column">
+                                    <div class="history-row-actions">
+                                        <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {item.ReferenceNumber}")" aria-label="@($"View {item.ReferenceNumber}")" href="@($"/pullout/{item.Id}")">
+                                            <i class="bi bi-eye" aria-hidden="true"></i>
+                                        </a>
+                                        @if (!item.IsRejected)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-secondary table-action-btn history-download-btn" title="@($"Download Excel {item.ReferenceNumber}")" aria-label="@($"Download Excel {item.ReferenceNumber}")" @onclick="() => DownloadExcelAsync(item)">
+                                                <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                                            </button>
+                                        }
+                                    </div>
                                 </td>
                             </tr>
                         }

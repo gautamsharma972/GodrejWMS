@@ -41,11 +41,22 @@
             </a>
         </div>
 
-        <div class="putaway-execute-progress">
+        <div class="putaway-execute-progress" aria-label="Put-away confirmation progress">
+            <div class="putaway-execute-progress-heading">
+                <div>
+                    <span>Put-away progress</span>
+                    <strong>@ConfirmedCount of @TotalCount locations</strong>
+                </div>
+                <span class="putaway-progress-percent">@ProgressPercent.ToString("0")%</span>
+            </div>
             <div class="putaway-execute-progress-bar">
                 <div class="putaway-execute-progress-fill" style="width:@ProgressPercent.ToString("0")%"></div>
             </div>
-            <span>@ConfirmedCount of @TotalCount location(s) confirmed &middot; @ConfirmedBoxes.ToString("0.###") of @TotalBoxes.ToString("0.###") boxes</span>
+            <div class="putaway-execute-progress-stats">
+                <span><strong>@ConfirmedCount</strong> confirmed</span>
+                <span><strong>@(TotalCount - ConfirmedCount)</strong> remaining</span>
+                <span><strong>@ConfirmedBoxes.ToString("0.###")</strong> of @TotalBoxes.ToString("0.###") boxes placed</span>
+            </div>
         </div>
 
         @if (CurrentStep is null)
@@ -64,80 +75,95 @@
         {
             var step = CurrentStep;
 
-            <div class="putaway-execute-card">
+            <div class="putaway-execute-card putaway-task-card">
                 @if (!string.IsNullOrWhiteSpace(_confirmError))
                 {
                     <div class="alert alert-danger">@_confirmError</div>
                 }
 
-                <div class="putaway-execute-meta">
+                <div class="putaway-task-heading">
                     <div>
-                        <span class="eyebrow">SKU</span>
-                        <strong>@step.Line.MaterialNumber</strong>
-                        <span>@step.Line.MaterialDescription</span>
+                        <span class="eyebrow">Next placement</span>
+                        <h2>@step.Line.MaterialDescription</h2>
+                        <div class="putaway-product-facts">
+                            <span><small>SKU</small><strong>@step.Line.MaterialNumber</strong></span>
+                            <span><small>Design</small><strong>@step.Line.DesignType</strong></span>
+                            <span><small>PKM</small><strong>@step.Line.MfgMonthLabel</strong></span>
+                        </div>
                     </div>
-                    <div>
-                        <span class="eyebrow">Design Code</span>
-                        <strong>@step.Line.DesignType</strong>
-                    </div>
-                    <div>
-                        <span class="eyebrow">PKM</span>
-                        <strong>@step.Line.MfgMonthLabel</strong>
-                    </div>
+                    <span class="putaway-step-chip">Location @(ConfirmedCount + 1) of @TotalCount</span>
                 </div>
 
-                <div class="putaway-execute-location">
-                    <span class="eyebrow">Recommended Location</span>
-                    <div class="putaway-execute-location-code">@step.Putaway.LocationCode</div>
-                    <div class="putaway-execute-rcl">
-                        <div><span>Rack</span><strong>@RackOf(step.Putaway.LocationCode)</strong></div>
-                        <div><span>Column</span><strong>@(_currentPosition?.Column.ToString("00") ?? "-")</strong></div>
-                        <div><span>Level</span><strong>@(_currentPosition?.Level.ToString("00") ?? "-")</strong></div>
-                    </div>
-                    @if (!string.IsNullOrWhiteSpace(step.Putaway.Reason))
-                    {
-                        <p class="putaway-execute-reason">@step.Putaway.Reason</p>
-                    }
-                </div>
-
-                <div class="putaway-execute-grid">
-                    <div>
-                        <span>Recommended Qty</span>
-                        <strong>@step.Putaway.QuantityBoxes.ToString("0.###")</strong>
-                    </div>
-                    <div>
-                        <span>Current Qty</span>
-                        <strong>@(_currentPosition?.OccupiedBoxes.ToString("0.###") ?? "-")</strong>
-                    </div>
-                    <div>
-                        <span>Available</span>
-                        <strong>@(_currentPosition?.FreeBoxes?.ToString("0.###") ?? "-")</strong>
-                    </div>
-                </div>
-
-                <div class="putaway-execute-actions">
-                    <button type="button" class="btn btn-primary btn-putaway-confirm" disabled="@_confirming" @onclick="ConfirmCurrentAsync">
-                        @if (_confirming)
+                <div class="putaway-task-layout">
+                    <section class="putaway-execute-location">
+                        <div class="putaway-location-label">
+                            <i class="bi bi-geo-alt-fill" aria-hidden="true"></i>
+                            <span>Recommended location</span>
+                        </div>
+                        <div class="putaway-execute-location-code">@step.Putaway.LocationCode</div>
+                        <div class="putaway-execute-rcl">
+                            <div><span>Rack</span><strong>@RackOf(step.Putaway.LocationCode)</strong></div>
+                            <div><span>Column</span><strong>@(_currentPosition?.Column.ToString("00") ?? "-")</strong></div>
+                            <div><span>Level</span><strong>@(_currentPosition?.Level.ToString("00") ?? "-")</strong></div>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(step.Putaway.Reason))
                         {
-                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                            <span>Confirming...</span>
+                            <p class="putaway-execute-reason"><i class="bi bi-stars" aria-hidden="true"></i> @step.Putaway.Reason</p>
                         }
-                        else
-                        {
-                            <i class="bi bi-check2-circle" aria-hidden="true"></i>
-                            <span>Confirm This Location</span>
-                        }
-                    </button>
-                    <a class="btn btn-outline-secondary" href="@($"/inward/{_detail.Id}")">
-                        Re-route instead
-                    </a>
+                    </section>
+
+                    <aside class="putaway-confirm-panel">
+                        <div class="putaway-execute-grid">
+                            <div class="primary">
+                                <span>Place now</span>
+                                <strong>@step.Putaway.QuantityBoxes.ToString("0.###")</strong>
+                                <small>boxes</small>
+                            </div>
+                            <div>
+                                <span>Currently stored</span>
+                                <strong>@(_currentPosition?.OccupiedBoxes.ToString("0.###") ?? "-")</strong>
+                                <small>boxes</small>
+                            </div>
+                            <div>
+                                <span>Space available</span>
+                                <strong>@(_currentPosition?.FreeBoxes?.ToString("0.###") ?? "-")</strong>
+                                <small>boxes</small>
+                            </div>
+                        </div>
+
+                        <div class="putaway-execute-actions">
+                            <button type="button" class="btn btn-primary btn-putaway-confirm" disabled="@_confirming" @onclick="ConfirmCurrentAsync">
+                                @if (_confirming)
+                                {
+                                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                    <span>Confirming...</span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                                    <span>Confirm This Location</span>
+                                }
+                            </button>
+                            <a class="btn btn-outline-secondary" href="@($"/inward/{_detail.Id}")">
+                                <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+                                Re-route instead
+                            </a>
+                        </div>
+                    </aside>
                 </div>
             </div>
 
             @if (_rackLayout is not null)
             {
                 <div class="putaway-execute-card putaway-execute-3d">
-                    <span class="eyebrow">Rack @_rackLayout.RackCode &mdash; recommended slot highlighted</span>
+                    <div class="putaway-rack-heading">
+                        <div>
+                            <span class="eyebrow">Rack context</span>
+                            <h2>Rack @_rackLayout.RackCode overview</h2>
+                            <p>Use the highlighted slot to verify the physical location before confirming.</p>
+                        </div>
+                        <span class="putaway-rack-location"><i class="bi bi-geo-alt-fill" aria-hidden="true"></i> @step.Putaway.LocationCode</span>
+                    </div>
                     <div class="rack-viewport">
                         <div class="rack-frame" style="@($"--rack-columns:{_rackLayout.Columns};")">
                             @for (var level = _rackLayout.Levels; level >= 1; level--)
@@ -173,6 +199,7 @@
                         <span><span class="legend-swatch cell-empty"></span> Empty</span>
                         <span><span class="legend-swatch cell-partial"></span> Partially filled</span>
                         <span><span class="legend-swatch cell-full"></span> Full</span>
+                        <span><span class="legend-swatch cell-overflow"></span> Overflow</span>
                         <span><span class="legend-swatch cell-recommended"></span> Recommended</span>
                     </div>
                 </div>
@@ -239,7 +266,9 @@
     }
 
     private static string CellStateClass(PalletPositionDto position) =>
-        position.IsFull ? "cell-full" : position.OccupiedBoxes > 0 ? "cell-partial" : "cell-empty";
+        position.CapacityBoxes is { } capacity && capacity > 0 && position.OccupiedBoxes > capacity
+            ? "cell-overflow"
+            : position.IsFull ? "cell-full" : position.OccupiedBoxes > 0 ? "cell-partial" : "cell-empty";
 
     private static double OccupancyPercent(PalletPositionDto position) =>
         position.CapacityBoxes is not { } capacity || capacity <= 0

@@ -1,5 +1,6 @@
 @page "/inventory-movement/by-location"
 @attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
+@using GodrejWMS.Application.Common.Exceptions
 @using GodrejWMS.Application.Features.InventoryMovement.Commands
 @using GodrejWMS.Application.Features.InventoryMovement.Dtos
 @using GodrejWMS.Application.Features.InventoryMovement.Queries
@@ -75,7 +76,13 @@
                 </div>
                 @if (!string.IsNullOrWhiteSpace(_sourceError))
                 {
-                    <div class="alert alert-danger mt-3 mb-0">@_sourceError</div>
+                    <div class="feedback-bar danger mt-3" role="alert">
+                        <div class="feedback-bar-icon"><i class="bi bi-geo-alt" aria-hidden="true"></i></div>
+                        <div class="feedback-bar-content">
+                            <strong>Location not found</strong>
+                            <span>@_sourceError</span>
+                        </div>
+                    </div>
                 }
             </div>
         </div>
@@ -173,7 +180,13 @@
                     </div>
                     @if (!string.IsNullOrWhiteSpace(_quantityError))
                     {
-                        <div class="alert alert-danger mt-3 mb-0">@_quantityError</div>
+                        <div class="feedback-bar danger mt-3" role="alert">
+                            <div class="feedback-bar-icon"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i></div>
+                            <div class="feedback-bar-content">
+                                <strong>Check move quantity</strong>
+                                <span>@_quantityError</span>
+                            </div>
+                        </div>
                     }
                 </div>
             </div>
@@ -229,7 +242,13 @@
                     </div>
                     @if (!string.IsNullOrWhiteSpace(_destinationError))
                     {
-                        <div class="alert alert-danger mt-3 mb-0">@_destinationError</div>
+                        <div class="feedback-bar danger mt-3" role="alert">
+                            <div class="feedback-bar-icon"><i class="bi bi-geo-alt" aria-hidden="true"></i></div>
+                            <div class="feedback-bar-content">
+                                <strong>Destination unavailable</strong>
+                                <span>@_destinationError</span>
+                            </div>
+                        </div>
                     }
                     @if (_destinationPosition is not null)
                     {
@@ -297,11 +316,23 @@
 
                 @if (!string.IsNullOrWhiteSpace(_confirmError))
                 {
-                    <div class="alert alert-danger mt-3">@_confirmError</div>
+                    <div class="feedback-bar danger mt-3" role="alert">
+                        <div class="feedback-bar-icon"><i class="bi bi-x-circle" aria-hidden="true"></i></div>
+                        <div class="feedback-bar-content">
+                            <strong>Movement not completed</strong>
+                            <span>@_confirmError</span>
+                        </div>
+                    </div>
                 }
                 @if (!string.IsNullOrWhiteSpace(_confirmSuccessMessage))
                 {
-                    <div class="alert alert-success mt-3">@_confirmSuccessMessage</div>
+                    <div class="feedback-bar success mt-3" role="status" aria-live="polite">
+                        <div class="feedback-bar-icon"><i class="bi bi-check2-circle" aria-hidden="true"></i></div>
+                        <div class="feedback-bar-content">
+                            <strong>Movement completed</strong>
+                            <span>@_confirmSuccessMessage</span>
+                        </div>
+                    </div>
                 }
 
                 <div class="slide-over-footer px-0">
@@ -390,6 +421,11 @@
         await SearchDestinationSuggestionsAsync();
     }
 
+    // Only one location lookup may run at a time: the page shares a single DbContext, so overlapping
+    // lookups from fast typing would collide. If the text changed while a lookup was waiting, only
+    // the latest text is searched.
+    private readonly SemaphoreSlim _locationSearchGate = new(1, 1);
+
     private async Task SearchSourceSuggestionsAsync()
     {
         var term = _sourceLocationCode.Trim();
@@ -400,9 +436,27 @@
             return;
         }
 
-        var page = await Mediator.Send(new GetLocationsQuery(Search: term, PageSize: 8));
-        _sourceSuggestions = page.Items.ToList();
-        _showSourceSuggestions = _sourceSuggestions.Count > 0;
+        await _locationSearchGate.WaitAsync();
+        try
+        {
+            if (!string.Equals(term, _sourceLocationCode.Trim(), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var page = await Mediator.Send(new GetLocationsQuery(Search: term, PageSize: 8));
+            if (!string.Equals(term, _sourceLocationCode.Trim(), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _sourceSuggestions = page.Items.ToList();
+            _showSourceSuggestions = _sourceSuggestions.Count > 0;
+        }
+        finally
+        {
+            _locationSearchGate.Release();
+        }
     }
 
     private async Task SearchDestinationSuggestionsAsync()
@@ -415,9 +469,27 @@
             return;
         }
 
-        var page = await Mediator.Send(new GetLocationsQuery(Search: term, PageSize: 8));
-        _destinationSuggestions = page.Items.ToList();
-        _showDestinationSuggestions = _destinationSuggestions.Count > 0;
+        await _locationSearchGate.WaitAsync();
+        try
+        {
+            if (!string.Equals(term, _destinationLocationCode.Trim(), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var page = await Mediator.Send(new GetLocationsQuery(Search: term, PageSize: 8));
+            if (!string.Equals(term, _destinationLocationCode.Trim(), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _destinationSuggestions = page.Items.ToList();
+            _showDestinationSuggestions = _destinationSuggestions.Count > 0;
+        }
+        finally
+        {
+            _locationSearchGate.Release();
+        }
     }
 
     private async Task SelectSourceSuggestion(PalletPositionDto suggestion)
@@ -472,10 +544,15 @@
         {
             _sourcePosition = await Mediator.Send(new GetPalletPositionByCodeQuery(_sourceLocationCode.Trim()));
         }
-        catch (Exception ex)
+        catch (NotFoundException ex)
         {
             Logger.LogWarning(ex, "Unable to load source location {LocationCode}", _sourceLocationCode);
-            _sourceError = ex.Message;
+            _sourceError = $"Location \"{_sourceLocationCode.Trim()}\" does not exist. Check the code and try again.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unable to load source location {LocationCode}", _sourceLocationCode);
+            _sourceError = "The location could not be loaded right now. Please try again.";
         }
         finally
         {
@@ -558,10 +635,15 @@
                 }
             }
         }
-        catch (Exception ex)
+        catch (NotFoundException ex)
         {
             Logger.LogWarning(ex, "Unable to load destination location {LocationCode}", _destinationLocationCode);
-            _destinationError = ex.Message;
+            _destinationError = $"Location \"{_destinationLocationCode.Trim()}\" does not exist. Check the code and try again.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unable to load destination location {LocationCode}", _destinationLocationCode);
+            _destinationError = "The destination could not be loaded right now. Please try again.";
         }
         finally
         {

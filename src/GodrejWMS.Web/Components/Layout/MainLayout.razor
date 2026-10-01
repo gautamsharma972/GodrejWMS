@@ -4,7 +4,13 @@
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JsRuntime
 
-<div class="page @(sidebarCollapsed ? "sidebar-collapsed" : null)">
+<input id="sidebar-state-control"
+       class="sidebar-state-control"
+       type="checkbox"
+       aria-label="Toggle sidebar"
+       @bind="sidebarCollapsed" />
+
+<div class="page">
     <aside class="sidebar">
         <NavMenu />
     </aside>
@@ -12,17 +18,15 @@
     <main class="workspace @(IsPutawayExecution ? "putaway-execution-workspace" : null) @(IsReportPage ? "report-workspace" : null)">
         <header class="top-row">
             <div class="top-row-left">
-                <button type="button"
-                        class="sidebar-toggle"
-                        title="Toggle sidebar"
-                        data-bs-toggle="tooltip"
-                        data-bs-placement="right"
-                        aria-label="Toggle sidebar"
-                        data-tour="topbar-toggle"
-                        aria-expanded="@(!sidebarCollapsed)"
-                        @onclick="ToggleSidebar">
+                <label for="sidebar-state-control"
+                       class="sidebar-toggle"
+                       title="Toggle sidebar"
+                       data-bs-toggle="tooltip"
+                       data-bs-placement="right"
+                       aria-label="Toggle sidebar"
+                       data-tour="topbar-toggle">
                     <i class="bi bi-list" aria-hidden="true"></i>
-                </button>
+                </label>
 
                 <div>
                     <div class="eyebrow">Warehouse Management System</div>
@@ -195,11 +199,6 @@
         {
             _ = JsRuntime.InvokeVoidAsync("godrejWms.trackVisit", CurrentPath);
         }
-    }
-
-    private void ToggleSidebar()
-    {
-        sidebarCollapsed = !sidebarCollapsed;
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)

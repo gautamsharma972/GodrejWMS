@@ -30,8 +30,8 @@
         </div>
     </div>
 
-    <div class="transaction-grid">
-        <div class="panel">
+    <div class="transaction-grid picking-request-grid">
+        <div class="panel picking-request-panel picking-manual-panel">
             <div class="panel-header">
                 <div>
                     <h2 class="panel-title">Manual Lines</h2>
@@ -105,7 +105,7 @@
             </div>
         </div>
 
-        <div class="panel">
+        <div class="panel picking-request-panel picking-upload-panel">
             <div class="panel-header">
                 <div>
                     <h2 class="panel-title">Bulk Upload</h2>
@@ -124,12 +124,15 @@
                         Sample Format
                     </button>
                 </div>
-                <span class="text-muted small">Accepted columns: Material Code, Total Stock in CFB. Maximum file size: 10 MB.</span>
+                <div class="upload-guidance">
+                    <i class="bi bi-info-circle" aria-hidden="true"></i>
+                    <span>Accepted columns: Material Code, Total Stock in CFB. Maximum file size: 10 MB.</span>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="putaway-info-bar" role="status" data-tour="pullout-logic">
+    <div class="putaway-info-bar picking-logic-bar" role="status" data-tour="pullout-logic">
         <div class="info-bar-icon">
             <i class="bi bi-diagram-3" aria-hidden="true"></i>
         </div>
@@ -180,15 +183,28 @@
                 <div class="slide-over-body">
                     @if (_rejected)
                     {
-                        <div class="alert alert-danger" role="status">
-                            <strong>This pullout was rejected.</strong>
-                            <div>Reason: @_rejectedReason. Inventory was not changed.</div>
+                        <div class="putaway-info-bar pullout-status-bar rejected allocation-confirmation-bar" role="status" aria-live="polite">
+                            <div class="info-bar-icon">
+                                <i class="bi bi-x-circle" aria-hidden="true"></i>
+                            </div>
+                            <div class="info-bar-content">
+                                <h2>Pullout rejected</h2>
+                                <p>Reason: @_rejectedReason. Inventory was not changed.</p>
+                            </div>
+                            <span class="status-pill danger">Closed</span>
                         </div>
                     }
                     else
                     {
-                        <div class="alert @(_confirmed ? "alert-success" : "alert-info")" role="status">
-                            @(_confirmed ? "Pullout confirmed. Inventory updated." : "Saved in Pullout History for later. Review the proposed picks, then click Confirm Pullout to update inventory.")
+                        <div class="putaway-info-bar pullout-status-bar @(_confirmed ? "confirmed" : "pending") allocation-confirmation-bar" role="status" aria-live="polite">
+                            <div class="info-bar-icon">
+                                <i class="bi @(_confirmed ? "bi-check2-circle" : "bi-clock-history")" aria-hidden="true"></i>
+                            </div>
+                            <div class="info-bar-content">
+                                <h2>@(_confirmed ? "Pullout confirmed" : "Pick result saved")</h2>
+                                <p>@(_confirmed ? "Inventory has been updated." : "Review the proposed picks, then confirm the pullout when ready. Inventory has not been changed.")</p>
+                            </div>
+                            <span class="status-pill @(_confirmed ? "success" : "warning")">@(_confirmed ? "Inventory updated" : "Awaiting confirmation")</span>
                         </div>
                     }
                     @if (_showRejectPanel && !_rejected && !_confirmed)
@@ -620,7 +636,6 @@
         public long MaterialCode => long.TryParse(MaterialCodeText, out var value) ? value : 0;
     }
 }
-
 
 
 

@@ -1,4 +1,5 @@
 @inject NavigationManager NavManager
+@using System.Security.Claims
 
 <div class="brand-panel" data-tour="brand">
     <a class="navbar-brand" href="" aria-label="Godrej WMS" data-bs-title="Godrej WMS" data-bs-toggle="tooltip" data-bs-placement="right">
@@ -231,10 +232,49 @@
     </nav>
 </div>
 
+<AuthorizeView>
+    <Authorized Context="sidebarUserContext">
+        <div class="sidebar-user-footer">
+            <a class="sidebar-user-profile"
+               href="Account/Manage"
+               title="Manage account"
+               data-bs-toggle="tooltip"
+               data-bs-placement="right">
+                <span class="sidebar-user-avatar" aria-hidden="true">@UserInitial(sidebarUserContext.User.Identity?.Name)</span>
+                <span class="sidebar-user-details">
+                    <strong>@(sidebarUserContext.User.Identity?.Name ?? "Signed-in user")</strong>
+                    <span>@UserRole(sidebarUserContext.User)</span>
+                </span>
+            </a>
+            <form action="Account/Logout" method="post" class="sidebar-logout-form">
+                <AntiforgeryToken />
+                <input type="hidden" name="ReturnUrl" value="@CurrentRelativeUrl" />
+                <button type="submit"
+                        class="sidebar-logout"
+                        title="Logout"
+                        aria-label="Logout"
+                        data-bs-toggle="tooltip"
+                        data-bs-placement="right">
+                    <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+                    <span class="sidebar-logout-text">Logout</span>
+                </button>
+            </form>
+        </div>
+    </Authorized>
+</AuthorizeView>
+
 @code {
     private bool? _inwardMenuExpanded;
     private bool? _pulloutMenuExpanded;
     private bool? _inventoryMovementMenuExpanded;
+
+    private string CurrentRelativeUrl => NavManager.ToBaseRelativePath(NavManager.Uri);
+
+    private static string UserInitial(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? "U" : name.Trim()[0].ToString().ToUpperInvariant();
+
+    private static string UserRole(ClaimsPrincipal user) =>
+        user.FindFirst(ClaimTypes.Role)?.Value ?? "Warehouse user";
 
     private bool IsInwardMenuOpen => _inwardMenuExpanded ?? IsInwardSection();
 

@@ -276,12 +276,28 @@
                     <h2 class="panel-title">Put-away Detail</h2>
                     <p class="panel-subtitle">Locations recorded against each inward line.</p>
                 </div>
-                <span class="status-pill info">Allocation audit</span>
+                <div class="toolbar-group">
+                    @if (_selectedPutawayIds.Count > 0)
+                    {
+                        <button type="button" class="btn btn-outline-primary" @onclick="OpenBulkRackChangeAsync">
+                            <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+                            Change rack (@_selectedPutawayIds.Count)
+                        </button>
+                    }
+                    <span class="status-pill info">Allocation audit</span>
+                </div>
             </div>
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead>
                         <tr>
+                            <th class="selection-column">
+                                <input class="form-check-input" type="checkbox"
+                                       aria-label="Select all unconfirmed allocations"
+                                       checked="@AreAllVisiblePutawaysSelected"
+                                       disabled="@(!SelectablePutawayIds.Any())"
+                                       @onchange="ToggleAllVisiblePutaways" />
+                            </th>
                             <th aria-sort="@SortAria("material")"><button type="button" class="sort-button" @onclick='@(() => SortBy("material"))'>Material <i class="bi @SortIcon("material")" aria-hidden="true"></i></button></th>
                             <th aria-sort="@SortAria("pkm")"><button type="button" class="sort-button" @onclick='@(() => SortBy("pkm"))'>PKM <i class="bi @SortIcon("pkm")" aria-hidden="true"></i></button></th>
                             <th class="text-end" aria-sort="@SortAria("requested")"><button type="button" class="sort-button" @onclick='@(() => SortBy("requested"))'>Requested <i class="bi @SortIcon("requested")" aria-hidden="true"></i></button></th>
@@ -294,6 +310,15 @@
                         @foreach (var row in DisplayPutawayRows)
                         {
                             <tr>
+                                <td class="selection-column">
+                                    @if (row.Putaway is { IsConfirmed: false, Id: > 0 })
+                                    {
+                                        <input class="form-check-input" type="checkbox"
+                                               aria-label="Select allocation at @row.Putaway.LocationCode"
+                                               checked="@_selectedPutawayIds.Contains(row.Putaway.Id)"
+                                               @onchange="e => TogglePutaway(row.Putaway.Id, e)" />
+                                    }
+                                </td>
                                 <td>
                                     <span class="record-code">@row.Line.MaterialNumber</span>
                                     <span>@row.Line.MaterialDescription</span>
@@ -326,11 +351,12 @@
                                             @if (!row.Putaway.IsConfirmed && row.Putaway.Id > 0)
                                             {
                                                 <button type="button"
-                                                        class="btn btn-sm btn-outline-secondary"
-                                                        title="Change put-away location"
-                                                        aria-label="Change put-away location"
-                                                                @onclick="() => OpenChangeLocationAsync(row.Putaway.Id, row.Putaway.LocationCode)">
+                                                        class="btn btn-sm btn-outline-secondary allocation-change-button"
+                                                        title="Change rack or put-away location"
+                                                        aria-label="Change rack or put-away location"
+                                                        @onclick="() => OpenChangeLocationAsync(row.Putaway.Id, row.Putaway.LocationCode)">
                                                     <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+                                                    <span>Change</span>
                                                 </button>
                                             }
                                         </div>
@@ -499,14 +525,21 @@
                         }
                         else
                         {
-                            <div class="toolbar-panel">
-                                <div class="toolbar-group">
+                        <div class="toolbar-panel change-location-toolbar">
+                            <div class="toolbar-group">
                                     <div class="input-group search-control">
                                         <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
                                         <input class="form-control" placeholder="Search location, subtype, or zone"
-                                               @bind="_changeLocationSearch" @bind:event="oninput" />
-                                    </div>
+                                       @bind="_changeLocationSearch" @bind:event="oninput" />
                                 </div>
+                                <select class="form-select change-rack-filter" aria-label="Filter alternate locations by rack" @bind="_changeRackFilter">
+                                    <option value="">All racks</option>
+                                    @foreach (var rackCode in ChangeRackOptions)
+                                    {
+                                        <option value="@rackCode">Rack @rackCode@(rackCode.Equals(RackCodeOf(_changeCurrentLocationCode), StringComparison.OrdinalIgnoreCase) ? " (current)" : string.Empty)</option>
+                                    }
+                                </select>
+                            </div>
                                 <span class="sync-chip">@DisplayChangeOptions.Count().ToString("N0") location(s)</span>
                             </div>
 
@@ -515,6 +548,7 @@
                                     <thead>
                                         <tr>
                                             <th>Location</th>
+                                            <th>Rack</th>
                                             <th>Subtype</th>
                                             <th>Zone</th>
                                             <th class="text-end">Free / Capacity</th>
@@ -526,6 +560,7 @@
                                         {
                                             <tr class="@(option.IsCurrent ? "table-active" : null)">
                                                 <td><span class="record-code">@option.LocationCode</span></td>
+                                                <td><span class="status-pill neutral">@RackCodeOf(option.LocationCode)</span></td>
                                                 <td><span class="status-pill @SubtypeClass(option.LocationSubtypeCode)">@option.LocationSubtypeName</span></td>
                                                 <td><span class="status-pill @ZoneClass(option.ZoneTypeCode)">@option.ZoneTypeName</span></td>
                                                 <td class="text-end">@option.FreeBoxes.ToString("0.###") / @option.CapacityBoxes</td>
@@ -551,6 +586,55 @@
 
                     <div class="slide-over-footer">
                         <button type="button" class="btn btn-outline-secondary" @onclick="CloseChangeLocation">Close</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (_isBulkRackChangeOpen)
+        {
+            <div class="slide-over-backdrop" role="presentation" @onclick="CloseBulkRackChange">
+                <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="history-bulk-rack-title" @onclick:stopPropagation="true">
+                    <div class="slide-over-header">
+                        <div>
+                            <div class="eyebrow">Put-away Reservations</div>
+                            <h2 id="history-bulk-rack-title" class="slide-over-title">Move Selected to Rack</h2>
+                            <p class="slide-over-subtitle">Move @_selectedPutawayIds.Count selected unconfirmed allocation(s) at once.</p>
+                        </div>
+                        <button type="button" class="slide-over-close" aria-label="Close bulk rack change" @onclick="CloseBulkRackChange">
+                            <i class="bi bi-x-lg" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <div class="slide-over-body">
+                        @if (!string.IsNullOrWhiteSpace(_bulkRackChangeError))
+                        {
+                            <div class="alert alert-danger mb-3">@_bulkRackChangeError</div>
+                        }
+                        <div class="mb-3">
+                            <label class="form-label">Destination rack <span class="text-danger">*</span></label>
+                            <select class="form-select" @bind="_bulkRackCode">
+                                <option value="">Select rack</option>
+                                @foreach (var rack in _bulkRacks.Where(r => r.IsActive))
+                                {
+                                    <option value="@rack.Code">Rack @rack.Code</option>
+                                }
+                            </select>
+                            <div class="form-text">The system will use compatible available positions within this rack.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Reason for override <span class="text-danger">*</span></label>
+                            <input class="form-control" maxlength="250" placeholder="e.g. Move this receipt to another rack"
+                                   @bind="_bulkRackReason" @bind:event="oninput" />
+                        </div>
+                    </div>
+                    <div class="slide-over-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseBulkRackChange">Close</button>
+                        <button type="button" class="btn btn-primary"
+                                disabled="@(_movingSelectedPutaways || string.IsNullOrWhiteSpace(_bulkRackCode) || string.IsNullOrWhiteSpace(_bulkRackReason))"
+                                @onclick="MoveSelectedPutawaysAsync">
+                            <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+                            @(_movingSelectedPutaways ? "Moving..." : $"Move {_selectedPutawayIds.Count} allocation(s)")
+                        </button>
                     </div>
                 </div>
             </div>
@@ -581,9 +665,17 @@
     private string _changeCurrentLocationCode = string.Empty;
     private IReadOnlyList<InwardPalletChangeOptionDto>? _changeOptions;
     private string _changeLocationSearch = string.Empty;
+    private string _changeRackFilter = string.Empty;
     private string _changeReason = string.Empty;
     private string? _changeError;
     private bool _changingLocation;
+    private readonly HashSet<int> _selectedPutawayIds = [];
+    private bool _isBulkRackChangeOpen;
+    private IReadOnlyList<RackDto> _bulkRacks = Array.Empty<RackDto>();
+    private string _bulkRackCode = string.Empty;
+    private string _bulkRackReason = string.Empty;
+    private string? _bulkRackChangeError;
+    private bool _movingSelectedPutaways;
     private string _sortBy = "material";
     private bool _sortDescending;
 
@@ -686,6 +778,7 @@
         _changeCurrentLocationCode = currentLocationCode;
         _changeOptions = null;
         _changeLocationSearch = string.Empty;
+        _changeRackFilter = RackCodeOf(currentLocationCode);
         _changeReason = string.Empty;
         _changeError = null;
         _isChangeLocationOpen = true;
@@ -705,6 +798,7 @@
     {
         _isChangeLocationOpen = false;
         _changeOptions = null;
+        _changeRackFilter = string.Empty;
         _changeError = null;
     }
 
@@ -758,6 +852,132 @@
         }
     }
 
+    private IEnumerable<int> SelectablePutawayIds =>
+        DisplayPutawayRows
+            .Where(row => row.Putaway is { IsConfirmed: false, Id: > 0 })
+            .Select(row => row.Putaway!.Id);
+
+    private bool AreAllVisiblePutawaysSelected
+    {
+        get
+        {
+            var ids = SelectablePutawayIds.ToArray();
+            return ids.Length > 0 && ids.All(_selectedPutawayIds.Contains);
+        }
+    }
+
+    private void TogglePutaway(int putawayId, ChangeEventArgs args)
+    {
+        if (args.Value is true)
+        {
+            _selectedPutawayIds.Add(putawayId);
+        }
+        else
+        {
+            _selectedPutawayIds.Remove(putawayId);
+        }
+    }
+
+    private void ToggleAllVisiblePutaways(ChangeEventArgs args)
+    {
+        var ids = SelectablePutawayIds.ToArray();
+        if (args.Value is true)
+        {
+            _selectedPutawayIds.UnionWith(ids);
+        }
+        else
+        {
+            _selectedPutawayIds.ExceptWith(ids);
+        }
+    }
+
+    private async Task OpenBulkRackChangeAsync()
+    {
+        if (_selectedPutawayIds.Count == 0) return;
+        _bulkRackChangeError = null;
+        _bulkRackCode = string.Empty;
+        _bulkRackReason = string.Empty;
+        _isBulkRackChangeOpen = true;
+        try
+        {
+            _bulkRacks = await Mediator.Send(new GetRacksQuery());
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load racks for bulk put-away change");
+            _bulkRackChangeError = ex.Message;
+        }
+    }
+
+    private void CloseBulkRackChange()
+    {
+        _isBulkRackChangeOpen = false;
+        _bulkRackChangeError = null;
+    }
+
+    private async Task MoveSelectedPutawaysAsync()
+    {
+        if (_selectedPutawayIds.Count == 0) return;
+        _movingSelectedPutaways = true;
+        _bulkRackChangeError = null;
+        try
+        {
+            var count = _selectedPutawayIds.Count;
+            await Mediator.Send(new ChangeInwardPutawayRackCommand(
+                _selectedPutawayIds.ToArray(), _bulkRackCode, _bulkRackReason));
+            _detail = await Mediator.Send(new GetInwardDetailQuery(TransactionId));
+            _selectedPutawayIds.Clear();
+            CloseBulkRackChange();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"{count} put-away allocation(s) moved to Rack {_bulkRackCode}.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to move selected put-away allocations to rack {RackCode}", _bulkRackCode);
+            _bulkRackChangeError = ex.Message;
+        }
+        finally
+        {
+            _movingSelectedPutaways = false;
+        }
+    }
+
+    private IEnumerable<InwardPalletChangeOptionDto> DisplayChangeOptions
+    {
+        get
+        {
+            var query = (_changeOptions ?? Array.Empty<InwardPalletChangeOptionDto>()).AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_changeLocationSearch))
+            {
+                var term = _changeLocationSearch.Trim();
+                query = query.Where(o =>
+                    o.LocationCode.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    o.LocationSubtypeName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    o.ZoneTypeName.Contains(term, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_changeRackFilter))
+            {
+                query = query.Where(o => RackCodeOf(o.LocationCode).Equals(_changeRackFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return query;
+        }
+    }
+
+    private IEnumerable<string> ChangeRackOptions =>
+        (_changeOptions ?? Array.Empty<InwardPalletChangeOptionDto>())
+            .Select(o => RackCodeOf(o.LocationCode))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(code => code, StringComparer.OrdinalIgnoreCase);
+
+    private static string RackCodeOf(string locationCode)
+    {
+        var lastSeparator = locationCode.LastIndexOf('-');
+        var rackSeparator = lastSeparator > 0 ? locationCode.LastIndexOf('-', lastSeparator - 1) : -1;
+        return rackSeparator > 0 ? locationCode[..rackSeparator] : locationCode;
+    }
+
     private void SortBy(string column)
     {
         if (_sortBy == column)
@@ -782,25 +1002,6 @@
             System.Globalization.DateTimeStyles.AllowWhiteSpaces, out var month)
                 ? month
                 : DateTime.MaxValue;
-
-    private IEnumerable<InwardPalletChangeOptionDto> DisplayChangeOptions
-    {
-        get
-        {
-            var query = (_changeOptions ?? Array.Empty<InwardPalletChangeOptionDto>()).AsEnumerable();
-
-            if (!string.IsNullOrWhiteSpace(_changeLocationSearch))
-            {
-                var term = _changeLocationSearch.Trim();
-                query = query.Where(o =>
-                    o.LocationCode.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                    o.LocationSubtypeName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                    o.ZoneTypeName.Contains(term, StringComparison.OrdinalIgnoreCase));
-            }
-
-            return query;
-        }
-    }
 
     private static decimal CompletionRate(decimal completed, decimal requested) =>
         requested > 0 ? Math.Min(100, completed / requested * 100) : 0;
@@ -949,9 +1150,6 @@
         public decimal AllocatedQuantityBoxes => Putaway?.QuantityBoxes ?? Line.AllocatedQuantityBoxes;
     }
 }
-
-
-
 
 
 

@@ -38,25 +38,26 @@ else
 
         <div class="transaction-grid">
             <div class="rack-layout-panel rack-layout-3d">
-                <div class="toolbar-panel panel-toolbar rack-map-toolbar">
-                    <div class="toolbar-group">
-                        <div class="input-group search-control">
-                            <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
-                            <input class="form-control" placeholder="Search location, label, SKU, or description" @bind="_rackSearch" @bind:event="oninput" />
-                        </div>
-                        <select class="form-select filter-control" @bind="_occupancyFilter">
+                <div class="rack-map-toolbar">
+                    <div class="rack-map-search">
+                        <i class="bi bi-search" aria-hidden="true"></i>
+                        <input class="form-control" aria-label="Search rack positions" placeholder="Search location, label, SKU, or description" @bind="_rackSearch" @bind:event="oninput" />
+                    </div>
+                    <div class="rack-map-actions">
+                        <select class="form-select" aria-label="Filter rack positions by occupancy" @bind="_occupancyFilter">
                             <option value="">All positions</option>
                             <option value="empty">Empty</option>
                             <option value="partial">Partially filled</option>
                             <option value="full">Full</option>
                             <option value="inactive">Inactive</option>
                         </select>
-                        <label class="form-check rack-heatmap-toggle">
-                            <input class="form-check-input" type="checkbox" @bind="_heatmapMode" />
-                            <span class="form-check-label">Heatmap</span>
+                        <label class="rack-heatmap-toggle">
+                            <input type="checkbox" @bind="_heatmapMode" />
+                            <span class="rack-toggle-track" aria-hidden="true"><span></span></span>
+                            <span>Heatmap</span>
                         </label>
+                        <span class="rack-position-count"><strong>@FilteredPositionCount()</strong> of @_layout.Positions.Count</span>
                     </div>
-                    <span class="sync-chip">@FilteredPositionCount() / @_layout.Positions.Count position(s)</span>
                 </div>
                 <div class="rack-viewport @(_heatmapMode ? "heatmap-mode" : null)">
                     <div class="rack-frame" style="@($"--rack-columns:{_layout.Columns};")">
@@ -96,16 +97,15 @@ else
                     <span><span class="legend-swatch cell-empty"></span> Empty</span>
                     <span><span class="legend-swatch cell-partial"></span> Partially filled</span>
                     <span><span class="legend-swatch cell-full"></span> Full</span>
+                    <span><span class="legend-swatch cell-overflow"></span> Overflow</span>
                     <span><span class="legend-swatch cell-selected"></span> Selected</span>
                 </div>
             </div>
 
             <aside class="panel position-detail-panel">
-                <div class="panel-header">
-                    <div>
-                        <h2 class="panel-title">Position Details</h2>
-                        <p class="panel-subtitle">Select a location to inspect or update location master settings.</p>
-                    </div>
+                <div class="position-detail-heading">
+                    <h2>Position details</h2>
+                    <p>@(_selected is null ? "Select a location from the rack map." : "Stock and location settings at a glance.")</p>
                 </div>
                 <div class="panel-body">
                     @if (_selected is null)
@@ -115,10 +115,10 @@ else
                     else
                     {
                         <div class="position-detail-shell">
-                            <div class="position-summary-card">
+                            <section class="position-summary-card">
                                 <div class="position-summary-top">
                                     <div>
-                                        <div class="eyebrow">Location</div>
+                                        <div class="position-kicker">Selected position</div>
                                         <h2>@_selected.LocationCode</h2>
                                     </div>
                                     <span class="status-pill @(_selected.IsActive ? "success" : "inactive")">@(_selected.IsActive ? "Active" : "Inactive")</span>
@@ -130,48 +130,35 @@ else
                                     <span class="status-pill @ZoneClass(_selected.ZoneTypeCode)">@_selected.ZoneTypeName</span>
                                 </div>
 
-                                <div class="position-progress-block">
-                                    <div>
-                                        <span>Occupied</span>
-                                        <strong>@_selected.OccupiedBoxes.ToString("0.###") / @(_selected.CapacityBoxes?.ToString() ?? "—") boxes</strong>
-                                    </div>
+                                <div class="position-utilization-row">
+                                    <span>Space used</span>
+                                    <strong>@_selected.OccupiedBoxes.ToString("0.###") of @(_selected.CapacityBoxes?.ToString() ?? "—") boxes</strong>
                                     <span>@OccupancyPercent(_selected).ToString("0.#")%</span>
                                 </div>
                                 <div class="position-progress-track">
                                     <span style="@($"width:{OccupancyPercent(_selected):0.##}%")"></span>
                                 </div>
-                            </div>
+                            </section>
 
-                            <div class="position-metric-grid">
-                                <div class="position-metric">
-                                    <span>Capacity</span>
-                                    <strong>@(_selected.CapacityBoxes?.ToString() ?? "—")</strong>
+                            <dl class="position-facts">
+                                <div>
+                                    <dt>Available</dt>
+                                    <dd>@(_selected.FreeBoxes?.ToString("0.###") ?? "—") boxes</dd>
                                 </div>
-                                <div class="position-metric">
-                                    <span>Occupied</span>
-                                    <strong>@_selected.OccupiedBoxes.ToString("0.###")</strong>
+                                <div>
+                                    <dt>Pallet limit</dt>
+                                    <dd>@_selected.MaxPallets</dd>
                                 </div>
-                                <div class="position-metric success">
-                                    <span>Free</span>
-                                    <strong>@(_selected.FreeBoxes?.ToString("0.###") ?? "—")</strong>
+                                <div>
+                                    <dt>Priority</dt>
+                                    <dd>@_selected.DistancePriority</dd>
                                 </div>
-                                <div class="position-metric">
-                                    <span>Priority</span>
-                                    <strong>@_selected.DistancePriority</strong>
-                                </div>
-                                <div class="position-metric">
-                                    <span>Pallets</span>
-                                    <strong>@_selected.MaxPallets</strong>
-                                </div>
-                            </div>
+                            </dl>
 
                             <section class="position-section">
                                 <div class="position-section-header">
-                                    <div>
-                                        <div class="eyebrow">SKU Stock</div>
-                                        <h3>Placed SKUs</h3>
-                                    </div>
-                                    <span class="status-pill info">@_selected.Stock.Count item(s)</span>
+                                    <h3>Stock in this position</h3>
+                                    <span>@_selected.Stock.Count item(s)</span>
                                 </div>
 
                                 @if (_selected.Stock.Count == 0)
@@ -189,35 +176,35 @@ else
                                                     <span class="status-pill @SubtypeClass(stock.StockSubtypeCode)">@stock.StockSubtypeName</span>
                                                 </div>
                                                 <h4>@stock.MaterialDescription</h4>
-                                                <div class="sku-stock-meta">
+                                                <dl class="sku-stock-meta">
                                                     <div>
-                                                        <span>Design Type</span>
-                                                        <strong>@stock.DesignType</strong>
+                                                        <dt>Design</dt>
+                                                        <dd>@stock.DesignType</dd>
                                                     </div>
                                                     <div>
-                                                        <span>PKM</span>
-                                                        <strong>@stock.MfgMonthLabel</strong>
+                                                        <dt>PKM</dt>
+                                                        <dd>@stock.MfgMonthLabel</dd>
                                                     </div>
                                                     <div>
-                                                        <span>Boxes</span>
-                                                        <strong>@stock.QuantityBoxes.ToString("0.###")</strong>
+                                                        <dt>Boxes</dt>
+                                                        <dd>@stock.QuantityBoxes.ToString("0.###")</dd>
                                                     </div>
-                                                </div>
+                                                </dl>
                                             </article>
                                         }
                                     </div>
                                 }
                             </section>
 
-                            <section class="position-section position-label-section">
+                            <section class="position-edit-row">
                                 <div>
-                                    <div class="eyebrow">Physical Label</div>
-                                    <div class="position-label-value">@(!string.IsNullOrWhiteSpace(_selected.FlatLabel) ? _selected.FlatLabel : "Not assigned")</div>
+                                    <span>Physical label</span>
+                                    <strong>@(!string.IsNullOrWhiteSpace(_selected.FlatLabel) ? _selected.FlatLabel : "Not assigned")</strong>
                                 </div>
                                 <AuthorizeView Roles="Admin,Supervisor,Operator" Context="adminContext">
-                                    <button type="button" class="btn btn-outline-secondary" @onclick="OpenLabelEditor">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="OpenLabelEditor">
                                         <i class="bi bi-pencil-square" aria-hidden="true"></i>
-                                        Edit Location
+                                        Edit
                                     </button>
                                 </AuthorizeView>
                             </section>
@@ -406,6 +393,11 @@ else
 
     private string CellStateClass(PalletPositionDto position)
     {
+        if (position.CapacityBoxes is { } capacity && capacity > 0 && position.OccupiedBoxes > capacity)
+        {
+            return "cell-overflow";
+        }
+
         if (!_heatmapMode)
         {
             return position.IsFull ? "cell-full" : position.OccupiedBoxes > 0 ? "cell-partial" : "cell-empty";
@@ -480,7 +472,4 @@ else
         public bool IsActive { get; set; } = true;
     }
 }
-
-
-
 

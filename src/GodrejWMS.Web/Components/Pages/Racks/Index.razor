@@ -1,5 +1,6 @@
 @page "/racks"
 @attribute [Authorize]
+@using GodrejWMS.Application.Common.Exceptions
 @using GodrejWMS.Application.Features.Racks.Commands
 @using GodrejWMS.Application.Features.Racks.Dtos
 @using GodrejWMS.Application.Features.Racks.Queries
@@ -48,55 +49,87 @@
                     <div class="slide-over-body">
                         <div class="row g-3">
                             <div class="col-md-4">
-                                <label class="form-label">Code</label>
-                                <input class="form-control" @bind="_form.Code" @bind:event="oninput" />
+                                <label class="form-label">Code <span class="required-indicator" aria-hidden="true">*</span></label>
+                                <input class="@FieldClass(nameof(RackFormModel.Code), "form-control")"
+                                       aria-invalid="@HasFieldError(nameof(RackFormModel.Code))"
+                                       @bind="_form.Code" @bind:event="oninput"
+                                       @bind:after="() => ClearFieldError(nameof(RackFormModel.Code))" />
+                                @FieldError(nameof(RackFormModel.Code))
                             </div>
                             <div class="col-md-8">
                                 <label class="form-label">Name</label>
                                 <InputText class="form-control" @bind-Value="_form.Name" />
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Columns</label>
-                                <input type="number" class="form-control" @bind="_form.Columns" @bind:event="oninput" />
+                                <label class="form-label">Columns <span class="required-indicator" aria-hidden="true">*</span></label>
+                                <input type="number" class="@FieldClass(nameof(RackFormModel.Columns), "form-control")"
+                                       aria-invalid="@HasFieldError(nameof(RackFormModel.Columns))"
+                                       @bind="_form.Columns" @bind:event="oninput"
+                                       @bind:after="() => ClearFieldError(nameof(RackFormModel.Columns))" />
+                                @FieldError(nameof(RackFormModel.Columns))
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Levels</label>
-                                <input type="number" class="form-control" @bind="_form.Levels" @bind:event="oninput" />
+                                <label class="form-label">Levels <span class="required-indicator" aria-hidden="true">*</span></label>
+                                <input type="number" class="@FieldClass(nameof(RackFormModel.Levels), "form-control")"
+                                       aria-invalid="@HasFieldError(nameof(RackFormModel.Levels))"
+                                       @bind="_form.Levels" @bind:event="oninput"
+                                       @bind:after="() => ClearFieldError(nameof(RackFormModel.Levels))" />
+                                @FieldError(nameof(RackFormModel.Levels))
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Max Pallets/Location</label>
-                                <InputNumber class="form-control" @bind-Value="_form.MaxPallets" />
+                                <label class="form-label">Max Pallets/Location <span class="required-indicator" aria-hidden="true">*</span></label>
+                                <InputNumber class="@FieldClass(nameof(RackFormModel.MaxPallets), "form-control")"
+                                             aria-invalid="@HasFieldError(nameof(RackFormModel.MaxPallets))"
+                                             @bind-Value="_form.MaxPallets"
+                                             @bind-Value:after="() => ClearFieldError(nameof(RackFormModel.MaxPallets))" />
+                                @FieldError(nameof(RackFormModel.MaxPallets))
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Location Type</label>
-                                <InputSelect class="form-select" @bind-Value="_form.LocationTypeId">
+                                <label class="form-label">Location Type <span class="required-indicator" aria-hidden="true">*</span></label>
+                                <InputSelect class="@FieldClass(nameof(RackFormModel.LocationTypeId), "form-select")"
+                                             aria-invalid="@HasFieldError(nameof(RackFormModel.LocationTypeId))"
+                                             @bind-Value="_form.LocationTypeId"
+                                             @bind-Value:after="() => ClearFieldError(nameof(RackFormModel.LocationTypeId))">
                                     @foreach (var value in LocationTypeOptions(_form.LocationTypeId))
                                     {
                                         <option value="@value.Id">@value.DisplayName</option>
                                     }
                                 </InputSelect>
+                                @FieldError(nameof(RackFormModel.LocationTypeId))
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Location Subtype</label>
-                                <InputSelect class="form-select" @bind-Value="_form.LocationSubtypeId">
+                                <label class="form-label">Location Subtype <span class="required-indicator" aria-hidden="true">*</span></label>
+                                <InputSelect class="@FieldClass(nameof(RackFormModel.LocationSubtypeId), "form-select")"
+                                             aria-invalid="@HasFieldError(nameof(RackFormModel.LocationSubtypeId))"
+                                             @bind-Value="_form.LocationSubtypeId"
+                                             @bind-Value:after="() => ClearFieldError(nameof(RackFormModel.LocationSubtypeId))">
                                     @foreach (var value in SubtypeOptions(_form.LocationSubtypeId))
                                     {
                                         <option value="@value.Id">@value.DisplayName</option>
                                     }
                                 </InputSelect>
+                                @FieldError(nameof(RackFormModel.LocationSubtypeId))
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Zone Type</label>
-                                <InputSelect class="form-select" @bind-Value="_form.ZoneTypeId">
+                                <label class="form-label">Zone Type <span class="required-indicator" aria-hidden="true">*</span></label>
+                                <InputSelect class="@FieldClass(nameof(RackFormModel.ZoneTypeId), "form-select")"
+                                             aria-invalid="@HasFieldError(nameof(RackFormModel.ZoneTypeId))"
+                                             @bind-Value="_form.ZoneTypeId"
+                                             @bind-Value:after="() => ClearFieldError(nameof(RackFormModel.ZoneTypeId))">
                                     @foreach (var value in ZoneOptions(_form.ZoneTypeId))
                                     {
                                         <option value="@value.Id">@value.DisplayName</option>
                                     }
                                 </InputSelect>
+                                @FieldError(nameof(RackFormModel.ZoneTypeId))
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Starting Distance Priority</label>
-                                <input type="number" class="form-control" @bind="_form.StartingDistancePriority" @bind:event="oninput" />
+                                <label class="form-label">Starting Distance Priority <span class="required-indicator" aria-hidden="true">*</span></label>
+                                <input type="number" class="@FieldClass(nameof(RackFormModel.StartingDistancePriority), "form-control")"
+                                       aria-invalid="@HasFieldError(nameof(RackFormModel.StartingDistancePriority))"
+                                       @bind="_form.StartingDistancePriority" @bind:event="oninput"
+                                       @bind:after="() => ClearFieldError(nameof(RackFormModel.StartingDistancePriority))" />
+                                @FieldError(nameof(RackFormModel.StartingDistancePriority))
                             </div>
                             <div class="col-12">
                                 <div class="putaway-info-bar" role="status">
@@ -111,12 +144,51 @@
                                 </div>
                             </div>
                             <div class="col-12">
-                                <label class="form-label">Shelf dimensions (L x W x H mm)</label>
-                                <div class="d-flex gap-2 flex-wrap">
-                                    <InputNumber class="form-control" @bind-Value="_form.ShelfLengthMm" />
-                                    <InputNumber class="form-control" @bind-Value="_form.ShelfWidthMm" />
-                                    <InputNumber class="form-control" @bind-Value="_form.ShelfHeightMm" />
-                                </div>
+                                <fieldset class="rack-dimensions-fieldset">
+                                    <legend>
+                                        Shelf dimensions
+                                        <span class="required-indicator" aria-hidden="true">*</span>
+                                    </legend>
+                                    <p class="rack-dimensions-hint">Enter the clear internal dimensions available at each shelf location.</p>
+                                    <div class="rack-dimensions-grid">
+                                        <div class="rack-dimension-field">
+                                            <label class="form-label" for="rack-shelf-length">Length</label>
+                                            <div class="input-group">
+                                                <InputNumber id="rack-shelf-length"
+                                                             class="@FieldClass(nameof(RackFormModel.ShelfLengthMm), "form-control")"
+                                                             aria-invalid="@HasFieldError(nameof(RackFormModel.ShelfLengthMm))"
+                                                             @bind-Value="_form.ShelfLengthMm"
+                                                             @bind-Value:after="() => ClearFieldError(nameof(RackFormModel.ShelfLengthMm))" />
+                                                <span class="input-group-text">mm</span>
+                                            </div>
+                                            @FieldError(nameof(RackFormModel.ShelfLengthMm))
+                                        </div>
+                                        <div class="rack-dimension-field">
+                                            <label class="form-label" for="rack-shelf-width">Width</label>
+                                            <div class="input-group">
+                                                <InputNumber id="rack-shelf-width"
+                                                             class="@FieldClass(nameof(RackFormModel.ShelfWidthMm), "form-control")"
+                                                             aria-invalid="@HasFieldError(nameof(RackFormModel.ShelfWidthMm))"
+                                                             @bind-Value="_form.ShelfWidthMm"
+                                                             @bind-Value:after="() => ClearFieldError(nameof(RackFormModel.ShelfWidthMm))" />
+                                                <span class="input-group-text">mm</span>
+                                            </div>
+                                            @FieldError(nameof(RackFormModel.ShelfWidthMm))
+                                        </div>
+                                        <div class="rack-dimension-field">
+                                            <label class="form-label" for="rack-shelf-height">Height</label>
+                                            <div class="input-group">
+                                                <InputNumber id="rack-shelf-height"
+                                                             class="@FieldClass(nameof(RackFormModel.ShelfHeightMm), "form-control")"
+                                                             aria-invalid="@HasFieldError(nameof(RackFormModel.ShelfHeightMm))"
+                                                             @bind-Value="_form.ShelfHeightMm"
+                                                             @bind-Value:after="() => ClearFieldError(nameof(RackFormModel.ShelfHeightMm))" />
+                                                <span class="input-group-text">mm</span>
+                                            </div>
+                                            @FieldError(nameof(RackFormModel.ShelfHeightMm))
+                                        </div>
+                                    </div>
+                                </fieldset>
                             </div>
                         </div>
 
@@ -218,6 +290,7 @@
     private bool _showForm;
     private int? _editingRackId;
     private string? _formError;
+    private readonly Dictionary<string, string> _fieldErrors = new(StringComparer.Ordinal);
     private RackFormModel _form = new();
     private IReadOnlyList<LocationSubtypeDto> _locationSubtypes = [];
     private IReadOnlyList<ZoneTypeDto> _zoneTypes = [];
@@ -252,6 +325,7 @@
     private void ShowCreateForm()
     {
         _formError = null;
+        _fieldErrors.Clear();
         _editingRackId = null;
         _form = new RackFormModel();
         _showForm = true;
@@ -260,6 +334,7 @@
     private async Task ShowEditFormAsync(RackDto rack)
     {
         _formError = null;
+        _fieldErrors.Clear();
         _editingRackId = rack.Id;
 
         var layout = await Mediator.Send(new GetRackLayoutQuery(rack.Id));
@@ -291,6 +366,7 @@
     {
         _showForm = false;
         _formError = null;
+        _fieldErrors.Clear();
         _editingRackId = null;
     }
 
@@ -301,6 +377,12 @@
 
     private async Task SaveRackAsync()
     {
+        _formError = null;
+        if (!ValidateForm())
+        {
+            return;
+        }
+
         try
         {
             if (_editingRackId.HasValue)
@@ -326,12 +408,69 @@
             _form = new RackFormModel();
             await LoadAsync();
         }
+        catch (ValidationException ex)
+        {
+            Logger.LogInformation(ex, "Rack validation failed");
+            SetFieldErrors(ex.Errors);
+        }
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Failed to save rack");
             _formError = ex.Message;
         }
     }
+
+    private bool ValidateForm()
+    {
+        _fieldErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(_form.Code)) AddFieldError(nameof(RackFormModel.Code), "Code is required.");
+        else if (_form.Code.Trim().Length > 10) AddFieldError(nameof(RackFormModel.Code), "Code must be 10 characters or fewer.");
+        if (_form.Columns is < 1 or > 50) AddFieldError(nameof(RackFormModel.Columns), "Columns must be between 1 and 50.");
+        if (_form.Levels is < 1 or > 20) AddFieldError(nameof(RackFormModel.Levels), "Levels must be between 1 and 20.");
+        if (_form.MaxPallets is < 1 or > 10) AddFieldError(nameof(RackFormModel.MaxPallets), "Max pallets must be between 1 and 10.");
+        if (!_locationTypes.Any(x => x.Id == _form.LocationTypeId)) AddFieldError(nameof(RackFormModel.LocationTypeId), "Select a location type.");
+        if (!_locationSubtypes.Any(x => x.Id == _form.LocationSubtypeId)) AddFieldError(nameof(RackFormModel.LocationSubtypeId), "Select a location subtype.");
+        if (!_zoneTypes.Any(x => x.Id == _form.ZoneTypeId)) AddFieldError(nameof(RackFormModel.ZoneTypeId), "Select a zone type.");
+        if (_form.StartingDistancePriority is < 1 or > 9999) AddFieldError(nameof(RackFormModel.StartingDistancePriority), "Priority must be between 1 and 9,999.");
+        if (_form.ShelfLengthMm <= 0) AddFieldError(nameof(RackFormModel.ShelfLengthMm), "Shelf length must be greater than zero.");
+        if (_form.ShelfWidthMm <= 0) AddFieldError(nameof(RackFormModel.ShelfWidthMm), "Shelf width must be greater than zero.");
+        if (_form.ShelfHeightMm <= 0) AddFieldError(nameof(RackFormModel.ShelfHeightMm), "Shelf height must be greater than zero.");
+
+        return _fieldErrors.Count == 0;
+    }
+
+    private void SetFieldErrors(IDictionary<string, string[]> errors)
+    {
+        _fieldErrors.Clear();
+        foreach (var (field, messages) in errors)
+        {
+            _fieldErrors[field] = string.Join(" ", messages);
+        }
+    }
+
+    private void AddFieldError(string field, string message) => _fieldErrors[field] = message;
+
+    private bool HasFieldError(string field) => _fieldErrors.ContainsKey(field);
+
+    private string FieldClass(string field, string baseClass) =>
+        HasFieldError(field) ? $"{baseClass} is-invalid" : baseClass;
+
+    private RenderFragment FieldError(string field) => builder =>
+    {
+        if (!_fieldErrors.TryGetValue(field, out var message))
+        {
+            return;
+        }
+
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "invalid-feedback d-block");
+        builder.AddAttribute(2, "role", "alert");
+        builder.AddContent(3, message);
+        builder.CloseElement();
+    };
+
+    private void ClearFieldError(string field) => _fieldErrors.Remove(field);
 
     private IEnumerable<RackDto> DisplayRacks
     {
@@ -434,6 +573,4 @@
         public int MaxPallets { get; set; } = 2;
     }
 }
-
-
 
