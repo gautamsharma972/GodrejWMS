@@ -13,7 +13,7 @@ namespace GodrejWMS.Application.Features.Pullout.Commands;
 public sealed record SubmitPulloutCommand(IReadOnlyList<SubmitPulloutLine> Lines,
     PulloutResultDto? ConfirmedPreview = null, string? RefreshReference = null) : IRequest<PulloutResultDto>;
 
-public sealed record SubmitPulloutLine(long MaterialCode, decimal QuantityBoxes);
+public sealed record SubmitPulloutLine(long MaterialCode, decimal QuantityBoxes, string? PlantName = null);
 
 public sealed class SubmitPulloutValidator : AbstractValidator<SubmitPulloutCommand>
 {
@@ -24,6 +24,7 @@ public sealed class SubmitPulloutValidator : AbstractValidator<SubmitPulloutComm
         {
             line.RuleFor(l => l.MaterialCode).GreaterThan(0);
             line.RuleFor(l => l.QuantityBoxes).GreaterThan(0);
+            line.RuleFor(l => l.QuantityBoxes).Must(decimal.IsInteger).WithMessage("Quantity must be a whole number (no decimals).");
         });
     }
 }
@@ -52,7 +53,7 @@ public sealed class SubmitPulloutHandler(
             if (transaction.IsConfirmed)
                 throw new InvalidOperationException("This pullout has already been confirmed.");
             savedPreview = JsonSerializer.Deserialize<PulloutResultDto>(transaction.PreviewJson!)!;
-            lines = savedPreview.Lines.Select(l => new SubmitPulloutLine(l.MaterialNumber, l.RequestedQuantityBoxes)).ToList();
+            lines = savedPreview.Lines.Select(l => new SubmitPulloutLine(l.MaterialNumber, l.RequestedQuantityBoxes, l.PlantName)).ToList();
         }
         else
         {
@@ -69,60 +70,88 @@ public sealed class SubmitPulloutHandler(
             .ToDictionaryAsync(m => m.MaterialNumber, cancellationToken);
         var resultLines = new List<PulloutLineResultDto>();
         var proposedLines = new List<PulloutTransactionLine>();
-        foreach (var line in lines.GroupBy(l => l.MaterialCode)
-            .Select(g => new SubmitPulloutLine(g.Key, g.Sum(l => l.QuantityBoxes))))
+        var plantLines = lines
+            .GroupBy(l => new PlantLineKey(l.MaterialCode, NormalizePlantKey(l.PlantName)))
+            .Select(g => new SubmitPulloutLine(
+                g.Key.MaterialCode,
+                g.Sum(l => l.QuantityBoxes),
+                g.Select(l => l.PlantName?.Trim()).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n))))
+            .ToList();
+
+        foreach (var materialLines in plantLines.GroupBy(l => l.MaterialCode))
         {
-            if (!materials.TryGetValue(line.MaterialCode, out var material))
+            if (!materials.TryGetValue(materialLines.Key, out var material))
             {
-                resultLines.Add(new(line.MaterialCode, "(unknown material)", line.QuantityBoxes, 0,
-                    Domain.Enums.AllocationStatus.Failed, "Material code not found in Material Master.", []));
+                foreach (var line in materialLines)
+                {
+                    resultLines.Add(new(line.MaterialCode, "(unknown material)", line.QuantityBoxes, 0,
+                        Domain.Enums.AllocationStatus.Failed, "Material code not found in Material Master.", [], line.PlantName));
+                }
                 continue;
             }
-            var allocation = await allocator.AllocateAsync(material.Id, line.QuantityBoxes, cancellationToken, preview: true);
-            var transactionLine = new PulloutTransactionLine
+
+            // Allocate the SKU once, then distribute its FIFO picks across the destination-plant
+            // lines in input order. Calling the preview allocator once per plant would allow the
+            // same stock batch to be proposed more than once.
+            var allocation = await allocator.AllocateAsync(
+                material.Id, materialLines.Sum(l => l.QuantityBoxes), cancellationToken, preview: true);
+            var availablePicks = new Queue<RemainingPick>(allocation.Picks.Select(p => new RemainingPick(
+                p.LocationCode, p.MfgMonth, p.QuantityBoxes)));
+
+            foreach (var line in materialLines)
             {
-                MaterialId = material.Id, RequestedQuantityBoxes = line.QuantityBoxes,
-                PickedQuantityBoxes = allocation.PickedQuantityBoxes, Status = allocation.Status, Remarks = allocation.Remarks
-            };
-            foreach (var pick in allocation.Picks)
-            {
-                var position = await db.PalletPositions.AsNoTracking()
-                    .FirstAsync(p => p.LocationCode == pick.LocationCode, cancellationToken);
-                transactionLine.Picks.Add(new PulloutPick
+                var linePicks = TakePicks(availablePicks, line.QuantityBoxes);
+                var pickedQuantity = linePicks.Sum(p => p.QuantityBoxes);
+                var status = pickedQuantity == line.QuantityBoxes
+                    ? Domain.Enums.AllocationStatus.Fulfilled
+                    : pickedQuantity > 0
+                        ? Domain.Enums.AllocationStatus.Partial
+                        : Domain.Enums.AllocationStatus.Failed;
+                var remarks = status == Domain.Enums.AllocationStatus.Fulfilled
+                    ? null
+                    : $"Insufficient good stock - {line.QuantityBoxes - pickedQuantity:0.###} box(es) short across all pickable locations.";
+                var transactionLine = new PulloutTransactionLine
                 {
-                    PalletPositionId = position.Id, MfgMonth = pick.MfgMonth, QuantityBoxes = pick.QuantityBoxes
-                });
+                    MaterialId = material.Id, RequestedQuantityBoxes = line.QuantityBoxes,
+                    PickedQuantityBoxes = pickedQuantity, Status = status, Remarks = remarks,
+                    PlantName = line.PlantName
+                };
+                foreach (var pick in linePicks)
+                {
+                    var position = await db.PalletPositions.AsNoTracking()
+                        .FirstAsync(p => p.LocationCode == pick.LocationCode, cancellationToken);
+                    transactionLine.Picks.Add(new PulloutPick
+                    {
+                        PalletPositionId = position.Id, MfgMonth = pick.MfgMonth, QuantityBoxes = pick.QuantityBoxes
+                    });
+                }
+                proposedLines.Add(transactionLine);
+                resultLines.Add(new(material.MaterialNumber, material.Description, line.QuantityBoxes,
+                    pickedQuantity, status, remarks,
+                    linePicks.Select(p => new PulloutPickDto(p.LocationCode, MfgMonthParser.Format(p.MfgMonth), p.QuantityBoxes)).ToList(),
+                    line.PlantName));
             }
-            proposedLines.Add(transactionLine);
-            resultLines.Add(new(material.MaterialNumber, material.Description, line.QuantityBoxes,
-                allocation.PickedQuantityBoxes, allocation.Status, allocation.Remarks,
-                allocation.Picks.Select(p => new PulloutPickDto(p.LocationCode, MfgMonthParser.Format(p.MfgMonth), p.QuantityBoxes)).ToList()));
         }
         var result = new PulloutResultDto(transaction.ReferenceNumber, transaction.CreatedAt, resultLines);
         if (request.ConfirmedPreview is not null)
         {
-            if (!SamePicks(result, request.ConfirmedPreview) || !SamePicks(savedPreview!, request.ConfirmedPreview))
-                throw new InvalidOperationException("Stock has changed. Refresh the saved picks, review them, then confirm again.");
-            if (!result.Lines.Any(l => l.PickedQuantityBoxes > 0))
+            if (!SamePicks(savedPreview!, request.ConfirmedPreview))
+                throw new InvalidOperationException("The saved picks have changed. Reload the pullout, review them, then confirm again.");
+            if (!savedPreview!.Lines.Any(l => l.PickedQuantityBoxes > 0))
                 throw new InvalidOperationException("No pickable stock is available. Refresh the picks when stock is available.");
+
+            result = savedPreview;
         }
 
         try
         {
             if (request.ConfirmedPreview is not null)
             {
-                // Reload tracked stock before allocation; optimistic concurrency protects the subsequent save.
+                // The saved allocation may contain an audited operator location override. Apply the
+                // reviewed picks exactly as saved instead of silently recomputing FIFO locations.
                 foreach (var entry in db.ChangeTracker.Entries<StockBatch>().ToList())
                     entry.State = EntityState.Detached;
-                foreach (var line in result.Lines.Where(l => materials.ContainsKey(l.MaterialNumber)))
-                {
-                    var allocation = await allocator.AllocateAsync(materials[line.MaterialNumber].Id,
-                        line.RequestedQuantityBoxes, cancellationToken);
-                    var actual = line with { PickedQuantityBoxes = allocation.PickedQuantityBoxes,
-                        Picks = allocation.Picks.Select(p => new PulloutPickDto(p.LocationCode, MfgMonthParser.Format(p.MfgMonth), p.QuantityBoxes)).ToList() };
-                    if (!SamePicks(result with { Lines = [line] }, result with { Lines = [actual] }))
-                        throw new InvalidOperationException("Stock has changed. Refresh the saved picks and confirm again.");
-                }
+                await ApplySavedPicksAsync(result, materials, cancellationToken);
                 transaction.IsConfirmed = true;
                 transaction.ConfirmedAt = clock.UtcNow;
                 transaction.ConfirmedByUserId = currentUser.UserId;
@@ -166,6 +195,43 @@ public sealed class SubmitPulloutHandler(
         }
     }
 
+    private async Task ApplySavedPicksAsync(
+        PulloutResultDto preview,
+        IReadOnlyDictionary<long, Material> materials,
+        CancellationToken cancellationToken)
+    {
+        foreach (var line in preview.Lines.Where(l => materials.ContainsKey(l.MaterialNumber)))
+        {
+            foreach (var pick in line.Picks)
+            {
+                if (!MfgMonthParser.TryParse(pick.MfgMonthLabel, out var mfgMonth))
+                    throw new InvalidOperationException($"Pick at {pick.LocationCode} has an invalid PKM period.");
+
+                var batch = await db.StockBatches
+                    .Include(b => b.PalletPosition)
+                    .SingleOrDefaultAsync(b => b.MaterialId == materials[line.MaterialNumber].Id
+                        && b.MfgMonth == mfgMonth
+                        && b.StockSubtypeId == LocationSubtypeIds.Good
+                        && b.PalletPosition.LocationCode == pick.LocationCode,
+                        cancellationToken);
+
+                if (batch is null
+                    || !batch.PalletPosition.IsActive
+                    || batch.PalletPosition.LocationSubtypeId != LocationSubtypeIds.Good
+                    || batch.QuantityBoxes < pick.QuantityBoxes)
+                {
+                    throw new InvalidOperationException(
+                        $"Stock at {pick.LocationCode} for {pick.MfgMonthLabel} is no longer available in the allocated quantity. Reload and review the pullout before confirming.");
+                }
+
+                batch.QuantityBoxes -= pick.QuantityBoxes;
+                batch.RowVersion++;
+                if (batch.QuantityBoxes <= 0)
+                    db.StockBatches.Remove(batch);
+            }
+        }
+    }
+
     private async Task<string> NextReferenceAsync(DateTimeOffset createdAt, CancellationToken cancellationToken)
     {
         var prefix = $"PICK-{createdAt:yyyyMMdd}-";
@@ -177,6 +243,32 @@ public sealed class SubmitPulloutHandler(
         if (sequence > 999999)
             throw new InvalidOperationException("The daily pullout reference sequence is exhausted.");
         return $"{prefix}{sequence:D6}";
+    }
+
+    private static string NormalizePlantKey(string? plantName) =>
+        string.IsNullOrWhiteSpace(plantName) ? string.Empty : plantName.Trim().ToUpperInvariant();
+
+    private static List<RemainingPick> TakePicks(Queue<RemainingPick> availablePicks, decimal requestedQuantity)
+    {
+        var result = new List<RemainingPick>();
+        var remaining = requestedQuantity;
+        while (remaining > 0 && availablePicks.TryPeek(out var available))
+        {
+            var quantity = Math.Min(remaining, available.QuantityBoxes);
+            result.Add(available with { QuantityBoxes = quantity });
+            remaining -= quantity;
+            available.QuantityBoxes -= quantity;
+            if (available.QuantityBoxes <= 0)
+                availablePicks.Dequeue();
+        }
+        return result;
+    }
+
+    private sealed record PlantLineKey(long MaterialCode, string PlantNameKey);
+
+    private sealed record RemainingPick(string LocationCode, int MfgMonth, decimal InitialQuantityBoxes)
+    {
+        public decimal QuantityBoxes { get; set; } = InitialQuantityBoxes;
     }
 
     private static bool SamePicks(PulloutResultDto left, PulloutResultDto right)

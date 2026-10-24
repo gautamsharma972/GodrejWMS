@@ -89,6 +89,10 @@
                 <option value="false">Inactive</option>
             </select>
         </div>
+        @if (_page is not null)
+        {
+            <span class="sync-chip">@_page.TotalCount.ToString("N0") materials</span>
+        }
     </div>
 
     @if (_importResult is not null)
@@ -346,6 +350,12 @@
     private bool _importing;
     private ImportMaterialsResult? _importResult;
 
+    // Search/filter/sort/paging all funnel through LoadPage, and the page shares a single
+    // DbContext, so overlapping calls (e.g. fast typing in the search box) would otherwise
+    // collide. This serializes them and drops the result of any call superseded by a newer one.
+    private readonly SemaphoreSlim _loadGate = new(1, 1);
+    private int _loadSequence;
+
     private IEnumerable<DesignTypeDto> ActiveDesignTypes => _designTypes.Where(d => d.IsActive);
 
     private IEnumerable<SkuMovementTypeDto> MovementTypeOptions(int? currentId = null) =>
@@ -381,17 +391,32 @@ protected override async Task OnInitializedAsync()
     private async Task LoadPage(int page)
     {
         if (page < 1) return;
-        _pageNumber = page;
-        _page = await Mediator.Send(new GetMaterialsQuery(
-            Search: _search,
-            DesignType: string.IsNullOrWhiteSpace(_designTypeFilter) ? null : _designTypeFilter.Trim(),
-            MovementTypeId: _movementFilter,
-            SeasonId: _seasonFilter,
-            IsActive: bool.TryParse(_activeFilterText, out var isActive) ? isActive : null,
-            SortBy: _sortBy,
-            SortDescending: _sortDescending,
-            PageNumber: page,
-            PageSize: 25));
+
+        var sequence = ++_loadSequence;
+        await _loadGate.WaitAsync();
+        try
+        {
+            if (sequence != _loadSequence) return;
+
+            var result = await Mediator.Send(new GetMaterialsQuery(
+                Search: _search,
+                DesignType: string.IsNullOrWhiteSpace(_designTypeFilter) ? null : _designTypeFilter.Trim(),
+                MovementTypeId: _movementFilter,
+                SeasonId: _seasonFilter,
+                IsActive: bool.TryParse(_activeFilterText, out var isActive) ? isActive : null,
+                SortBy: _sortBy,
+                SortDescending: _sortDescending,
+                PageNumber: page,
+                PageSize: 25));
+
+            if (sequence != _loadSequence) return;
+            _pageNumber = page;
+            _page = result;
+        }
+        finally
+        {
+            _loadGate.Release();
+        }
     }
 
     private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadPage(1);

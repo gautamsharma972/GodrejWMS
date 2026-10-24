@@ -24,7 +24,12 @@ public sealed record StockMasterRowDto(
     string MovementTypeName = "Slow-moving",
     string SeasonCode = "Rainy",
     string SeasonName = "Rainy",
-    bool IsActive = true);
+    bool IsActive = true,
+    int StockBatchId = 0,
+    int MaterialId = 0,
+    int PalletPositionId = 0,
+    int MfgMonth = 0,
+    string StockSubtypeName = "Good");
 
 public sealed record StockSummaryDto(
     int TotalRacks,

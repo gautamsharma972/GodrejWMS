@@ -13,7 +13,7 @@ public class InwardReportsTests
         var db = TestDbContextFactory.Create();
 
         var rack = new Rack { Code = "A", Columns = 1, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
-        var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", CapacityBoxes = 40 };
+        var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 1 };
         rack.PalletPositions.Add(position);
         db.Racks.Add(rack);
 

@@ -1,0 +1,538 @@
+@page "/inventory-adjustments"
+@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Features.InventoryAdjustments.Commands
+@using GodrejWMS.Application.Features.InventoryAdjustments.Dtos
+@using GodrejWMS.Application.Features.InventoryAdjustments.Queries
+@using GodrejWMS.Domain.Entities
+@using GodrejWMS.Domain.Enums
+@inject IMediator Mediator
+@inject ICurrentUserService CurrentUser
+@inject IJSRuntime JsRuntime
+@inject ILogger<Index> Logger
+
+<PageTitle>Inventory Adjustments - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Inventory Control</div>
+            <h1>Inventory Adjustments</h1>
+            <p class="page-kicker">Review physical count differences before they update live inventory.</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-outline-secondary" href="/inventory-master">
+                <i class="bi bi-box-seam" aria-hidden="true"></i>
+                Inventory Master
+            </a>
+            <a class="btn btn-primary" href="/inventory-master">
+                <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                New Adjustment
+            </a>
+        </div>
+    </div>
+
+    <div class="toolbar-panel">
+        <div class="toolbar-group">
+            <div class="input-group search-control">
+                <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                <input class="form-control" placeholder="Search adjustment, SKU, description, or location"
+                       @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+            </div>
+            <select class="form-select filter-control" value="@_statusText" @onchange="OnStatusChanged">
+                <option value="">All statuses</option>
+                @foreach (var status in Enum.GetValues<InventoryAdjustmentStatus>())
+                {
+                    <option value="@status">@StatusLabel(status)</option>
+                }
+            </select>
+            <label class="adjustment-mine-filter">
+                <input class="form-check-input" type="checkbox" checked="@_mineOnly" @onchange="OnMineChanged" />
+                My requests
+            </label>
+        </div>
+        @if (_page is not null)
+        {
+            <span class="sync-chip">@_page.TotalCount.ToString("N0") request(s)</span>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_pageError))
+    {
+        <div class="alert alert-danger">@_pageError</div>
+    }
+    else if (_page is null)
+    {
+        <div class="loading-panel"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Loading adjustments...</div>
+    }
+    else if (_page.Items.Count == 0)
+    {
+        <div class="empty-state adjustment-empty-state">
+            <div class="empty-state-icon"><i class="bi bi-clipboard2-check" aria-hidden="true"></i></div>
+            <h2>No adjustment requests found</h2>
+            <p>No requests match the selected filters. To record a physical count difference, select the SKU and location from Inventory Master.</p>
+            <a class="btn btn-primary" href="/inventory-master">
+                <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                Create New Adjustment
+            </a>
+        </div>
+    }
+    else
+    {
+        @if (_selectedIds.Count > 0)
+        {
+            <div class="adjustment-bulk-bar" role="region" aria-label="Bulk adjustment actions">
+                <div class="adjustment-bulk-summary">
+                    <span class="adjustment-selection-count">@_selectedIds.Count</span>
+                    <div>
+                        <strong>@_selectedIds.Count request(s) selected</strong>
+                        <span>Select pending requests to review or cancel them together.</span>
+                    </div>
+                </div>
+                <div class="adjustment-bulk-actions">
+                    @if (_bulkRejectMode)
+                    {
+                        <input class="form-control adjustment-bulk-comment" maxlength="500"
+                               placeholder="Rejection comment (required)"
+                               @bind="_bulkComment" @bind:event="oninput" />
+                        <button type="button" class="btn btn-danger" disabled="@(_bulkProcessing || string.IsNullOrWhiteSpace(_bulkComment))" @onclick="RejectSelectedAsync">
+                            <i class="bi bi-x-circle" aria-hidden="true"></i>
+                            Confirm Reject (@SelectedReviewableIds.Count)
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" disabled="@_bulkProcessing" @onclick="CloseBulkReject">Cancel</button>
+                    }
+                    else
+                    {
+                        <AuthorizeView Roles="Admin,Supervisor">
+                            @if (SelectedReviewableIds.Count > 0)
+                            {
+                                <button type="button" class="btn btn-outline-danger" disabled="@_bulkProcessing" @onclick="OpenBulkReject">
+                                    <i class="bi bi-x-circle" aria-hidden="true"></i>
+                                    Reject (@SelectedReviewableIds.Count)
+                                </button>
+                                <button type="button" class="btn btn-primary" disabled="@_bulkProcessing" @onclick="ApproveSelectedAsync">
+                                    <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                                    Approve (@SelectedReviewableIds.Count)
+                                </button>
+                            }
+                        </AuthorizeView>
+                        @if (SelectedCancelableIds.Count > 0)
+                        {
+                            <button type="button" class="btn btn-outline-danger" disabled="@_bulkProcessing" @onclick="CancelSelectedAsync">
+                                <i class="bi bi-trash3" aria-hidden="true"></i>
+                                Cancel Mine (@SelectedCancelableIds.Count)
+                            </button>
+                        }
+                        <button type="button" class="btn btn-link" disabled="@_bulkProcessing" @onclick="ClearSelection">Clear selection</button>
+                    }
+                </div>
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(_bulkError))
+        {
+            <div class="alert alert-danger">@_bulkError</div>
+        }
+        <div class="table-responsive panel-table adjustments-table-wide">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th class="adjustment-select-column">
+                            <input class="form-check-input" type="checkbox" aria-label="Select all pending requests on this page"
+                                   checked="@AreAllVisibleRowsSelected" @onchange="ToggleAllVisibleRows" />
+                        </th>
+                        <th>Adjustment</th>
+                        <th>Requested</th>
+                        <th>SKU</th>
+                        <th>Location</th>
+                        <th>PKM</th>
+                        <th class="text-end">System</th>
+                        <th class="text-end">Counted</th>
+                        <th class="text-end">Variance</th>
+                        <th>Requested By</th>
+                        <th>Status</th>
+                        <th class="table-actions">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _page.Items)
+                    {
+                        <tr>
+                            <td class="adjustment-select-column">
+                                <input class="form-check-input" type="checkbox" aria-label="Select @row.AdjustmentNumber"
+                                       disabled="@(row.Status != InventoryAdjustmentStatus.PendingApproval)"
+                                       checked="@_selectedIds.Contains(row.Id)" @onchange="args => ToggleRow(row.Id, args)" />
+                            </td>
+                            <td><span class="record-code">@row.AdjustmentNumber</span></td>
+                            <td>@row.RequestedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
+                            <td><div class="adjustment-sku-cell"><span class="record-code">@row.MaterialNumber</span><span class="text-muted">@row.MaterialDescription</span></div></td>
+                            <td><span class="status-pill neutral">@row.LocationCode</span></td>
+                            <td>@row.MfgMonthLabel</td>
+                            <td class="text-end">@row.SystemQuantity.ToString("0")</td>
+                            <td class="text-end fw-semibold">@row.CountedQuantity.ToString("0")</td>
+                            <td class="text-end"><span class="adjustment-delta @VarianceClass(row.VarianceQuantity)">@Signed(row.VarianceQuantity)</span></td>
+                            <td>@(row.RequestedByUserName ?? "Unknown")</td>
+                            <td><span class="status-pill @StatusClass(row.Status)">@StatusLabel(row.Status)</span></td>
+                            <td class="table-actions">
+                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => OpenDetailAsync(row.Id)">
+                                    <i class="bi bi-eye" aria-hidden="true"></i>
+                                    Review
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (_page is not null && _page.TotalPages > 1)
+    {
+        <nav class="pagination-bar" aria-label="Inventory adjustments pagination">
+            <ul class="pagination mb-0">
+                <li class="page-item @(_page.HasPreviousPage ? "" : "disabled")"><button class="page-link" @onclick="() => LoadPageAsync(_pageNumber - 1)">Previous</button></li>
+                <li class="page-item disabled"><span class="page-link">Page @_page.PageNumber of @_page.TotalPages</span></li>
+                <li class="page-item @(_page.HasNextPage ? "" : "disabled")"><button class="page-link" @onclick="() => LoadPageAsync(_pageNumber + 1)">Next</button></li>
+            </ul>
+        </nav>
+    }
+
+    @if (_selected is not null)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseDetail">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="adjustment-review-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Inventory Adjustment</div>
+                        <h2 id="adjustment-review-title" class="slide-over-title">@_selected.AdjustmentNumber</h2>
+                        <p class="slide-over-subtitle">Requested @_selected.RequestedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close adjustment" @onclick="CloseDetail"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+                </div>
+                <div class="slide-over-body">
+                    @if (!string.IsNullOrWhiteSpace(_actionError))
+                    {
+                        <div class="alert alert-danger">@_actionError</div>
+                    }
+                    <div class="putaway-summary-grid mb-4">
+                        <div><span>SKU</span><strong>@_selected.MaterialNumber</strong></div>
+                        <div><span>Location</span><strong>@_selected.LocationCode</strong></div>
+                        <div><span>PKM</span><strong>@_selected.MfgMonthLabel</strong></div>
+                        <div><span>Stock type</span><strong>@_selected.StockSubtypeName</strong></div>
+                    </div>
+                    <div class="adjustment-quantity-comparison mb-4">
+                        <div><span>System quantity</span><strong>@_selected.SystemQuantity.ToString("0")</strong></div>
+                        <i class="bi bi-arrow-right" aria-hidden="true"></i>
+                        <div><span>Physical count</span><strong>@_selected.CountedQuantity.ToString("0")</strong></div>
+                        <div class="adjustment-variance @VarianceClass(_selected.VarianceQuantity)"><span>Variance</span><strong>@Signed(_selected.VarianceQuantity)</strong></div>
+                    </div>
+                    <dl class="detail-list">
+                        <dt>Status</dt><dd><span class="status-pill @StatusClass(_selected.Status)">@StatusLabel(_selected.Status)</span></dd>
+                        <dt>Requested by</dt><dd>@(_selected.RequestedByUserName ?? "Unknown")</dd>
+                        <dt>Reason</dt><dd>@ReasonLabel(_selected.ReasonCode)</dd>
+                        <dt>Notes</dt><dd>@(_selected.ReasonText ?? "-")</dd>
+                        @if (_selected.ReviewedAt.HasValue)
+                        {
+                            <dt>Reviewed by</dt><dd>@(_selected.ReviewedByUserName ?? "Unknown")</dd>
+                            <dt>Reviewed</dt><dd>@_selected.ReviewedAt.Value.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</dd>
+                            <dt>Review comment</dt><dd>@(_selected.ReviewComment ?? "-")</dd>
+                        }
+                    </dl>
+                    @if (_selected.Status == InventoryAdjustmentStatus.PendingApproval)
+                    {
+                        <div class="mt-4">
+                            <label class="form-label">Review comment @(_rejectMode ? "*" : "(optional)")</label>
+                            <textarea class="form-control" rows="3" maxlength="500" @bind="_reviewComment"></textarea>
+                        </div>
+                    }
+                </div>
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseDetail">Close</button>
+                    @if (_selected.Status == InventoryAdjustmentStatus.PendingApproval && _selected.RequestedByUserId == CurrentUser.UserId)
+                    {
+                        <button type="button" class="btn btn-outline-danger" disabled="@_processing" @onclick="CancelAsync">Cancel Request</button>
+                    }
+                    <AuthorizeView Roles="Admin,Supervisor" Context="reviewerContext">
+                        @if (_selected.Status == InventoryAdjustmentStatus.PendingApproval && _selected.RequestedByUserId != CurrentUser.UserId)
+                        {
+                            <button type="button" class="btn btn-outline-danger" disabled="@(_processing || (_rejectMode && string.IsNullOrWhiteSpace(_reviewComment)))" @onclick="RejectAsync">Reject</button>
+                            <button type="button" class="btn btn-primary" disabled="@_processing" @onclick="ApproveAsync">
+                                <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                                @(_processing ? "Processing..." : "Approve Adjustment")
+                            </button>
+                        }
+                    </AuthorizeView>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private PaginatedList<InventoryAdjustmentListDto>? _page;
+    private InventoryAdjustmentDetailDto? _selected;
+    private string _search = string.Empty;
+    private string _statusText = InventoryAdjustmentStatus.PendingApproval.ToString();
+    private bool _mineOnly;
+    private int _pageNumber = 1;
+
+    // Search/filter/paging all funnel through LoadPageAsync, and the page shares a single
+    // DbContext, so overlapping calls (e.g. fast typing in the search box) would otherwise
+    // collide. This serializes them and drops the result of any call superseded by a newer one.
+    private readonly SemaphoreSlim _loadGate = new(1, 1);
+    private int _loadSequence;
+    private string? _pageError;
+    private string? _actionError;
+    private string _reviewComment = string.Empty;
+    private bool _processing;
+    private bool _rejectMode;
+    private readonly HashSet<int> _selectedIds = [];
+    private bool _bulkProcessing;
+    private bool _bulkRejectMode;
+    private string _bulkComment = string.Empty;
+    private string? _bulkError;
+
+    private IReadOnlyList<int> VisibleSelectableIds => _page?.Items
+        .Where(row => row.Status == InventoryAdjustmentStatus.PendingApproval)
+        .Select(row => row.Id)
+        .ToArray() ?? [];
+
+    private IReadOnlyList<int> SelectedReviewableIds => _page?.Items
+        .Where(row => _selectedIds.Contains(row.Id)
+                      && row.Status == InventoryAdjustmentStatus.PendingApproval
+                      && row.RequestedByUserId != CurrentUser.UserId)
+        .Select(row => row.Id)
+        .ToArray() ?? [];
+
+    private IReadOnlyList<int> SelectedCancelableIds => _page?.Items
+        .Where(row => _selectedIds.Contains(row.Id)
+                      && row.Status == InventoryAdjustmentStatus.PendingApproval
+                      && row.RequestedByUserId == CurrentUser.UserId)
+        .Select(row => row.Id)
+        .ToArray() ?? [];
+
+    private bool AreAllVisibleRowsSelected =>
+        VisibleSelectableIds.Count > 0 && VisibleSelectableIds.All(_selectedIds.Contains);
+
+    protected override async Task OnInitializedAsync() => await LoadPageAsync(1);
+
+    private async Task LoadPageAsync(int page)
+    {
+        if (page < 1) return;
+
+        var sequence = ++_loadSequence;
+        await _loadGate.WaitAsync();
+        try
+        {
+            if (sequence != _loadSequence) return;
+
+            var result = await Mediator.Send(new GetInventoryAdjustmentsQuery(
+                _search,
+                Enum.TryParse<InventoryAdjustmentStatus>(_statusText, out var status) ? status : null,
+                _mineOnly,
+                page,
+                25));
+
+            if (sequence != _loadSequence) return;
+            _pageNumber = page;
+            _pageError = null;
+            _page = result;
+            _selectedIds.IntersectWith(_page.Items.Select(row => row.Id));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load inventory adjustments");
+            _pageError = ex.Message;
+        }
+        finally
+        {
+            _loadGate.Release();
+        }
+    }
+
+    private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs _) => await LoadPageAsync(1);
+    private async Task OnStatusChanged(ChangeEventArgs e) { _statusText = e.Value?.ToString() ?? string.Empty; await LoadPageAsync(1); }
+    private async Task OnMineChanged(ChangeEventArgs e) { _mineOnly = e.Value is true; await LoadPageAsync(1); }
+
+    private void ToggleRow(int id, ChangeEventArgs args)
+    {
+        if (args.Value is true)
+        {
+            _selectedIds.Add(id);
+        }
+        else
+        {
+            _selectedIds.Remove(id);
+        }
+        ResetBulkReject();
+    }
+
+    private void ToggleAllVisibleRows(ChangeEventArgs args)
+    {
+        if (args.Value is true)
+        {
+            _selectedIds.UnionWith(VisibleSelectableIds);
+        }
+        else
+        {
+            _selectedIds.ExceptWith(VisibleSelectableIds);
+        }
+        ResetBulkReject();
+    }
+
+    private void ClearSelection()
+    {
+        _selectedIds.Clear();
+        _bulkError = null;
+        ResetBulkReject();
+    }
+
+    private void OpenBulkReject()
+    {
+        _bulkRejectMode = true;
+        _bulkComment = string.Empty;
+        _bulkError = null;
+    }
+
+    private void CloseBulkReject() => ResetBulkReject();
+
+    private void ResetBulkReject()
+    {
+        _bulkRejectMode = false;
+        _bulkComment = string.Empty;
+    }
+
+    private async Task ApproveSelectedAsync()
+    {
+        var ids = SelectedReviewableIds;
+        await ProcessSelectedAsync(ids,
+            async id => await Mediator.Send(new ApproveInventoryAdjustmentCommand(id, "Bulk approved")),
+            "approved");
+    }
+
+    private async Task RejectSelectedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_bulkComment)) return;
+        var comment = _bulkComment.Trim();
+        var ids = SelectedReviewableIds;
+        await ProcessSelectedAsync(ids,
+            async id => await Mediator.Send(new RejectInventoryAdjustmentCommand(id, comment)),
+            "rejected");
+    }
+
+    private async Task CancelSelectedAsync()
+    {
+        var ids = SelectedCancelableIds;
+        await ProcessSelectedAsync(ids,
+            async id => await Mediator.Send(new CancelInventoryAdjustmentCommand(id)),
+            "cancelled");
+    }
+
+    private async Task ProcessSelectedAsync(IReadOnlyList<int> ids, Func<int, Task> action, string actionLabel)
+    {
+        if (ids.Count == 0) return;
+        _bulkProcessing = true;
+        _bulkError = null;
+        var completed = new List<int>();
+        var errors = new List<string>();
+
+        foreach (var id in ids)
+        {
+            try
+            {
+                await action(id);
+                completed.Add(id);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Bulk inventory adjustment action {Action} failed for {AdjustmentId}", actionLabel, id);
+                errors.Add(ex.Message);
+            }
+        }
+
+        _selectedIds.ExceptWith(completed);
+        ResetBulkReject();
+        await LoadPageAsync(_pageNumber);
+
+        if (completed.Count > 0)
+        {
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"{completed.Count} adjustment request(s) {actionLabel}.");
+        }
+        if (errors.Count > 0)
+        {
+            _bulkError = $"{errors.Count} request(s) could not be processed. {errors[0]}";
+        }
+        _bulkProcessing = false;
+    }
+
+    private async Task OpenDetailAsync(int id)
+    {
+        _actionError = null;
+        _reviewComment = string.Empty;
+        _rejectMode = false;
+        try
+        {
+            _selected = await Mediator.Send(new GetInventoryAdjustmentDetailQuery(id));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load inventory adjustment {AdjustmentId}", id);
+            _pageError = ex.Message;
+        }
+    }
+
+    private void CloseDetail() { if (!_processing) _selected = null; }
+
+    private async Task ApproveAsync() => await ProcessAsync(async () =>
+        await Mediator.Send(new ApproveInventoryAdjustmentCommand(_selected!.Id, _reviewComment)), "Adjustment approved.");
+
+    private async Task RejectAsync()
+    {
+        _rejectMode = true;
+        if (string.IsNullOrWhiteSpace(_reviewComment)) return;
+        await ProcessAsync(async () => await Mediator.Send(new RejectInventoryAdjustmentCommand(_selected!.Id, _reviewComment)), "Adjustment rejected.");
+    }
+
+    private async Task CancelAsync() => await ProcessAsync(async () =>
+        await Mediator.Send(new CancelInventoryAdjustmentCommand(_selected!.Id)), "Adjustment request cancelled.");
+
+    private async Task ProcessAsync(Func<Task<InventoryAdjustmentDetailDto>> action, string toast)
+    {
+        _processing = true;
+        _actionError = null;
+        try
+        {
+            _selected = await action();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", _selected.Status == InventoryAdjustmentStatus.Conflict
+                ? "Inventory changed after the count. A new count is required."
+                : toast);
+            await LoadPageAsync(_pageNumber);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Inventory adjustment action failed");
+            _actionError = ex.Message;
+        }
+        finally
+        {
+            _processing = false;
+        }
+    }
+
+    private static string Signed(decimal value) => $"{(value > 0 ? "+" : string.Empty)}{value:0}";
+    private static string VarianceClass(decimal value) => value < 0 ? "negative" : value > 0 ? "positive" : "neutral";
+    private static string StatusLabel(InventoryAdjustmentStatus status) => status switch
+    {
+        InventoryAdjustmentStatus.PendingApproval => "Pending approval",
+        _ => status.ToString()
+    };
+    private static string StatusClass(InventoryAdjustmentStatus status) => status switch
+    {
+        InventoryAdjustmentStatus.Approved => "success",
+        InventoryAdjustmentStatus.PendingApproval => "warning",
+        InventoryAdjustmentStatus.Rejected => "danger",
+        InventoryAdjustmentStatus.Conflict => "violet",
+        _ => "neutral"
+    };
+    private static string ReasonLabel(string code) => InventoryAdjustmentReasonCodes.All.GetValueOrDefault(code, code);
+}

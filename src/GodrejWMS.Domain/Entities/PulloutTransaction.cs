@@ -57,6 +57,10 @@ public class PulloutTransactionLine
 
     public string? Remarks { get; set; }
 
+    /// <summary>Destination plant name as entered on this line - free text, not a foreign key to
+    /// <see cref="Entities.Plant"/>, so it's never validated against the Plant Master.</summary>
+    public string? PlantName { get; set; }
+
     public ICollection<PulloutPick> Picks { get; set; } = new List<PulloutPick>();
 }
 
@@ -80,4 +84,7 @@ public class PulloutPick
     public int MfgMonth { get; set; }
 
     public decimal QuantityBoxes { get; set; }
+
+    /// <summary>Operator justification when the FIFO-suggested source location is manually changed.</summary>
+    public string? OverrideReason { get; set; }
 }

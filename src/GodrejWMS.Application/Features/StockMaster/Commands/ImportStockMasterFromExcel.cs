@@ -32,6 +32,11 @@ public sealed class ImportStockMasterFromExcelHandler(
 {
     public async Task<ImportStockMasterResult> Handle(ImportStockMasterFromExcelCommand request, CancellationToken cancellationToken)
     {
+        if (!currentUser.IsInRole("Admin"))
+        {
+            throw new UnauthorizedAccessException("Only an Admin can directly import opening inventory. Quantity corrections must use the adjustment approval workflow.");
+        }
+
         var rows = excel.ReadStockMaster(request.FileStream);
         var errors = new List<string>();
         int created = 0, updated = 0;

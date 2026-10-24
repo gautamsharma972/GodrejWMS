@@ -8,11 +8,12 @@
 @using GodrejWMS.Application.Features.StockMaster.Commands
 @using GodrejWMS.Application.Features.StockMaster.Dtos
 @using GodrejWMS.Application.Features.StockMaster.Queries
+@using GodrejWMS.Application.Features.InventoryAdjustments.Commands
+@using GodrejWMS.Domain.Entities
 @using GodrejWMS.Application.Features.Seasons.Dtos
 @using GodrejWMS.Application.Features.Seasons.Queries
 @using GodrejWMS.Application.Features.SkuMovementTypes.Dtos
 @using GodrejWMS.Application.Features.SkuMovementTypes.Queries
-@using GodrejWMS.Domain.Entities
 @inject IMediator Mediator
 @inject IJSRuntime JsRuntime
 @inject GodrejWMS.Application.Common.Interfaces.IExcelService ExcelService
@@ -31,7 +32,7 @@
             <button type="button" class="tour-launch page-tour" data-tour-start="inventory" title="Take a tour of this page">
                 <i class="bi bi-compass" aria-hidden="true"></i> Page tour
             </button>
-            <AuthorizeView Roles="Admin,Supervisor,Operator" Context="headerActionsContext">
+            <AuthorizeView Roles="Admin" Context="headerActionsContext">
                 <button class="btn btn-outline-secondary" @onclick="DownloadTemplateAsync">
                     <i class="bi bi-file-earmark-arrow-down" aria-hidden="true"></i>
                     Sample Format
@@ -54,6 +55,10 @@
                 <i class="bi bi-download" aria-hidden="true"></i>
                 Export Excel
             </button>
+            <a class="btn btn-outline-secondary" href="/inventory-adjustments">
+                <i class="bi bi-clipboard-check" aria-hidden="true"></i>
+                Adjustments
+            </a>
         </div>
     </div>
 
@@ -136,6 +141,7 @@
                         <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("quantity"))'>Stock in CFB <i class='bi @SortIcon("quantity")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("mfg"))'>Mfg Month <i class='bi @SortIcon("mfg")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("location"))'>Pallet Position <i class='bi @SortIcon("location")'></i></button></th>
+                        <th class="table-actions">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -151,6 +157,12 @@
                             <td class="text-end fw-semibold">@row.QuantityBoxes</td>
                             <td>@row.MfgMonthLabel</td>
                             <td><span class="status-pill">@row.PalletPositionCode</span></td>
+                            <td class="table-actions">
+                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => OpenAdjustment(row)">
+                                    <i class="bi bi-sliders" aria-hidden="true"></i>
+                                    Adjust
+                                </button>
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -169,6 +181,83 @@
             </ul>
         </nav>
     }
+
+    @if (_adjustmentRow is not null)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseAdjustment">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="adjustment-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Inventory Control</div>
+                        <h2 id="adjustment-title" class="slide-over-title">Request Quantity Adjustment</h2>
+                        <p class="slide-over-subtitle">Approval is required before live inventory changes.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close adjustment" @onclick="CloseAdjustment">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    @if (!string.IsNullOrWhiteSpace(_adjustmentError))
+                    {
+                        <div class="alert alert-danger">@_adjustmentError</div>
+                    }
+                    <div class="putaway-summary-grid mb-4">
+                        <div><span>SKU</span><strong>@_adjustmentRow.MaterialNumber</strong></div>
+                        <div><span>Location</span><strong>@_adjustmentRow.PalletPositionCode</strong></div>
+                        <div><span>PKM</span><strong>@_adjustmentRow.MfgMonthLabel</strong></div>
+                        <div><span>Stock type</span><strong>@_adjustmentRow.StockSubtypeName</strong></div>
+                    </div>
+                    <div class="adjustment-quantity-comparison mb-4">
+                        <div>
+                            <span>System quantity</span>
+                            <strong>@_adjustmentRow.QuantityBoxes.ToString("0")</strong>
+                        </div>
+                        <i class="bi bi-arrow-right" aria-hidden="true"></i>
+                        <div>
+                            <span>Physical quantity</span>
+                            <strong>@_countedQuantity</strong>
+                        </div>
+                        <div class="adjustment-variance @VarianceClass">
+                            <span>Variance</span>
+                            <strong>@VarianceText</strong>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Physical quantity <span class="text-danger">*</span></label>
+                        <InputNumber class="form-control" min="0" step="1" @bind-Value="_countedQuantity" />
+                        <div class="form-text">Enter the total number of whole boxes counted, not the difference.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reason <span class="text-danger">*</span></label>
+                        <select class="form-select" @bind="_adjustmentReasonCode">
+                            @foreach (var reason in InventoryAdjustmentReasonCodes.All)
+                            {
+                                <option value="@reason.Key">@reason.Value</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes @(_adjustmentReasonCode == InventoryAdjustmentReasonCodes.Other ? "*" : string.Empty)</label>
+                        <textarea class="form-control" rows="3" maxlength="500" placeholder="Describe what was physically verified" @bind="_adjustmentNotes"></textarea>
+                    </div>
+                    <div class="putaway-info-bar transaction-status-bar" role="note">
+                        <div class="info-bar-icon"><i class="bi bi-shield-check" aria-hidden="true"></i></div>
+                        <div class="info-bar-content">
+                            <h2>Supervisor approval required</h2>
+                            <p>Submitting this request will not change live inventory.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseAdjustment">Cancel</button>
+                    <button type="button" class="btn btn-primary" disabled="@(!CanSubmitAdjustment || _submittingAdjustment)" @onclick="SubmitAdjustmentAsync">
+                        <i class="bi bi-send-check" aria-hidden="true"></i>
+                        @(_submittingAdjustment ? "Submitting..." : "Submit for Approval")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -186,6 +275,26 @@
     private bool _sortDescending;
     private bool _importing;
     private ImportStockMasterResult? _importResult;
+    private StockMasterRowDto? _adjustmentRow;
+    private int _countedQuantity;
+    private string _adjustmentReasonCode = InventoryAdjustmentReasonCodes.PhysicalCountVariance;
+    private string _adjustmentNotes = string.Empty;
+    private string? _adjustmentError;
+    private bool _submittingAdjustment;
+
+    // Search/filter/sort/paging all funnel through LoadPage, and the page shares a single
+    // DbContext, so overlapping calls (e.g. fast typing in the search box) would otherwise
+    // collide. This serializes them and drops the result of any call superseded by a newer one.
+    private readonly SemaphoreSlim _loadGate = new(1, 1);
+    private int _loadSequence;
+
+    private decimal AdjustmentVariance => _adjustmentRow is null ? 0 : _countedQuantity - _adjustmentRow.QuantityBoxes;
+    private string VarianceText => $"{(AdjustmentVariance > 0 ? "+" : string.Empty)}{AdjustmentVariance:0}";
+    private string VarianceClass => AdjustmentVariance < 0 ? "negative" : AdjustmentVariance > 0 ? "positive" : "neutral";
+    private bool CanSubmitAdjustment =>
+        _adjustmentRow is not null && _countedQuantity >= 0 && AdjustmentVariance != 0 &&
+        !string.IsNullOrWhiteSpace(_adjustmentReasonCode) &&
+        (_adjustmentReasonCode != InventoryAdjustmentReasonCodes.Other || !string.IsNullOrWhiteSpace(_adjustmentNotes));
 
     private IEnumerable<DesignTypeDto> ActiveDesignTypes => _designTypes.Where(d => d.IsActive);
 
@@ -217,17 +326,32 @@
     private async Task LoadPage(int page)
     {
         if (page < 1) return;
-        _pageNumber = page;
-        _page = await Mediator.Send(new GetStockMasterQuery(
-            MaterialSearch: _search,
-            DesignType: string.IsNullOrWhiteSpace(_designTypeFilter) ? null : _designTypeFilter.Trim(),
-            MovementTypeId: _movementFilter,
-            SeasonId: _seasonFilter,
-            IsActive: bool.TryParse(_activeFilterText, out var isActive) ? isActive : null,
-            SortBy: _sortBy,
-            SortDescending: _sortDescending,
-            PageNumber: page,
-            PageSize: 50));
+
+        var sequence = ++_loadSequence;
+        await _loadGate.WaitAsync();
+        try
+        {
+            if (sequence != _loadSequence) return;
+
+            var result = await Mediator.Send(new GetStockMasterQuery(
+                MaterialSearch: _search,
+                DesignType: string.IsNullOrWhiteSpace(_designTypeFilter) ? null : _designTypeFilter.Trim(),
+                MovementTypeId: _movementFilter,
+                SeasonId: _seasonFilter,
+                IsActive: bool.TryParse(_activeFilterText, out var isActive) ? isActive : null,
+                SortBy: _sortBy,
+                SortDescending: _sortDescending,
+                PageNumber: page,
+                PageSize: 50));
+
+            if (sequence != _loadSequence) return;
+            _pageNumber = page;
+            _page = result;
+        }
+        finally
+        {
+            _loadGate.Release();
+        }
     }
 
     private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadPage(1);
@@ -277,6 +401,46 @@
         var base64 = Convert.ToBase64String(bytes);
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "inventory-master.xlsx", base64,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private void OpenAdjustment(StockMasterRowDto row)
+    {
+        _adjustmentRow = row;
+        _countedQuantity = decimal.ToInt32(row.QuantityBoxes);
+        _adjustmentReasonCode = InventoryAdjustmentReasonCodes.PhysicalCountVariance;
+        _adjustmentNotes = string.Empty;
+        _adjustmentError = null;
+    }
+
+    private void CloseAdjustment()
+    {
+        if (_submittingAdjustment) return;
+        _adjustmentRow = null;
+        _adjustmentError = null;
+    }
+
+    private async Task SubmitAdjustmentAsync()
+    {
+        if (_adjustmentRow is null || !CanSubmitAdjustment) return;
+        var stockBatchId = _adjustmentRow.StockBatchId;
+        _submittingAdjustment = true;
+        _adjustmentError = null;
+        try
+        {
+            var result = await Mediator.Send(new SubmitInventoryAdjustmentCommand(
+                stockBatchId, _countedQuantity, _adjustmentReasonCode, _adjustmentNotes));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Adjustment {result.AdjustmentNumber} submitted for approval.");
+            _adjustmentRow = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to submit inventory adjustment for batch {StockBatchId}", stockBatchId);
+            _adjustmentError = ex.Message;
+        }
+        finally
+        {
+            _submittingAdjustment = false;
+        }
     }
 
     private async Task DownloadTemplateAsync()
@@ -330,4 +494,3 @@
         return palette[Math.Abs(hash) % palette.Length];
     }
 }
-

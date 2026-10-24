@@ -24,7 +24,7 @@ public sealed class ImportPulloutFromExcelHandler(IExcelService excel, IMediator
         var rows = excel.ReadPulloutUpload(request.FileStream);
 
         var lines = rows
-            .Select(r => new SubmitPulloutLine(r.MaterialCode, r.QuantityBoxes))
+            .Select(r => new SubmitPulloutLine(r.MaterialCode, r.QuantityBoxes, r.PlantName))
             .ToList();
 
         return mediator.Send(new SubmitPulloutCommand(lines), cancellationToken);

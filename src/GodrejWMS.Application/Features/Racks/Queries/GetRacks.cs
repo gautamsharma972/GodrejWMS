@@ -21,6 +21,7 @@ public sealed class GetRacksHandler(IApplicationDbContext db) : IRequestHandler<
                 r.Code,
                 r.Name,
                 r.Columns,
+                r.FromColumn,
                 r.Levels,
                 r.ShelfLengthMm,
                 r.ShelfWidthMm,
@@ -44,7 +45,8 @@ public sealed class GetRacksHandler(IApplicationDbContext db) : IRequestHandler<
 
         return racks
             .Select(r => new RackDto(
-                r.Id, r.Code, r.Name, r.Columns, r.Levels, r.ShelfLengthMm, r.ShelfWidthMm, r.ShelfHeightMm,
+                r.Id, r.Code, r.Name, r.Columns, r.FromColumn, r.FromColumn + r.Columns - 1, r.Levels,
+                r.ShelfLengthMm, r.ShelfWidthMm, r.ShelfHeightMm,
                 r.IsActive, r.TotalPositions,
                 (int)r.Positions.Sum(p => p.PalletCapacityBoxes is { } cap ? PalletCapacityCalculator.EffectiveCapacityBoxes(p.MaxPallets, cap) : 0),
                 r.OccupiedPositions,

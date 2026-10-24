@@ -81,7 +81,21 @@ public sealed record InwardDownloadRow(
     string LineStatus,
     string LocationCode,
     decimal QuantityBoxes,
-    string PutawayStatus);
+    string PutawayStatus,
+    int? PutawayId = null);
+
+/// <summary>One row read back from a GRN allocation workbook for location reassignment.</summary>
+public sealed record InwardPutawayReassignmentImportRow(
+    string ReferenceNumber,
+    long MaterialNumber,
+    string MfgMonthLabel,
+    decimal RequestedQuantityBoxes,
+    decimal AllocatedQuantityBoxes,
+    string LocationCode,
+    decimal QuantityBoxes,
+    string PutawayStatus,
+    int? PutawayId,
+    int RowNumber);
 
 public sealed record InwardPalletChangeOptionDto(
     int Id,

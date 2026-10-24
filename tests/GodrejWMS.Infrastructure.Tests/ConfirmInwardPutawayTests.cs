@@ -20,7 +20,7 @@ public class ConfirmInwardPutawayTests
         var db = TestDbContextFactory.Create();
 
         var rack = new Rack { Code = "A", Columns = 1, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
-        var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", CapacityBoxes = capacityBoxes };
+        var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 1 };
         rack.PalletPositions.Add(position);
         db.Racks.Add(rack);
 
@@ -167,7 +167,7 @@ public class ConfirmInwardPutawayTests
 
         // A second, still-empty position with a second pending line, so the transaction as a
         // whole has two putaways - only one of which should be confirmed here.
-        var position2 = new PalletPosition { RackId = position.RackId, Column = 2, Level = 1, LocationCode = "A-02-01", CapacityBoxes = 40 };
+        var position2 = new PalletPosition { RackId = position.RackId, Column = 2, Level = 1, LocationCode = "A-02-01", MaxPallets = 1 };
         db.PalletPositions.Add(position2);
         var line2 = new InwardTransactionLine
         {

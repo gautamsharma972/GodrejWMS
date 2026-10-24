@@ -16,8 +16,15 @@ public class Rack : AuditableEntity
 
     public string? Name { get; set; }
 
-    /// <summary>Number of column bays in the rack (the workbook example uses 5).</summary>
+    /// <summary>Number of column bays in this rack segment (ToColumn - FromColumn + 1).</summary>
     public int Columns { get; set; }
+
+    /// <summary>
+    /// First column bay number generated for this rack segment. Lets two rack rows share the
+    /// same Name (and thus the same location-code prefix) while covering different, non-overlapping
+    /// column ranges - e.g. columns 1-5 on one row and 6-10 on another, both named "A".
+    /// </summary>
+    public int FromColumn { get; set; } = 1;
 
     /// <summary>Number of shelf levels, ground level up (the workbook example uses 5).</summary>
     public int Levels { get; set; }

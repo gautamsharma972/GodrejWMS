@@ -40,39 +40,61 @@
                     @(_detail.IsRejected ? "Rejected" : _detail.IsConfirmed ? "Stock confirmed" : "Locations reserved")
                 </span>
             </div>
-            <div class="toolbar-group">
+            <div class="toolbar-group inward-detail-actions">
                 @if (!_detail.IsConfirmed && !_detail.IsRejected)
                 {
-                    <a class="btn btn-outline-primary" href="@($"/inward/{_detail.Id}/putaway")">
+                    <a class="btn btn-outline-primary" href="@($"/inward/{_detail.Id}/putaway")" title="Start put-away execution">
                         <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
                         Putaway
                     </a>
-                    <button type="button" class="btn btn-primary" @onclick="ConfirmPutawayAsync" disabled="@_confirming">
+                    <button type="button" class="btn btn-primary" @onclick="ConfirmPutawayAsync" disabled="@_confirming"
+                            title="Confirm all reserved put-away locations">
                         <i class="bi bi-check2-circle" aria-hidden="true"></i>
-                        @(_confirming ? "Confirming..." : "Confirm Put-away")
+                        @(_confirming ? "Confirming..." : "Confirm")
                     </button>
                 }
-                @if (CanReallocate)
+
+                @if (CanReallocate || CanReject || !_detail.IsRejected || CanUploadLocationChanges)
                 {
-                    <button type="button" class="btn btn-outline-primary" @onclick="ReallocateAsync" disabled="@_reallocating">
-                        <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
-                        @(_reallocating ? "Reallocating..." : "Reallocate")
-                    </button>
-                }
-                @if (CanReject)
-                {
-                    <button type="button" class="btn btn-outline-danger" @onclick="ToggleRejectPanel">
-                        <i class="bi bi-x-circle" aria-hidden="true"></i>
-                        Reject GRN
-                    </button>
-                }
-                @if (!_detail.IsRejected)
-                {
-                    <button type="button" class="btn btn-outline-secondary" @onclick="DownloadExcelAsync"
-                            title="Download this GRN's allocation as Excel@(_detail.IsConfirmed ? string.Empty : " (before confirming)")">
-                        <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
-                        Download Excel
-                    </button>
+                    <div class="dropdown inward-more-actions">
+                        <button type="button" class="btn btn-outline-secondary dropdown-toggle"
+                                data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-three-dots" aria-hidden="true"></i>
+                            More
+                        </button>
+                        <div class="dropdown-menu dropdown-menu-end">
+                            @if (!_detail.IsRejected)
+                            {
+                                <button type="button" class="dropdown-item" @onclick="DownloadExcelAsync"
+                                        title="Download this GRN's allocation as Excel@(_detail.IsConfirmed ? string.Empty : " (before confirming)")">
+                                    <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                                    Download allocation
+                                </button>
+                            }
+                            @if (CanUploadLocationChanges)
+                            {
+                                <button type="button" class="dropdown-item" @onclick="OpenLocationUpload">
+                                    <i class="bi bi-file-earmark-arrow-up" aria-hidden="true"></i>
+                                    Upload location changes
+                                </button>
+                            }
+                            @if (CanReallocate)
+                            {
+                                <button type="button" class="dropdown-item" @onclick="ReallocateAsync" disabled="@_reallocating">
+                                    <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+                                    @(_reallocating ? "Reallocating..." : "Reallocate locations")
+                                </button>
+                            }
+                            @if (CanReject)
+                            {
+                                <div class="dropdown-divider"></div>
+                                <button type="button" class="dropdown-item text-danger" @onclick="ToggleRejectPanel">
+                                    <i class="bi bi-x-circle" aria-hidden="true"></i>
+                                    Reject GRN
+                                </button>
+                            }
+                        </div>
+                    </div>
                 }
                 <a class="btn btn-outline-secondary" href="/inward">
                     <i class="bi bi-arrow-left" aria-hidden="true"></i>
@@ -639,6 +661,59 @@
                 </div>
             </div>
         }
+
+        @if (_isLocationUploadOpen)
+        {
+            <div class="slide-over-backdrop" role="presentation" @onclick="CloseLocationUpload">
+                <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="location-upload-title" @onclick:stopPropagation="true">
+                    <div class="slide-over-header">
+                        <div>
+                            <div class="eyebrow">GRN Location Update</div>
+                            <h2 id="location-upload-title" class="slide-over-title">Upload Location Changes</h2>
+                            <p class="slide-over-subtitle">Update reserved pallet positions for @_detail.ReferenceNumber.</p>
+                        </div>
+                        <button type="button" class="slide-over-close" aria-label="Close upload" @onclick="CloseLocationUpload">
+                            <i class="bi bi-x-lg" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <div class="slide-over-body">
+                        @if (!string.IsNullOrWhiteSpace(_locationUploadError))
+                        {
+                            <div class="alert alert-danger mb-3">@_locationUploadError</div>
+                        }
+
+                        <div class="putaway-info-bar transaction-status-bar mb-4" role="note">
+                            <div class="info-bar-icon"><i class="bi bi-shield-check" aria-hidden="true"></i></div>
+                            <div class="info-bar-content">
+                                <h2>Validated before saving</h2>
+                                <p>Only edit the blue Pallet Position column in the downloaded workbook. SKU, PKM, quantities, location compatibility, and final capacity are validated together. If any row fails, nothing is changed.</p>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Updated GRN workbook <span class="text-danger">*</span></label>
+                            <InputFile class="form-control" accept=".xlsx" OnChange="OnLocationWorkbookSelected" />
+                            <div class="form-text">First download the latest workbook for this GRN, edit the Pallet Position values, then upload the complete file.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Reason for location changes <span class="text-danger">*</span></label>
+                            <input class="form-control" maxlength="250" placeholder="e.g. Physical slot unavailable during put-away"
+                                   @bind="_locationUploadReason" @bind:event="oninput" />
+                        </div>
+                    </div>
+                    <div class="slide-over-footer">
+                        <button type="button" class="btn btn-outline-secondary" disabled="@_uploadingLocationChanges" @onclick="CloseLocationUpload">Close</button>
+                        <button type="button" class="btn btn-primary"
+                                disabled="@(_uploadingLocationChanges || _locationWorkbook is null || string.IsNullOrWhiteSpace(_locationUploadReason))"
+                                @onclick="UploadLocationChangesAsync">
+                            <i class="bi bi-upload" aria-hidden="true"></i>
+                            @(_uploadingLocationChanges ? "Validating..." : "Validate & Apply Changes")
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
     }
 </div>
 
@@ -676,6 +751,11 @@
     private string _bulkRackReason = string.Empty;
     private string? _bulkRackChangeError;
     private bool _movingSelectedPutaways;
+    private bool _isLocationUploadOpen;
+    private IBrowserFile? _locationWorkbook;
+    private string _locationUploadReason = string.Empty;
+    private string? _locationUploadError;
+    private bool _uploadingLocationChanges;
     private string _sortBy = "material";
     private bool _sortDescending;
 
@@ -1076,6 +1156,66 @@
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
 
+    private bool CanUploadLocationChanges =>
+        _detail is not null && !_detail.IsRejected
+        && _detail.Lines.SelectMany(line => line.Putaways).Any(putaway => !putaway.IsConfirmed);
+
+    private void OpenLocationUpload()
+    {
+        _locationWorkbook = null;
+        _locationUploadReason = string.Empty;
+        _locationUploadError = null;
+        _isLocationUploadOpen = true;
+    }
+
+    private void CloseLocationUpload()
+    {
+        if (_uploadingLocationChanges) return;
+        _isLocationUploadOpen = false;
+        _locationWorkbook = null;
+        _locationUploadError = null;
+    }
+
+    private void OnLocationWorkbookSelected(InputFileChangeEventArgs args)
+    {
+        _locationWorkbook = args.File;
+        _locationUploadError = null;
+    }
+
+    private async Task UploadLocationChangesAsync()
+    {
+        if (_detail is null || _locationWorkbook is null || string.IsNullOrWhiteSpace(_locationUploadReason)) return;
+
+        _uploadingLocationChanges = true;
+        _locationUploadError = null;
+        try
+        {
+            await using var source = _locationWorkbook.OpenReadStream(10 * 1024 * 1024);
+            using var memory = new MemoryStream();
+            await source.CopyToAsync(memory);
+            memory.Position = 0;
+
+            var result = await Mediator.Send(new ImportInwardPutawayLocationsCommand(
+                _detail.Id, memory, _locationUploadReason));
+            _detail = await Mediator.Send(new GetInwardDetailQuery(TransactionId));
+            _isLocationUploadOpen = false;
+            _locationWorkbook = null;
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast",
+                result.UpdatedLocations == 0
+                    ? "Workbook validated. No pallet locations were changed."
+                    : $"{result.UpdatedLocations} pallet location(s) updated from Excel.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to import put-away locations for GRN {TransactionId}", _detail.Id);
+            _locationUploadError = ex.Message;
+        }
+        finally
+        {
+            _uploadingLocationChanges = false;
+        }
+    }
+
     private void ToggleRejectPanel()
     {
         _showRejectPanel = !_showRejectPanel;
@@ -1150,8 +1290,6 @@
         public decimal AllocatedQuantityBoxes => Putaway?.QuantityBoxes ?? Line.AllocatedQuantityBoxes;
     }
 }
-
-
 
 
 

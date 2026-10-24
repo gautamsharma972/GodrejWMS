@@ -240,8 +240,8 @@
         {
             var detail = await Mediator.Send(new GetPulloutDetailQuery(item.Id));
             var rows = detail.Lines
-                .SelectMany(l => l.Picks.Select(p => new GodrejWMS.Application.Features.StockMaster.Dtos.StockMasterRowDto(
-                    l.MaterialNumber, l.MaterialDescription, string.Empty, p.QuantityBoxes, p.MfgMonthLabel, p.LocationCode)))
+                .SelectMany(l => l.Picks.Select(p => new PulloutDownloadRowDto(
+                    l.MaterialNumber, l.MaterialDescription, p.QuantityBoxes, p.MfgMonthLabel, p.LocationCode, l.PlantName)))
                 .ToList();
             var bytes = ExcelService.WritePulloutDownload(rows);
             await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"pullout-{item.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),

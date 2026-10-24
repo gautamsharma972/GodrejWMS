@@ -14,7 +14,7 @@ public static class InwardDownloadMapper
             .SelectMany(l => Rows(
                 detail.ReferenceNumber, l.MaterialNumber, l.MaterialDescription, l.MfgMonthLabel,
                 l.RequestedQuantityBoxes, l.AllocatedQuantityBoxes, l.Status,
-                l.Putaways.Select(p => (p.LocationCode, p.QuantityBoxes, p.IsConfirmed)), detail.IsRejected))
+                l.Putaways.Select(p => (p.LocationCode, p.QuantityBoxes, p.IsConfirmed, (int?)p.Id)), detail.IsRejected))
             .ToList();
 
     public static IReadOnlyList<InwardDownloadRow> FromResult(InwardResultDto result) =>
@@ -22,13 +22,13 @@ public static class InwardDownloadMapper
             .SelectMany(l => Rows(
                 result.ReferenceNumber, l.MaterialNumber, l.MaterialDescription, l.MfgMonthLabel,
                 l.RequestedQuantityBoxes, l.AllocatedQuantityBoxes, l.Status,
-                l.AllocatedTo.Select(a => (a.LocationCode, a.QuantityBoxes, a.IsConfirmed)), result.IsRejected))
+                l.AllocatedTo.Select(a => (a.LocationCode, a.QuantityBoxes, a.IsConfirmed, a.PutawayId)), result.IsRejected))
             .ToList();
 
     private static IEnumerable<InwardDownloadRow> Rows(
         string reference, long materialNumber, string description, string mfgMonthLabel,
         decimal requested, decimal allocated, AllocationStatus status,
-        IEnumerable<(string LocationCode, decimal QuantityBoxes, bool IsConfirmed)> locations, bool isRejected)
+        IEnumerable<(string LocationCode, decimal QuantityBoxes, bool IsConfirmed, int? PutawayId)> locations, bool isRejected)
     {
         var placed = locations.ToList();
         if (placed.Count == 0)
@@ -38,11 +38,11 @@ public static class InwardDownloadMapper
             yield break;
         }
 
-        foreach (var (locationCode, quantity, isConfirmed) in placed)
+        foreach (var (locationCode, quantity, isConfirmed, putawayId) in placed)
         {
             yield return new InwardDownloadRow(reference, materialNumber, description, mfgMonthLabel,
                 requested, allocated, status.ToString(), locationCode, quantity,
-                isRejected ? "Rejected" : isConfirmed ? "Confirmed" : "Reserved");
+                isRejected ? "Rejected" : isConfirmed ? "Confirmed" : "Reserved", putawayId);
         }
     }
 }

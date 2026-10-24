@@ -174,7 +174,8 @@ public sealed class GetOperationalReportHandler(
         Rack = p.PalletPosition.Rack.Code, Zone = p.PalletPosition.ZoneType.Code, Column = p.PalletPosition.Column, Level = p.PalletPosition.Level,
         Quantity = p.QuantityBoxes, Out = p.QuantityBoxes, Status = "Confirmed",
         User = p.PulloutTransactionLine.PulloutTransaction.ConfirmedByUserName ?? "",
-        UserId = p.PulloutTransactionLine.PulloutTransaction.ConfirmedByUserId ?? ""
+        UserId = p.PulloutTransactionLine.PulloutTransaction.ConfirmedByUserId ?? "",
+        Reason = p.OverrideReason ?? ""
     });
 
     private IQueryable<ReportRow> Moves() => db.StockMovements.AsNoTracking().Select(m => new ReportRow

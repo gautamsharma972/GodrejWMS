@@ -25,7 +25,7 @@ public class SubmitInwardConcurrencyTests
         var dbName = Guid.NewGuid().ToString();
         var seedDb = TestDbContextFactory.Create(dbName);
         var rack = new Rack { Code = "A", Columns = 1, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
-        rack.PalletPositions.Add(new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", CapacityBoxes = 80 });
+        rack.PalletPositions.Add(new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 2 });
         seedDb.Racks.Add(rack);
         await seedDb.SaveChangesAsync();
 

@@ -1,0 +1,58 @@
+@* Signs the user out after a period of real client-side inactivity (mouse/keyboard/touch/scroll),
+   independent of the auth cookie's own sliding expiration - see app.js's startIdleTimer for why
+   the two are separate mechanisms in a Blazor Server app. Only ever rendered for an authenticated
+   user (MainLayout wraps it in an AuthorizeView), so there is nothing to sign out otherwise. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JsRuntime
+@inject Microsoft.Extensions.Options.IOptions<GodrejWMS.Web.Services.IdleSessionOptions> SessionOptions
+
+<form id="idle-logout-form" action="Account/Logout" method="post" style="display:none" aria-hidden="true">
+    <AntiforgeryToken />
+    <input type="hidden" name="ReturnUrl" value="Account/Login?reason=idle" />
+</form>
+
+@code {
+    private DotNetObjectReference<IdleTimeoutWatcher>? _selfReference;
+    private bool _started;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _started)
+        {
+            return;
+        }
+
+        _started = true;
+        _selfReference = DotNetObjectReference.Create(this);
+        var timeoutMs = Math.Max(1, SessionOptions.Value.IdleTimeoutMinutes) * 60_000;
+        await JsRuntime.InvokeVoidAsync("godrejWms.startIdleTimer", timeoutMs, _selfReference);
+    }
+
+    [JSInvokable]
+    public async Task OnIdleTimeoutAsync()
+    {
+        // A real <form> POST (not a C# SignInManager call) because a live Blazor Server circuit
+        // has no HTTP response left to attach a Set-Cookie to - the same reason the manual
+        // Logout buttons elsewhere in the app (NavMenu, MainLayout account menu) are plain forms.
+        await JsRuntime.InvokeVoidAsync("godrejWms.stopIdleTimer");
+        await JsRuntime.InvokeVoidAsync("godrejWms.submitForm", "idle-logout-form");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_started)
+            {
+                await JsRuntime.InvokeVoidAsync("godrejWms.stopIdleTimer");
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit is already gone (e.g. the idle-timeout logout itself just navigated away) -
+            // nothing left to clean up on the client.
+        }
+
+        _selfReference?.Dispose();
+    }
+}

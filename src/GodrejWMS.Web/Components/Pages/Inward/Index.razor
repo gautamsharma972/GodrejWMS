@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "Admin,Operator,Supervisor")]
 @implements IAsyncDisposable
 @using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Common.Exceptions
 @using GodrejWMS.Application.Features.Inward.Commands
 @using GodrejWMS.Application.Features.Inward.Dtos
 @using GodrejWMS.Application.Features.Inward.Queries
@@ -58,11 +59,13 @@
                                 <tr>
                                     <td>
                                         <div class="material-combobox">
-                                            <input class="form-control"
+                                            <input class="@LineFieldClass(index, nameof(LineModel.MaterialCodeText), "form-control")"
                                                    autocomplete="off"
                                                    placeholder="Search material code or description"
                                                    @bind-value="_lines[index].MaterialCodeText"
                                                    @bind-value:event="oninput"
+                                                   @bind-value:after="() => ClearLineFieldError(index, nameof(LineModel.MaterialCodeText))"
+                                                   aria-invalid="@HasLineFieldError(index, nameof(LineModel.MaterialCodeText))"
                                                    @onfocus="() => _activeMaterialLineIndex = index" />
                                             @if (_activeMaterialLineIndex == index)
                                             {
@@ -81,26 +84,37 @@
                                                 }
                                             }
                                         </div>
+                                        @LineFieldError(index, nameof(LineModel.MaterialCodeText))
                                     </td>
-                                    <td><input class="form-control" type="number" step="0.001" @bind="_lines[index].QuantityBoxes" /></td>
+                                    <td>
+                                        <input class="@LineFieldClass(index, nameof(LineModel.QuantityBoxes), "form-control")"
+                                               type="number"
+                                               step="1"
+                                               min="1"
+                                               @bind="_lines[index].QuantityBoxes"
+                                               @bind:after="() => ClearLineFieldError(index, nameof(LineModel.QuantityBoxes))"
+                                               aria-invalid="@HasLineFieldError(index, nameof(LineModel.QuantityBoxes))" />
+                                        @LineFieldError(index, nameof(LineModel.QuantityBoxes))
+                                    </td>
                                     <td>
                                         <div class="mfg-picker">
-                                            <select class="form-select" title="MFG year" @bind="_lines[index].MfgYear">
+                                            <select class="@LineFieldClass(index, nameof(LineModel.MfgMonth), "form-select")" title="MFG year" @bind="_lines[index].MfgYear">
                                                 @foreach (var year in YearOptions)
                                                 {
                                                     <option value="@year">@year</option>
                                                 }
                                             </select>
-                                            <select class="form-select" title="MFG month" @bind="_lines[index].MfgMonth">
+                                            <select class="@LineFieldClass(index, nameof(LineModel.MfgMonth), "form-select")" title="MFG month" @bind="_lines[index].MfgMonth">
                                                 @foreach (var month in MonthOptions)
                                                 {
                                                     <option value="@month.Value">@month.Label</option>
                                                 }
                                             </select>
                                         </div>
+                                        @LineFieldError(index, nameof(LineModel.MfgMonth))
                                     </td>
                                     <td class="table-actions">
-                                        <button class="btn btn-sm btn-outline-danger" title="Remove line" aria-label="Remove line" @onclick="() => _lines.RemoveAt(index)">
+                                        <button class="btn btn-sm btn-outline-danger" title="Remove line" aria-label="Remove line" @onclick="() => RemoveLine(index)">
                                             <i class="bi bi-x-lg" aria-hidden="true"></i>
                                         </button>
                                     </td>
@@ -693,6 +707,7 @@
     private int? _activeMaterialLineIndex;
     private bool _submitting;
     private string? _error;
+    private readonly Dictionary<string, string> _lineFieldErrors = new(StringComparer.Ordinal);
     private InwardResultDto? _result;
     private string _statusFilter = string.Empty;
     private bool _isResultModalOpen;
@@ -748,6 +763,12 @@
     }
 
     private void AddLine() => _lines.Add(new LineModel());
+
+    private void RemoveLine(int index)
+    {
+        _lines.RemoveAt(index);
+        _lineFieldErrors.Clear();
+    }
 
     private async Task DownloadResultExcelAsync()
     {
@@ -971,13 +992,14 @@
     {
         _error = null;
         _result = null;
-        var validLines = _lines.Where(l => l.MaterialCode > 0 && l.QuantityBoxes > 0 && l.MfgYear > 0 && l.MfgMonth > 0).ToList();
+        var validLineIndexes = ValidateManualLines();
 
-        if (validLines.Count == 0)
+        if (_lineFieldErrors.Count > 0)
         {
-            _error = "Add at least one valid line.";
             return;
         }
+
+        var validLines = validLineIndexes.Select(index => _lines[index]).ToList();
 
         _submitting = true;
         try
@@ -991,6 +1013,11 @@
             _lines = new List<LineModel> { new() };
 
         }
+        catch (ValidationException ex)
+        {
+            Logger.LogInformation(ex, "Inward form validation failed");
+            SetLineFieldErrors(ex.Errors, validLineIndexes);
+        }
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Inward submission failed");
@@ -1001,6 +1028,122 @@
             _submitting = false;
         }
     }
+
+    private IReadOnlyList<int> ValidateManualLines()
+    {
+        _lineFieldErrors.Clear();
+
+        var enteredLineIndexes = Enumerable.Range(0, _lines.Count)
+            .Where(index => !string.IsNullOrWhiteSpace(_lines[index].MaterialCodeText) || _lines[index].QuantityBoxes != 0)
+            .ToList();
+
+        if (enteredLineIndexes.Count == 0)
+        {
+            AddLineFieldError(0, nameof(LineModel.MaterialCodeText), "Select a material.");
+            AddLineFieldError(0, nameof(LineModel.QuantityBoxes), "Quantity is required.");
+            return enteredLineIndexes;
+        }
+
+        foreach (var index in enteredLineIndexes)
+        {
+            var line = _lines[index];
+            if (line.MaterialCode <= 0)
+            {
+                AddLineFieldError(index, nameof(LineModel.MaterialCodeText), "Select a valid material.");
+            }
+
+            if (line.QuantityBoxes <= 0)
+            {
+                AddLineFieldError(index, nameof(LineModel.QuantityBoxes), "Quantity must be greater than zero.");
+            }
+            else if (!decimal.IsInteger(line.QuantityBoxes))
+            {
+                AddLineFieldError(index, nameof(LineModel.QuantityBoxes), "Quantity must be a whole number (no decimals).");
+            }
+        }
+
+        return enteredLineIndexes;
+    }
+
+    private void SetLineFieldErrors(IDictionary<string, string[]> errors, IReadOnlyList<int> submittedLineIndexes)
+    {
+        _lineFieldErrors.Clear();
+
+        foreach (var (property, messages) in errors)
+        {
+            if (!TryMapLineProperty(property, submittedLineIndexes, out var lineIndex, out var field))
+            {
+                continue;
+            }
+
+            AddLineFieldError(lineIndex, field, string.Join(" ", messages));
+        }
+    }
+
+    private static bool TryMapLineProperty(
+        string property,
+        IReadOnlyList<int> submittedLineIndexes,
+        out int lineIndex,
+        out string field)
+    {
+        lineIndex = -1;
+        field = string.Empty;
+
+        const string prefix = "Lines[";
+        if (!property.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var closingBracket = property.IndexOf(']', prefix.Length);
+        if (closingBracket < 0
+            || !int.TryParse(property[prefix.Length..closingBracket], out var submittedIndex)
+            || submittedIndex < 0
+            || submittedIndex >= submittedLineIndexes.Count)
+        {
+            return false;
+        }
+
+        var propertyName = property[(closingBracket + 1)..].TrimStart('.');
+        field = propertyName switch
+        {
+            nameof(SubmitInwardLine.MaterialCode) => nameof(LineModel.MaterialCodeText),
+            nameof(SubmitInwardLine.QuantityBoxes) => nameof(LineModel.QuantityBoxes),
+            nameof(SubmitInwardLine.MfgMonthText) => nameof(LineModel.MfgMonth),
+            _ => string.Empty
+        };
+
+        lineIndex = submittedLineIndexes[submittedIndex];
+        return field.Length > 0;
+    }
+
+    private static string LineFieldKey(int index, string field) => $"{index}:{field}";
+
+    private void AddLineFieldError(int index, string field, string message) =>
+        _lineFieldErrors[LineFieldKey(index, field)] = message;
+
+    private bool HasLineFieldError(int index, string field) =>
+        _lineFieldErrors.ContainsKey(LineFieldKey(index, field));
+
+    private string LineFieldClass(int index, string field, string baseClass) =>
+        HasLineFieldError(index, field) ? $"{baseClass} is-invalid" : baseClass;
+
+    private RenderFragment LineFieldError(int index, string field) => builder =>
+    {
+        if (!_lineFieldErrors.TryGetValue(LineFieldKey(index, field), out var message))
+        {
+            return;
+        }
+
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "invalid-feedback d-block");
+        builder.AddAttribute(2, "role", "alert");
+        builder.AddContent(3, message);
+        builder.CloseElement();
+    };
+
+    private void ClearLineFieldError(int index, string field) =>
+        _lineFieldErrors.Remove(LineFieldKey(index, field));
 
     private async Task OnImportFileSelected(InputFileChangeEventArgs e)
     {
@@ -1186,6 +1329,7 @@
     private void SelectMaterial(int index, MaterialDto material)
     {
         _lines[index].MaterialCodeText = material.MaterialNumber.ToString();
+        ClearLineFieldError(index, nameof(LineModel.MaterialCodeText));
         _activeMaterialLineIndex = null;
     }
 
@@ -1288,9 +1432,6 @@
         public decimal AllocatedQuantityBoxes => Allocation?.QuantityBoxes ?? 0;
     }
 }
-
-
-
 
 
 

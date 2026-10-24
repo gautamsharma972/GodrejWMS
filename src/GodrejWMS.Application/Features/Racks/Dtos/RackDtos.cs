@@ -5,6 +5,8 @@ public sealed record RackDto(
     string Code,
     string? Name,
     int Columns,
+    int FromColumn,
+    int ToColumn,
     int Levels,
     decimal ShelfLengthMm,
     decimal ShelfWidthMm,

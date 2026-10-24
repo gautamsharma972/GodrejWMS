@@ -17,8 +17,8 @@ public class InventoryMovementServiceTests
         var db = TestDbContextFactory.Create();
 
         var rack = new Rack { Code = "A", Columns = 2, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
-        var source = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", CapacityBoxes = 40 };
-        var destination = new PalletPosition { Column = 2, Level = 1, LocationCode = "A-05-03", CapacityBoxes = destinationCapacity };
+        var source = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 1 };
+        var destination = new PalletPosition { Column = 2, Level = 1, LocationCode = "A-05-03", MaxPallets = destinationCapacity / 40 };
         rack.PalletPositions.Add(source);
         rack.PalletPositions.Add(destination);
         db.Racks.Add(rack);
@@ -200,7 +200,7 @@ public class InventoryMovementServiceTests
         var dbName = Guid.NewGuid().ToString();
         var seedDb = TestDbContextFactory.Create(dbName);
         var rack = new Rack { Code = "A", Columns = 1, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
-        var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", CapacityBoxes = 80 };
+        var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 2 };
         rack.PalletPositions.Add(position);
         seedDb.Racks.Add(rack);
         var material = new Material
@@ -234,7 +234,7 @@ public class InventoryMovementServiceTests
         var (db, material, source, destination, reason) = SeedScenario(sourceQty: 25);
         // A second source position with a separate batch, one of the two lines will fail
         // (insufficient quantity) while the other succeeds.
-        var source2 = new PalletPosition { RackId = source.RackId, Column = 1, Level = 2, LocationCode = "A-01-02", CapacityBoxes = 40 };
+        var source2 = new PalletPosition { RackId = source.RackId, Column = 1, Level = 2, LocationCode = "A-01-02", MaxPallets = 1 };
         db.PalletPositions.Add(source2);
         await db.SaveChangesAsync();
         db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = source2.Id, MfgMonth = 202604, QuantityBoxes = 5 });

@@ -1,0 +1,118 @@
+@implements IDisposable
+@using GodrejWMS.Application.Common.Interfaces
+@inject IRealtimeNotificationService Notifications
+@inject ICurrentUserService CurrentUser
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JsRuntime
+
+<div class="dropdown notification-center">
+    <button type="button"
+            class="notification-button"
+            title="Notifications"
+            data-bs-toggle="dropdown"
+            data-bs-auto-close="outside"
+            aria-expanded="false"
+            aria-label="Notifications, @UnreadCount unread">
+        <i class="bi bi-bell" aria-hidden="true"></i>
+        @if (UnreadCount > 0)
+        {
+            <span class="notification-badge">@(UnreadCount > 99 ? "99+" : UnreadCount)</span>
+        }
+    </button>
+
+    <div class="dropdown-menu dropdown-menu-end notification-dropdown">
+        <div class="notification-dropdown-header">
+            <div>
+                <strong>Notifications</strong>
+                <span>@(UnreadCount == 0 ? "You're all caught up" : $"{UnreadCount} unread")</span>
+            </div>
+            @if (UnreadCount > 0)
+            {
+                <button type="button" class="btn btn-link btn-sm" @onclick="MarkAllRead">Mark all read</button>
+            }
+        </div>
+
+        @if (_items.Count == 0)
+        {
+            <div class="notification-empty">
+                <i class="bi bi-bell-slash" aria-hidden="true"></i>
+                <span>No notifications yet</span>
+            </div>
+        }
+        else
+        {
+            <div class="notification-list">
+                @foreach (var item in _items)
+                {
+                    <button type="button" class="notification-item @(_unreadIds.Contains(item.Id) ? "unread" : null)" @onclick="() => OpenNotification(item)">
+                        <span class="notification-kind @item.Kind"><i class="bi @KindIcon(item.Kind)" aria-hidden="true"></i></span>
+                        <span class="notification-copy">
+                            <strong>@item.Title</strong>
+                            <span>@item.Message</span>
+                            <time>@RelativeTime(item.CreatedAt)</time>
+                        </span>
+                    </button>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private readonly List<RealtimeNotification> _items = [];
+    private readonly HashSet<Guid> _unreadIds = [];
+    private IDisposable? _subscription;
+    private int UnreadCount => _unreadIds.Count;
+
+    protected override void OnInitialized()
+    {
+        var roles = new[] { "Admin", "Supervisor", "Operator" }
+            .Where(CurrentUser.IsInRole)
+            .ToArray();
+        _subscription = Notifications.Subscribe(CurrentUser.UserId, roles, ReceiveAsync);
+    }
+
+    private Task ReceiveAsync(RealtimeNotification notification) => InvokeAsync(async () =>
+    {
+        _items.Insert(0, notification);
+        if (_items.Count > 40)
+        {
+            var removed = _items[^1];
+            _items.RemoveAt(_items.Count - 1);
+            _unreadIds.Remove(removed.Id);
+        }
+        _unreadIds.Add(notification.Id);
+        StateHasChanged();
+        await JsRuntime.InvokeVoidAsync("godrejWms.showToast", notification.Message);
+    });
+
+    private void OpenNotification(RealtimeNotification notification)
+    {
+        _unreadIds.Remove(notification.Id);
+        if (!string.IsNullOrWhiteSpace(notification.Url))
+        {
+            NavigationManager.NavigateTo(notification.Url);
+        }
+    }
+
+    private void MarkAllRead() => _unreadIds.Clear();
+
+    private static string KindIcon(string kind) => kind switch
+    {
+        "success" => "bi-check2-circle",
+        "danger" => "bi-x-circle",
+        "warning" => "bi-exclamation-triangle",
+        _ => "bi-info-circle"
+    };
+
+    private static string RelativeTime(DateTimeOffset createdAt)
+    {
+        var elapsed = DateTimeOffset.UtcNow - createdAt;
+        if (elapsed.TotalMinutes < 1) return "Just now";
+        if (elapsed.TotalHours < 1) return $"{(int)elapsed.TotalMinutes}m ago";
+        if (elapsed.TotalDays < 1) return $"{(int)elapsed.TotalHours}h ago";
+        return createdAt.ToLocalTime().ToString("dd MMM, hh:mm tt");
+    }
+
+    public void Dispose() => _subscription?.Dispose();
+}

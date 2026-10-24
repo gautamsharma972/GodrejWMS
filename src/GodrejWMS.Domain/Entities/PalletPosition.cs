@@ -53,6 +53,6 @@ public class PalletPosition : AuditableEntity
 
     public ICollection<StockBatch> StockBatches { get; set; } = new List<StockBatch>();
 
-    public static string BuildLocationCode(string rackCode, int column, int level) =>
-        $"{rackCode}-{column:00}-{level:00}";
+    public static string BuildLocationCode(string rackNamePrefix, int column, int level) =>
+        $"{rackNamePrefix}-{column:00}-{level:00}";
 }

@@ -3,6 +3,8 @@ using GodrejWMS.Application.Features.Inward.Queries;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
 using GodrejWMS.Infrastructure.Persistence;
+using GodrejWMS.Infrastructure.Services;
+using GodrejWMS.Application.Features.Inward.Dtos;
 using Xunit;
 
 namespace GodrejWMS.Infrastructure.Tests;
@@ -284,5 +286,111 @@ public class InwardPutawayReroutingTests
         Assert.Null(firstPutaway.OverrideReason);
         Assert.Null(secondPutaway.OverrideReason);
         Assert.Equal(40, material.PalletCapacityBoxes);
+    }
+
+    [Fact]
+    public async Task ExcelReassignment_MovesPendingPutaway_WhenWorkbookIsValid()
+    {
+        var (db, material, _, _, target, putaway) = SeedScenario();
+        var service = new ClosedXmlExcelService();
+        using var workbook = BuildReassignmentWorkbook(service, material, putaway, target.LocationCode);
+        var handler = new ImportInwardPutawayLocationsHandler(db, service);
+
+        var result = await handler.Handle(
+            new ImportInwardPutawayLocationsCommand(
+                putaway.InwardTransactionLine.InwardTransactionId, workbook, "Original slot unavailable"),
+            CancellationToken.None);
+
+        Assert.Equal(1, result.UpdatedLocations);
+        var moved = db.InwardPutaways.Single(p => p.Id == putaway.Id);
+        Assert.Equal(target.Id, moved.PalletPositionId);
+        Assert.Equal("Original slot unavailable", moved.OverrideReason);
+        Assert.Equal("Location reassigned from GRN Excel upload", moved.AllocationReason);
+    }
+
+    [Fact]
+    public async Task ExcelReassignment_RejectsSkuMismatch_WithoutChangingLocation()
+    {
+        var (db, material, _, current, target, putaway) = SeedScenario();
+        var service = new ClosedXmlExcelService();
+        using var workbook = BuildReassignmentWorkbook(service, material, putaway, target.LocationCode, materialNumber: 999);
+        var handler = new ImportInwardPutawayLocationsHandler(db, service);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new ImportInwardPutawayLocationsCommand(
+                putaway.InwardTransactionLine.InwardTransactionId, workbook, "Excel update"),
+            CancellationToken.None));
+
+        Assert.Contains("SKU mismatch", error.Message);
+        Assert.Equal(current.Id, db.InwardPutaways.Single(p => p.Id == putaway.Id).PalletPositionId);
+    }
+
+    [Fact]
+    public async Task ExcelReassignment_RejectsPkmMismatch_WithoutChangingLocation()
+    {
+        var (db, material, _, current, target, putaway) = SeedScenario();
+        var service = new ClosedXmlExcelService();
+        using var workbook = BuildReassignmentWorkbook(service, material, putaway, target.LocationCode, pkm: "FEB|2010");
+        var handler = new ImportInwardPutawayLocationsHandler(db, service);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new ImportInwardPutawayLocationsCommand(
+                putaway.InwardTransactionLine.InwardTransactionId, workbook, "Excel update"),
+            CancellationToken.None));
+
+        Assert.Contains("PKM mismatch", error.Message);
+        Assert.Equal(current.Id, db.InwardPutaways.Single(p => p.Id == putaway.Id).PalletPositionId);
+    }
+
+    [Fact]
+    public async Task ExcelReassignment_RejectsInsufficientCapacity_WithoutChangingLocation()
+    {
+        var (db, material, _, current, target, putaway) = SeedScenario();
+        db.StockBatches.Add(new StockBatch
+        {
+            MaterialId = material.Id,
+            PalletPositionId = target.Id,
+            MfgMonth = 200912,
+            QuantityBoxes = 79
+        });
+        await db.SaveChangesAsync();
+        var service = new ClosedXmlExcelService();
+        using var workbook = BuildReassignmentWorkbook(service, material, putaway, target.LocationCode);
+        var handler = new ImportInwardPutawayLocationsHandler(db, service);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new ImportInwardPutawayLocationsCommand(
+                putaway.InwardTransactionLine.InwardTransactionId, workbook, "Excel update"),
+            CancellationToken.None));
+
+        Assert.Contains("free box", error.Message);
+        Assert.Equal(current.Id, db.InwardPutaways.Single(p => p.Id == putaway.Id).PalletPositionId);
+    }
+
+    private static MemoryStream BuildReassignmentWorkbook(
+        ClosedXmlExcelService service,
+        Material material,
+        InwardPutaway putaway,
+        string targetLocation,
+        long? materialNumber = null,
+        string pkm = "JAN|2010")
+    {
+        var line = putaway.InwardTransactionLine;
+        var rows = new[]
+        {
+            new InwardDownloadRow(
+                line.InwardTransaction.ReferenceNumber,
+                materialNumber ?? material.MaterialNumber,
+                material.Description,
+                pkm,
+                line.RequestedQuantityBoxes,
+                line.AllocatedQuantityBoxes,
+                line.Status.ToString(),
+                targetLocation,
+                putaway.QuantityBoxes,
+                "Reserved",
+                putaway.Id)
+        };
+        return new MemoryStream(service.WriteInwardDownload(rows));
     }
 }

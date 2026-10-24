@@ -1,0 +1,414 @@
+@page "/plants"
+@attribute [Authorize]
+@using GodrejWMS.Application.Features.Plants.Commands
+@using GodrejWMS.Application.Features.Plants.Dtos
+@using GodrejWMS.Application.Features.Plants.Queries
+@using GodrejWMS.Application.Features.PlantTypes.Dtos
+@using GodrejWMS.Application.Features.PlantTypes.Queries
+@inject IMediator Mediator
+@inject ILogger<Index> Logger
+
+<PageTitle>Plant Master - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Master Data</div>
+            <h1>Plant Master</h1>
+            <p class="page-kicker">Destination/source plants used by Picking requests (Plant Name) - code, name, type, and description.</p>
+        </div>
+        <div class="header-actions">
+            <AuthorizeView Roles="Admin" Context="createContext">
+                <button class="btn btn-outline-primary" @onclick="ShowCreateForm">
+                    <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                    New Plant
+                </button>
+            </AuthorizeView>
+            <AuthorizeView Roles="Admin" Context="editContext">
+                <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                    @if (_saving)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-check2" aria-hidden="true"></i>
+                    }
+                    Save Plants
+                </button>
+            </AuthorizeView>
+        </div>
+    </div>
+
+    @if (_saveError is not null)
+    {
+        <div class="alert alert-danger mb-0">@_saveError</div>
+    }
+    @if (_savedMessage is not null)
+    {
+        <div class="alert alert-success mb-0">@_savedMessage</div>
+    }
+
+    @if (_showCreateForm)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseCreateForm">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="plant-create-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">New code</div>
+                        <h2 class="slide-over-title" id="plant-create-title">Create Plant</h2>
+                        <p class="slide-over-subtitle">Plant names are offered (not enforced) on Picking requests.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Close create form" @onclick="CloseCreateForm">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <EditForm Model="_createForm" FormName="plant-create-form" OnValidSubmit="CreateAsync" class="slide-over-form">
+                    <div class="slide-over-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Code</label>
+                                <InputText class="form-control" @bind-Value="_createForm.Code" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Name</label>
+                                <InputText class="form-control" @bind-Value="_createForm.Name" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Type</label>
+                                <InputSelect class="form-select" @bind-Value="_createForm.PlantTypeId">
+                                    <option value="">-- None --</option>
+                                    @foreach (var type in _plantTypes.Where(t => t.IsActive))
+                                    {
+                                        <option value="@type.Id">@type.Name</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Description</label>
+                                <InputText class="form-control" @bind-Value="_createForm.Description" />
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(_createError))
+                        {
+                            <div class="alert alert-danger mt-3 mb-0">@_createError</div>
+                        }
+                    </div>
+                    <div class="slide-over-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseCreateForm">Cancel</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check2" aria-hidden="true"></i>
+                            Create Plant
+                        </button>
+                    </div>
+                </EditForm>
+            </section>
+        </div>
+    }
+
+    @if (_deleteTarget is not null)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CancelDelete">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="plant-delete-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Delete plant</div>
+                        <h2 class="slide-over-title" id="plant-delete-title">Delete "@_deleteTarget.Name"?</h2>
+                        <p class="slide-over-subtitle">This cannot be undone. Past picking requests keep the plant name they recorded, since it isn't a live link to this row.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Cancel delete" @onclick="CancelDelete">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    @if (_deleteError is not null)
+                    {
+                        <div class="alert alert-danger mb-0">@_deleteError</div>
+                    }
+                </div>
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelDelete">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmDeleteAsync" disabled="@_deleting">
+                        @if (_deleting)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-trash" aria-hidden="true"></i>
+                        }
+                        Delete
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
+
+    @if (_rows is null)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading plants...
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive panel-table">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Active</th>
+                        <th class="table-actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        <tr>
+                            <td>
+                                <AuthorizeView Roles="Admin" Context="codeEditContext">
+                                    <Authorized>
+                                        <input class="form-control" value="@row.Code" style="max-width: 120px"
+                                               @onchange="e => OnCodeChanged(row.Id, e)" />
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        <span class="record-code">@row.Code</span>
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            </td>
+                            <td style="max-width: 220px">
+                                <AuthorizeView Roles="Admin" Context="nameEditContext">
+                                    <Authorized>
+                                        <input class="form-control" value="@row.Name"
+                                               @onchange="e => OnNameChanged(row.Id, e)" />
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        @row.Name
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            </td>
+                            <td style="max-width: 160px">
+                                <AuthorizeView Roles="Admin" Context="typeEditContext">
+                                    <Authorized>
+                                        <select class="form-select" value="@row.PlantTypeId" @onchange="e => OnPlantTypeChanged(row.Id, e)">
+                                            <option value="">-- None --</option>
+                                            @foreach (var type in _plantTypes.Where(t => t.IsActive || t.Id == row.PlantTypeId))
+                                            {
+                                                <option value="@type.Id">@type.Name</option>
+                                            }
+                                        </select>
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        @(row.PlantTypeName ?? "-")
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            </td>
+                            <td style="max-width: 260px">
+                                <AuthorizeView Roles="Admin" Context="descEditContext">
+                                    <Authorized>
+                                        <input class="form-control" value="@row.Description"
+                                               @onchange="e => OnDescriptionChanged(row.Id, e)" />
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        @(row.Description ?? "-")
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            </td>
+                            <td>
+                                <AuthorizeView Roles="Admin" Context="activeEditContext">
+                                    <Authorized>
+                                        <div class="form-check">
+                                            <input type="checkbox" class="form-check-input" checked="@row.IsActive"
+                                                   @onchange="e => OnActiveChanged(row.Id, e)" />
+                                        </div>
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        <span class="status-pill @(row.IsActive ? "success" : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span>
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            </td>
+                            <td class="table-actions">
+                                <AuthorizeView Roles="Admin" Context="rowDeleteContext">
+                                    <button class="btn btn-sm btn-outline-danger" title="@($"Delete {row.Name}")" aria-label="@($"Delete {row.Name}")" @onclick="() => ShowDeleteConfirm(row)">
+                                        <i class="bi bi-trash" aria-hidden="true"></i>
+                                    </button>
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<PlantDto>? _rows;
+    private IReadOnlyList<PlantTypeDto> _plantTypes = [];
+    private bool _saving;
+    private string? _saveError;
+    private string? _savedMessage;
+
+    private bool _showCreateForm;
+    private CreateFormModel _createForm = new();
+    private string? _createError;
+
+    private PlantDto? _deleteTarget;
+    private string? _deleteError;
+    private bool _deleting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _plantTypes = await Mediator.Send(new GetPlantTypesQuery());
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var result = await Mediator.Send(new GetPlantsQuery());
+        _rows = result.OrderBy(r => r.Name).ToList();
+    }
+
+    private void OnCodeChanged(int id, ChangeEventArgs e) => Update(id, r => r with { Code = e.Value?.ToString() ?? r.Code });
+
+    private void OnNameChanged(int id, ChangeEventArgs e) => Update(id, r => r with { Name = e.Value?.ToString() ?? r.Name });
+
+    private void OnDescriptionChanged(int id, ChangeEventArgs e) => Update(id, r => r with { Description = e.Value?.ToString() });
+
+    private void OnPlantTypeChanged(int id, ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        var typeId = int.TryParse(raw, out var parsed) ? parsed : (int?)null;
+        var type = _plantTypes.FirstOrDefault(t => t.Id == typeId);
+        Update(id, r => r with { PlantTypeId = typeId, PlantTypeCode = type?.Code, PlantTypeName = type?.Name });
+    }
+
+    private void OnActiveChanged(int id, ChangeEventArgs e)
+    {
+        var isActive = e.Value is bool b && b;
+        Update(id, r => r with { IsActive = isActive });
+    }
+
+    private void Update(int id, Func<PlantDto, PlantDto> apply)
+    {
+        if (_rows is null)
+        {
+            return;
+        }
+
+        var index = _rows.FindIndex(r => r.Id == id);
+        if (index >= 0)
+        {
+            _rows[index] = apply(_rows[index]);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_rows is null)
+        {
+            return;
+        }
+
+        _saving = true;
+        _saveError = null;
+        _savedMessage = null;
+        try
+        {
+            var assignments = _rows
+                .Select(r => new PlantAssignment(r.Id, r.Code, r.Name, r.PlantTypeId, r.Description, r.IsActive))
+                .ToList();
+            await Mediator.Send(new UpdatePlantsCommand(assignments));
+            _savedMessage = "Plants saved.";
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save plants");
+            _saveError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void ShowCreateForm()
+    {
+        _createError = null;
+        _createForm = new CreateFormModel();
+        _showCreateForm = true;
+    }
+
+    private void CloseCreateForm()
+    {
+        _showCreateForm = false;
+        _createError = null;
+    }
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            await Mediator.Send(new CreatePlantCommand(_createForm.Code, _createForm.Name, _createForm.PlantTypeId, _createForm.Description));
+            _showCreateForm = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to create plant");
+            _createError = ex.Message;
+        }
+    }
+
+    private void ShowDeleteConfirm(PlantDto row)
+    {
+        _deleteTarget = row;
+        _deleteError = null;
+    }
+
+    private void CancelDelete()
+    {
+        _deleteTarget = null;
+        _deleteError = null;
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_deleteTarget is null)
+        {
+            return;
+        }
+
+        _deleting = true;
+        _deleteError = null;
+        try
+        {
+            await Mediator.Send(new DeletePlantCommand(_deleteTarget.Id));
+            _deleteTarget = null;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to delete plant");
+            _deleteError = ex.Message;
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
+
+    private class CreateFormModel
+    {
+        public string Code { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public int? PlantTypeId { get; set; }
+        public string? Description { get; set; }
+    }
+}

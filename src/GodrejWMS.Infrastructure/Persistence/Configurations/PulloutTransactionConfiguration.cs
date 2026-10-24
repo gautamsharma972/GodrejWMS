@@ -57,6 +57,7 @@ public class PulloutPickConfiguration : IEntityTypeConfiguration<PulloutPick>
         builder.ToTable("PulloutPicks");
 
         builder.Property(p => p.QuantityBoxes).HasPrecision(14, 3);
+        builder.Property(p => p.OverrideReason).HasMaxLength(250);
 
         builder.HasOne(p => p.PalletPosition)
             .WithMany()

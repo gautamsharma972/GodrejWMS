@@ -12,9 +12,9 @@ public class MovementReportsTests
         var db = TestDbContextFactory.Create();
 
         var rack = new Rack { Code = "A", Columns = 3, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
-        var posA = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", CapacityBoxes = 40 };
-        var posB = new PalletPosition { Column = 2, Level = 1, LocationCode = "A-02-01", CapacityBoxes = 40 };
-        var posC = new PalletPosition { Column = 3, Level = 1, LocationCode = "A-03-01", CapacityBoxes = 40 };
+        var posA = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 1 };
+        var posB = new PalletPosition { Column = 2, Level = 1, LocationCode = "A-02-01", MaxPallets = 1 };
+        var posC = new PalletPosition { Column = 3, Level = 1, LocationCode = "A-03-01", MaxPallets = 1 };
         rack.PalletPositions.Add(posA);
         rack.PalletPositions.Add(posB);
         rack.PalletPositions.Add(posC);

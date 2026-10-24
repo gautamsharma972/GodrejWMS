@@ -30,6 +30,9 @@ public sealed class GetStockMasterHandler(IApplicationDbContext db)
             .Where(b => b.QuantityBoxes > 0)
             .Select(b => new
             {
+                StockBatchId = b.Id,
+                b.MaterialId,
+                b.PalletPositionId,
                 b.Material.MaterialNumber,
                 b.Material.Description,
                 b.Material.DesignType,
@@ -42,6 +45,7 @@ public sealed class GetStockMasterHandler(IApplicationDbContext db)
                 b.Material.IsActive,
                 b.QuantityBoxes,
                 b.MfgMonth,
+                StockSubtypeName = b.StockSubtype.DisplayName,
                 b.PalletPosition.LocationCode,
                 RackCode = b.PalletPosition.Rack.Code
             });
@@ -112,7 +116,8 @@ public sealed class GetStockMasterHandler(IApplicationDbContext db)
         var items = page
             .Select(b => new StockMasterRowDto(
                 b.MaterialNumber, b.Description, b.DesignType, b.QuantityBoxes,
-                MfgMonthParser.Format(b.MfgMonth), b.LocationCode, b.MovementTypeCode, b.MovementTypeName, b.SeasonCode, b.SeasonName, b.IsActive))
+                MfgMonthParser.Format(b.MfgMonth), b.LocationCode, b.MovementTypeCode, b.MovementTypeName, b.SeasonCode, b.SeasonName, b.IsActive,
+                b.StockBatchId, b.MaterialId, b.PalletPositionId, b.MfgMonth, b.StockSubtypeName))
             .ToList();
 
         return new PaginatedList<StockMasterRowDto>(items, totalCount, request.PageNumber, request.PageSize);

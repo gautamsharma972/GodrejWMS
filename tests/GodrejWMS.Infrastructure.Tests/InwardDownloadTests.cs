@@ -12,7 +12,7 @@ public class InwardDownloadTests
         7, "GRN-1", new DateTimeOffset(2026, 9, 25, 0, 0, 0, TimeSpan.Zero),
         [
             new InwardDetailLineDto(40034354, "HIT CIK", "XOLDH", "SEP|2026", 70, 70, AllocationStatus.Fulfilled, null,
-                [new InwardPutawayDto("A-01-01", 40, true), new InwardPutawayDto("A-01-02", 30, false)]),
+                [new InwardPutawayDto("A-01-01", 40, true, Id: 11), new InwardPutawayDto("A-01-02", 30, false, Id: 12)]),
             new InwardDetailLineDto(40058047, "HIT CIK 400", "XOLDH", "SEP|2026", 20, 0, AllocationStatus.Failed, "Warehouse at capacity", [])
         ],
         IsConfirmed: false, IsRejected: isRejected);
@@ -52,6 +52,7 @@ public class InwardDownloadTests
 
         Assert.Equal("GRN Reference", sheet.Cell("A1").GetString());
         Assert.Equal("Put-away Status", sheet.Cell("J1").GetString());
+        Assert.Equal("Put-away ID", sheet.Cell("K1").GetString());
         Assert.Equal("GRN-1", sheet.Cell("A2").GetString());
         Assert.Equal(40034354, sheet.Cell("B2").GetValue<long>());
         Assert.Equal("SEP|2026", sheet.Cell("D2").GetString());
@@ -59,6 +60,31 @@ public class InwardDownloadTests
         Assert.Equal("A-01-01", sheet.Cell("H2").GetString());
         Assert.Equal(40m, sheet.Cell("I2").GetValue<decimal>());
         Assert.Equal("Confirmed", sheet.Cell("J2").GetString());
+        Assert.Equal(11, sheet.Cell("K2").GetValue<int>());
+        Assert.True(sheet.Column(11).IsHidden);
         Assert.Equal(4, sheet.LastRowUsed()!.RowNumber());
+    }
+
+    [Fact]
+    public void ReadInwardPutawayReassignment_RoundTripsDownloadAndReadsEditedLocation()
+    {
+        var service = new ClosedXmlExcelService();
+        var bytes = service.WriteInwardDownload(InwardDownloadMapper.FromDetail(Detail()));
+        using var editable = new MemoryStream();
+        using (var source = new MemoryStream(bytes))
+        using (var workbook = new ClosedXML.Excel.XLWorkbook(source))
+        {
+            workbook.Worksheet("Inward Download").Cell("H3").Value = "B-07-05";
+            workbook.SaveAs(editable);
+        }
+        editable.Position = 0;
+
+        var rows = service.ReadInwardPutawayReassignment(editable);
+
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(11, rows[0].PutawayId);
+        Assert.Equal(12, rows[1].PutawayId);
+        Assert.Equal("B-07-05", rows[1].LocationCode);
+        Assert.Null(rows[2].PutawayId);
     }
 }

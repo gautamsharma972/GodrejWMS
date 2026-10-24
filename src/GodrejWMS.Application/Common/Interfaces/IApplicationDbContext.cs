@@ -20,6 +20,8 @@ public interface IApplicationDbContext
 
     DbSet<LocationSubtype> LocationSubtypes { get; }
     DbSet<SkuMovementType> SkuMovementTypes { get; }
+    DbSet<PlantType> PlantTypes { get; }
+    DbSet<Plant> Plants { get; }
     DbSet<ZoneType> ZoneTypes { get; }
     DbSet<LocationType> LocationTypes { get; }
     DbSet<Season> Seasons { get; }
@@ -47,6 +49,10 @@ public interface IApplicationDbContext
     DbSet<MovementReason> MovementReasons { get; }
 
     DbSet<StockMovement> StockMovements { get; }
+
+    DbSet<InventoryAdjustment> InventoryAdjustments { get; }
+
+    DbSet<InventoryAdjustmentLine> InventoryAdjustmentLines { get; }
 
     ChangeTracker ChangeTracker { get; }
 

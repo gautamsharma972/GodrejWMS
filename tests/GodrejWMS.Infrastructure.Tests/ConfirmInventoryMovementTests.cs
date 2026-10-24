@@ -18,8 +18,8 @@ public class ConfirmInventoryMovementTests
         var db = TestDbContextFactory.Create();
 
         var rack = new Rack { Code = "A", Columns = 2, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
-        var source = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", CapacityBoxes = 40 };
-        var destination = new PalletPosition { Column = 2, Level = 1, LocationCode = "A-05-01", CapacityBoxes = 40 };
+        var source = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 1 };
+        var destination = new PalletPosition { Column = 2, Level = 1, LocationCode = "A-05-01", MaxPallets = 1 };
         rack.PalletPositions.Add(source);
         rack.PalletPositions.Add(destination);
         db.Racks.Add(rack);

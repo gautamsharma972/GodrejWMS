@@ -8,11 +8,12 @@
        class="sidebar-state-control"
        type="checkbox"
        aria-label="Toggle sidebar"
-       @bind="sidebarCollapsed" />
+       checked="@sidebarCollapsed"
+       @onchange="OnSidebarChangedAsync" />
 
 <div class="page">
     <aside class="sidebar">
-        <NavMenu />
+        <NavMenu SidebarCollapsed="sidebarCollapsed" />
     </aside>
 
     <main class="workspace @(IsPutawayExecution ? "putaway-execution-workspace" : null) @(IsReportPage ? "report-workspace" : null)">
@@ -39,6 +40,7 @@
                     <div class="top-row-center">
                         <GlobalSearch />
                     </div>
+                    <IdleTimeoutWatcher />
                 </Authorized>
             </AuthorizeView>
 
@@ -59,6 +61,8 @@
                             <span class="live-dot"></span>
                             Live
                         </span>
+
+                        <NotificationCenter />
 
                         <div class="dropdown account-menu">
                             <button type="button"
@@ -128,34 +132,9 @@
 </div>
 
 @code {
-    private bool sidebarCollapsed;
+    private bool sidebarCollapsed = true;
     private string? currentUrl;
     private bool IsReportPage => (currentUrl ?? string.Empty).StartsWith("reports/", StringComparison.OrdinalIgnoreCase);
-
-    private static readonly HashSet<string> WideTableRoutes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "inventory-master",
-        "stock-master",
-        "locations",
-        "materials",
-        "racks",
-        "audit-trail",
-        "inward/history",
-        "pullout/history",
-        "inventory-movement/history",
-        "inventory-movement/by-location",
-        "inventory-movement/by-sku"
-    };
-
-    private bool IsWideTablePage
-    {
-        get
-        {
-            var path = CurrentPath;
-            return path.StartsWith("reports/", StringComparison.OrdinalIgnoreCase)
-                || WideTableRoutes.Contains(path);
-        }
-    }
 
     private string CurrentPath => (currentUrl ?? string.Empty).Split('?', '#')[0].Trim('/');
 
@@ -177,11 +156,10 @@
     protected override void OnInitialized()
     {
         currentUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
-        sidebarCollapsed = IsWideTablePage;
         NavigationManager.LocationChanged += OnLocationChanged;
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         // JS interop (localStorage) isn't available during static prerendering, so the initial
         // page's visit is only tracked once the interactive circuit actually connects here;
@@ -189,8 +167,20 @@
         // after that point.
         if (firstRender)
         {
+            var savedState = await JsRuntime.InvokeAsync<bool?>("godrejWms.getSidebarCollapsed");
+            if (savedState.HasValue && savedState.Value != sidebarCollapsed)
+            {
+                sidebarCollapsed = savedState.Value;
+                StateHasChanged();
+            }
             TrackVisit();
         }
+    }
+
+    private async Task OnSidebarChangedAsync(ChangeEventArgs args)
+    {
+        sidebarCollapsed = args.Value is bool isChecked && isChecked;
+        await JsRuntime.InvokeVoidAsync("godrejWms.setSidebarCollapsed", sidebarCollapsed);
     }
 
     private void TrackVisit()
@@ -204,7 +194,6 @@
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         currentUrl = NavigationManager.ToBaseRelativePath(e.Location);
-        sidebarCollapsed = IsWideTablePage;
         TrackVisit();
         StateHasChanged();
     }

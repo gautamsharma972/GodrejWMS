@@ -1,3 +1,6 @@
+using ClosedXML.Excel;
+using GodrejWMS.Application.Features.Pullout.Commands;
+using GodrejWMS.Application.Features.Pullout.Dtos;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
 using GodrejWMS.Infrastructure.Persistence;
@@ -8,6 +11,67 @@ namespace GodrejWMS.Infrastructure.Tests;
 
 public class PulloutAllocationServiceTests
 {
+    [Fact]
+    public async Task Preview_And_Download_Preserve_Different_Plants_For_The_Same_Material()
+    {
+        using var db = TestDbContextFactory.Create();
+        var rack = new Rack { Code = "A", Columns = 1, Levels = 1 };
+        var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 1 };
+        rack.PalletPositions.Add(position);
+        db.Racks.Add(rack);
+        var material = new Material
+        {
+            MaterialNumber = 40019311,
+            Description = "Test material",
+            DesignType = "X",
+            SeasonId = SeasonIds.Rainy
+        };
+        db.Materials.Add(material);
+        await db.SaveChangesAsync();
+        db.StockBatches.Add(new StockBatch
+        {
+            MaterialId = material.Id,
+            PalletPositionId = position.Id,
+            MfgMonth = 202609,
+            QuantityBoxes = 500
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new SubmitPulloutHandler(
+            db, new PulloutAllocationService(db), new PulloutClock(), new PulloutUser());
+        var preview = await handler.Handle(new SubmitPulloutCommand([
+            new SubmitPulloutLine(material.MaterialNumber, 300, "Bangalore"),
+            new SubmitPulloutLine(material.MaterialNumber, 200, "A-bad")
+        ]), default);
+
+        Assert.Collection(preview.Lines,
+            line =>
+            {
+                Assert.Equal("Bangalore", line.PlantName);
+                Assert.Equal(300, line.PickedQuantityBoxes);
+            },
+            line =>
+            {
+                Assert.Equal("A-bad", line.PlantName);
+                Assert.Equal(200, line.PickedQuantityBoxes);
+            });
+        Assert.Equal(500, preview.Lines.Sum(line => line.Picks.Sum(pick => pick.QuantityBoxes)));
+        Assert.Equal(500, db.StockBatches.Single().QuantityBoxes);
+
+        var downloadRows = preview.Lines.SelectMany(line => line.Picks.Select(pick => new PulloutDownloadRowDto(
+            line.MaterialNumber,
+            line.MaterialDescription,
+            pick.QuantityBoxes,
+            pick.MfgMonthLabel,
+            pick.LocationCode,
+            line.PlantName))).ToList();
+        var bytes = new ClosedXmlExcelService().WritePulloutDownload(downloadRows);
+        using var workbook = new XLWorkbook(new MemoryStream(bytes));
+        var sheet = workbook.Worksheet("Pullout Download");
+        Assert.Equal("Bangalore", sheet.Cell(2, 6).GetString());
+        Assert.Equal("A-bad", sheet.Cell(3, 6).GetString());
+    }
+
     [Fact]
     public async Task References_ContinueDailySequence_AndResetOnNextDate()
     {
@@ -36,7 +100,7 @@ public class PulloutAllocationServiceTests
     {
         using var db = TestDbContextFactory.Create();
         var rack = new Rack { Code = "A", Columns = 1, Levels = 1 };
-        var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", CapacityBoxes = 40 };
+        var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 1 };
         rack.PalletPositions.Add(position);
         db.Racks.Add(rack);
         var material = new Material { MaterialNumber = 123, Description = "Test", DesignType = "X", SeasonId = SeasonIds.Rainy };
@@ -94,9 +158,9 @@ public class PulloutAllocationServiceTests
         var db = TestDbContextFactory.Create();
 
         var rack = new Rack { Code = "A", Columns = 3, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
-        var pos1 = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", CapacityBoxes = 40 };
-        var pos2 = new PalletPosition { Column = 2, Level = 1, LocationCode = "A-02-01", CapacityBoxes = 40 };
-        var pos3 = new PalletPosition { Column = 3, Level = 1, LocationCode = "A-03-01", CapacityBoxes = 40 };
+        var pos1 = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 1 };
+        var pos2 = new PalletPosition { Column = 2, Level = 1, LocationCode = "A-02-01", MaxPallets = 1 };
+        var pos3 = new PalletPosition { Column = 3, Level = 1, LocationCode = "A-03-01", MaxPallets = 1 };
         rack.PalletPositions.Add(pos1);
         rack.PalletPositions.Add(pos2);
         rack.PalletPositions.Add(pos3);
@@ -152,7 +216,7 @@ public class PulloutAllocationServiceTests
         var db = TestDbContextFactory.Create();
 
         var rack = new Rack { Code = "A", Columns = 1, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
-        var pos = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", CapacityBoxes = 40 };
+        var pos = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 1 };
         rack.PalletPositions.Add(pos);
         db.Racks.Add(rack);
 
@@ -220,7 +284,7 @@ public class PulloutAllocationServiceTests
             {
                 var code = $"A-{column:00}-{level:00}";
                 // Level-major distance priority, exactly as real racks are generated: this must NOT drive pick order.
-                var position = new PalletPosition { Column = column, Level = level, LocationCode = code, CapacityBoxes = 40, DistancePriority = ((level - 1) * 10) + column };
+                var position = new PalletPosition { Column = column, Level = level, LocationCode = code, MaxPallets = 1, DistancePriority = ((level - 1) * 10) + column };
                 rack.PalletPositions.Add(position);
                 positions[code] = position;
             }

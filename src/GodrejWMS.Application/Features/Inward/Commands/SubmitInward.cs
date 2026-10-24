@@ -25,6 +25,7 @@ public sealed class SubmitInwardValidator : AbstractValidator<SubmitInwardComman
         {
             line.RuleFor(l => l.MaterialCode).GreaterThan(0);
             line.RuleFor(l => l.QuantityBoxes).GreaterThan(0);
+            line.RuleFor(l => l.QuantityBoxes).Must(decimal.IsInteger).WithMessage("Quantity must be a whole number (no decimals).");
             line.RuleFor(l => l.MfgMonthText)
                 .Must(text => MfgMonthParser.TryParse(text, out _))
                 .WithMessage("Mfg Month must look like 'MAR|2010'.");

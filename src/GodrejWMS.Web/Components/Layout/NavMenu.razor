@@ -1,5 +1,7 @@
 @inject NavigationManager NavManager
+@inject IJSRuntime JsRuntime
 @using System.Security.Claims
+@implements IDisposable
 
 <div class="brand-panel" data-tour="brand">
     <a class="navbar-brand" href="" aria-label="Godrej WMS" data-bs-title="Godrej WMS" data-bs-toggle="tooltip" data-bs-placement="right">
@@ -29,6 +31,11 @@
                     </NavLink>
                 </div>
                 <div class="nav-item">
+                    <NavLink class="nav-link" href="inventory-adjustments" aria-label="Inventory Adjustments" data-bs-title="Inventory Adjustments" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-clipboard-check" aria-hidden="true"></i> <span class="nav-link-text">Inventory Adjustments</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
                     <NavLink class="nav-link" href="racks" aria-label="Racks & Pallets" data-tour="nav-racks"data-bs-title="Racks & Pallets" data-bs-toggle="tooltip" data-bs-placement="right">
                         <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> <span class="nav-link-text">Racks &amp; Pallets</span>
                     </NavLink>
@@ -48,6 +55,16 @@
                 <div class="nav-item">
                     <NavLink class="nav-link" href="design-types" aria-label="Design Types" data-tour="nav-master-data"data-bs-title="Design Types" data-bs-toggle="tooltip" data-bs-placement="right">
                         <i class="bi bi-tags" aria-hidden="true"></i> <span class="nav-link-text">Design Types</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="plants" aria-label="Plant Master" data-bs-title="Plant Master" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-building" aria-hidden="true"></i> <span class="nav-link-text">Plant Master</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="plant-types" aria-label="Plant Types" data-bs-title="Plant Types" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-signpost-split" aria-hidden="true"></i> <span class="nav-link-text">Plant Types</span>
                     </NavLink>
                 </div>
                 <div class="nav-item">
@@ -95,97 +112,120 @@
                 <AuthorizeView Roles="Admin,Operator,Supervisor" Context="inwardContext">
                     <div class="nav-item nav-group">
                         <button type="button"
+                                @ref="_inwardButton"
                                 class="nav-link nav-parent @(IsInwardSection() ? "active" : string.Empty)"
                                 aria-label="Inward" data-tour="nav-inward" data-bs-title="Inward"
                                 data-bs-toggle="tooltip"
                                 data-bs-placement="right"
-                                aria-expanded="@IsInwardMenuOpen"
-                                @onclick="ToggleInwardMenu"
+                                aria-expanded="@(SidebarCollapsed ? IsCollapsedFlyoutOpen("inward") : IsInwardMenuOpen)"
+                                @onclick="ToggleInwardMenuAsync"
                                 @onclick:stopPropagation="true">
                             <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
                             <span class="nav-link-text">Inward</span>
                             <i class="bi bi-chevron-down nav-chevron @(IsInwardMenuOpen ? "expanded" : string.Empty)" aria-hidden="true"></i>
                         </button>
                     </div>
-                    <div class="nav-submenu @(IsInwardMenuOpen ? "expanded" : null)">
-                        <div class="nav-item nav-subitem">
-                            <NavLink class="nav-link" href="inward" Match="NavLinkMatch.All" aria-label="Inward Entry" data-bs-title="Inward Entry" data-bs-toggle="tooltip" data-bs-placement="right">
-                                <i class="bi bi-pencil-square" aria-hidden="true"></i> <span class="nav-link-text">Entry</span>
-                            </NavLink>
+                    @if (!SidebarCollapsed)
+                    {
+                        <div class="nav-submenu @(IsInwardMenuOpen ? "expanded" : null)">
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="inward" Match="NavLinkMatch.All"><i class="bi bi-pencil-square" aria-hidden="true"></i> <span class="nav-link-text">Entry</span></NavLink>
+                            </div>
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="inward/history"><i class="bi bi-clock-history" aria-hidden="true"></i> <span class="nav-link-text">History</span></NavLink>
+                            </div>
                         </div>
-                        <div class="nav-item nav-subitem">
-                            <NavLink class="nav-link" href="inward/history" aria-label="Inward History" data-bs-title="Inward History" data-bs-toggle="tooltip" data-bs-placement="right">
-                                <i class="bi bi-clock-history" aria-hidden="true"></i> <span class="nav-link-text">History</span>
-                            </NavLink>
+                    }
+                    @if (SidebarCollapsed && IsCollapsedFlyoutOpen("inward"))
+                    {
+                        <div class="collapsed-nav-flyout" style="top: @(_collapsedFlyoutTop)px">
+                            <div class="collapsed-nav-flyout-title">Inward</div>
+                            <NavLink class="collapsed-nav-flyout-link" href="inward" Match="NavLinkMatch.All" @onclick="CloseCollapsedFlyout"><i class="bi bi-pencil-square"></i><span>Entry</span></NavLink>
+                            <NavLink class="collapsed-nav-flyout-link" href="inward/history" @onclick="CloseCollapsedFlyout"><i class="bi bi-clock-history"></i><span>History</span></NavLink>
                         </div>
-                    </div>
+                    }
                 </AuthorizeView>
 
                 <AuthorizeView Roles="Admin,Operator,Supervisor" Context="pulloutContext">
                     <div class="nav-item nav-group">
                         <button type="button"
+                                @ref="_pulloutButton"
                                 class="nav-link nav-parent @(IsPulloutSection() ? "active" : string.Empty)"
                                 aria-label="Pullout"
                                 data-tour="nav-pullout"
                                 data-bs-title="Pullout"
                                 data-bs-toggle="tooltip"
                                 data-bs-placement="right"
-                                aria-expanded="@IsPulloutMenuOpen"
-                                @onclick="TogglePulloutMenu"
+                                aria-expanded="@(SidebarCollapsed ? IsCollapsedFlyoutOpen("pullout") : IsPulloutMenuOpen)"
+                                @onclick="TogglePulloutMenuAsync"
                                 @onclick:stopPropagation="true">
                             <i class="bi bi-box-arrow-up" aria-hidden="true"></i>
                             <span class="nav-link-text">Pullout</span>
                             <i class="bi bi-chevron-down nav-chevron @(IsPulloutMenuOpen ? "expanded" : string.Empty)" aria-hidden="true"></i>
                         </button>
                     </div>
-                    <div class="nav-submenu @(IsPulloutMenuOpen ? "expanded" : null)">
-                        <div class="nav-item nav-subitem">
-                            <NavLink class="nav-link" href="pullout" Match="NavLinkMatch.All" aria-label="Pullout Entry" data-bs-title="Pullout Entry" data-bs-toggle="tooltip" data-bs-placement="right">
-                                <i class="bi bi-pencil-square" aria-hidden="true"></i> <span class="nav-link-text">Entry</span>
-                            </NavLink>
+                    @if (!SidebarCollapsed)
+                    {
+                        <div class="nav-submenu @(IsPulloutMenuOpen ? "expanded" : null)">
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="pullout" Match="NavLinkMatch.All"><i class="bi bi-pencil-square" aria-hidden="true"></i> <span class="nav-link-text">Entry</span></NavLink>
+                            </div>
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="pullout/history"><i class="bi bi-clock-history" aria-hidden="true"></i> <span class="nav-link-text">History</span></NavLink>
+                            </div>
                         </div>
-                        <div class="nav-item nav-subitem">
-                            <NavLink class="nav-link" href="pullout/history" aria-label="Pullout History" data-bs-title="Pullout History" data-bs-toggle="tooltip" data-bs-placement="right">
-                                <i class="bi bi-clock-history" aria-hidden="true"></i> <span class="nav-link-text">History</span>
-                            </NavLink>
+                    }
+                    @if (SidebarCollapsed && IsCollapsedFlyoutOpen("pullout"))
+                    {
+                        <div class="collapsed-nav-flyout" style="top: @(_collapsedFlyoutTop)px">
+                            <div class="collapsed-nav-flyout-title">Pullout</div>
+                            <NavLink class="collapsed-nav-flyout-link" href="pullout" Match="NavLinkMatch.All" @onclick="CloseCollapsedFlyout"><i class="bi bi-pencil-square"></i><span>Entry</span></NavLink>
+                            <NavLink class="collapsed-nav-flyout-link" href="pullout/history" @onclick="CloseCollapsedFlyout"><i class="bi bi-clock-history"></i><span>History</span></NavLink>
                         </div>
-                    </div>
+                    }
                 </AuthorizeView>
 
                 <AuthorizeView Roles="Admin,Operator,Supervisor" Context="movementContext">
                     <div class="nav-item nav-group">
                         <button type="button"
+                                @ref="_movementButton"
                                 class="nav-link nav-parent @(IsInventoryMovementSection() ? "active" : string.Empty)"
                                 aria-label="Inventory Movement"
                                 data-tour="nav-movement"
                                 data-bs-title="Inventory Movement"
                                 data-bs-toggle="tooltip"
                                 data-bs-placement="right"
-                                aria-expanded="@IsInventoryMovementMenuOpen"
-                                @onclick="ToggleInventoryMovementMenu"
+                                aria-expanded="@(SidebarCollapsed ? IsCollapsedFlyoutOpen("movement") : IsInventoryMovementMenuOpen)"
+                                @onclick="ToggleInventoryMovementMenuAsync"
                                 @onclick:stopPropagation="true">
                             <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
                             <span class="nav-link-text">Inventory Movement</span>
                             <i class="bi bi-chevron-down nav-chevron @(IsInventoryMovementMenuOpen ? "expanded" : string.Empty)" aria-hidden="true"></i>
                         </button>
                     </div>
-                    <div class="nav-submenu @(IsInventoryMovementMenuOpen ? "expanded" : null)">
-                        <div class="nav-item nav-subitem">
-                            <NavLink class="nav-link" href="inventory-movement/by-location" aria-label="Move by Location" data-bs-title="Move by Location" data-bs-toggle="tooltip" data-bs-placement="right">
-                                <i class="bi bi-geo-alt" aria-hidden="true"></i> <span class="nav-link-text">Move by Location</span>
-                            </NavLink>
+                    @if (!SidebarCollapsed)
+                    {
+                        <div class="nav-submenu @(IsInventoryMovementMenuOpen ? "expanded" : null)">
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="inventory-movement/by-location"><i class="bi bi-geo-alt" aria-hidden="true"></i> <span class="nav-link-text">Move by Location</span></NavLink>
+                            </div>
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="inventory-movement/by-sku"><i class="bi bi-upc-scan" aria-hidden="true"></i> <span class="nav-link-text">Move by SKU</span></NavLink>
+                            </div>
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="inventory-movement/history"><i class="bi bi-clock-history" aria-hidden="true"></i> <span class="nav-link-text">History</span></NavLink>
+                            </div>
                         </div>
-                        <div class="nav-item nav-subitem">
-                            <NavLink class="nav-link" href="inventory-movement/by-sku" aria-label="Move by SKU" data-bs-title="Move by SKU" data-bs-toggle="tooltip" data-bs-placement="right">
-                                <i class="bi bi-upc-scan" aria-hidden="true"></i> <span class="nav-link-text">Move by SKU</span>
-                            </NavLink>
+                    }
+                    @if (SidebarCollapsed && IsCollapsedFlyoutOpen("movement"))
+                    {
+                        <div class="collapsed-nav-flyout" style="top: @(_collapsedFlyoutTop)px">
+                            <div class="collapsed-nav-flyout-title">Inventory Movement</div>
+                            <NavLink class="collapsed-nav-flyout-link" href="inventory-movement/by-location" @onclick="CloseCollapsedFlyout"><i class="bi bi-geo-alt"></i><span>Move by Location</span></NavLink>
+                            <NavLink class="collapsed-nav-flyout-link" href="inventory-movement/by-sku" @onclick="CloseCollapsedFlyout"><i class="bi bi-upc-scan"></i><span>Move by SKU</span></NavLink>
+                            <NavLink class="collapsed-nav-flyout-link" href="inventory-movement/history" @onclick="CloseCollapsedFlyout"><i class="bi bi-clock-history"></i><span>History</span></NavLink>
                         </div>
-                        <div class="nav-item nav-subitem">
-                            <NavLink class="nav-link" href="inventory-movement/history" aria-label="Movement History" data-bs-title="Movement History" data-bs-toggle="tooltip" data-bs-placement="right">
-                                <i class="bi bi-clock-history" aria-hidden="true"></i> <span class="nav-link-text">History</span>
-                            </NavLink>
-                        </div>
-                    </div>
+                    }
                 </AuthorizeView>
 
                 <AuthorizeView Roles="Admin,Supervisor,Operator" Context="reportsLabelContext">
@@ -264,9 +304,27 @@
 </AuthorizeView>
 
 @code {
+    [Parameter] public bool SidebarCollapsed { get; set; }
+
     private bool? _inwardMenuExpanded;
     private bool? _pulloutMenuExpanded;
     private bool? _inventoryMovementMenuExpanded;
+    private string? _collapsedFlyout;
+    private double _collapsedFlyoutTop = 88;
+    private ElementReference _inwardButton;
+    private ElementReference _pulloutButton;
+    private ElementReference _movementButton;
+
+    protected override void OnInitialized()
+    {
+        NavManager.LocationChanged += OnLocationChanged;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!SidebarCollapsed)
+            _collapsedFlyout = null;
+    }
 
     private string CurrentRelativeUrl => NavManager.ToBaseRelativePath(NavManager.Uri);
 
@@ -282,11 +340,46 @@
 
     private bool IsInventoryMovementMenuOpen => _inventoryMovementMenuExpanded ?? IsInventoryMovementSection();
 
-    private void ToggleInwardMenu() => _inwardMenuExpanded = !IsInwardMenuOpen;
+    private Task ToggleInwardMenuAsync() => ToggleMenuAsync("inward", _inwardButton,
+        () => _inwardMenuExpanded = !IsInwardMenuOpen);
 
-    private void TogglePulloutMenu() => _pulloutMenuExpanded = !IsPulloutMenuOpen;
+    private Task TogglePulloutMenuAsync() => ToggleMenuAsync("pullout", _pulloutButton,
+        () => _pulloutMenuExpanded = !IsPulloutMenuOpen);
 
-    private void ToggleInventoryMovementMenu() => _inventoryMovementMenuExpanded = !IsInventoryMovementMenuOpen;
+    private Task ToggleInventoryMovementMenuAsync() => ToggleMenuAsync("movement", _movementButton,
+        () => _inventoryMovementMenuExpanded = !IsInventoryMovementMenuOpen);
+
+    private async Task ToggleMenuAsync(string menu, ElementReference button, Action toggleExpanded)
+    {
+        if (!SidebarCollapsed)
+        {
+            toggleExpanded();
+            return;
+        }
+
+        if (IsCollapsedFlyoutOpen(menu))
+        {
+            _collapsedFlyout = null;
+            return;
+        }
+
+        _collapsedFlyoutTop = await JsRuntime.InvokeAsync<double>("godrejWms.getCollapsedNavFlyoutTop", button);
+        _collapsedFlyout = menu;
+    }
+
+    private bool IsCollapsedFlyoutOpen(string menu) =>
+        string.Equals(_collapsedFlyout, menu, StringComparison.Ordinal);
+
+    private void CloseCollapsedFlyout() => _collapsedFlyout = null;
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        _collapsedFlyout = null;
+        _inwardMenuExpanded = null;
+        _pulloutMenuExpanded = null;
+        _inventoryMovementMenuExpanded = null;
+        _ = InvokeAsync(StateHasChanged);
+    }
 
     private bool IsInwardSection()
     {
@@ -306,5 +399,10 @@
     {
         var path = NavManager.ToBaseRelativePath(NavManager.Uri).Trim('/');
         return path.StartsWith("inventory-movement", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public void Dispose()
+    {
+        NavManager.LocationChanged -= OnLocationChanged;
     }
 }

@@ -28,14 +28,14 @@ public class PalletAllocationServiceTests
             Column = 1,
             Level = 1,
             LocationCode = "A-01-01",
-            CapacityBoxes = capacityBoxes
+            MaxPallets = 1
         });
         rack.PalletPositions.Add(new PalletPosition
         {
             Column = 2,
             Level = 1,
             LocationCode = "A-02-01",
-            CapacityBoxes = capacityBoxes
+            MaxPallets = 1
         });
         db.Racks.Add(rack);
 
@@ -104,7 +104,7 @@ public class PalletAllocationServiceTests
                 Column = 1,
                 Level = level,
                 LocationCode = $"{code}-01-{level:00}",
-                CapacityBoxes = capacityBoxes
+                MaxPallets = 1
             });
         }
 
@@ -197,6 +197,10 @@ public class PalletAllocationServiceTests
     {
         var (db, material, _) = SeedWarehouse(capacityBoxes: 80);
         material.PalletCapacityBoxes = 20;
+        foreach (var position in db.PalletPositions)
+        {
+            position.MaxPallets = 2;
+        }
         await db.SaveChangesAsync();
 
         var sut = new PalletAllocationService(db, new TestClock());
@@ -747,7 +751,7 @@ public class PalletAllocationServiceTests
                     Column = column,
                     Level = level,
                     LocationCode = $"{code}-{column:00}-{level:00}",
-                    CapacityBoxes = capacityBoxes
+                    MaxPallets = 1
                 });
             }
         }

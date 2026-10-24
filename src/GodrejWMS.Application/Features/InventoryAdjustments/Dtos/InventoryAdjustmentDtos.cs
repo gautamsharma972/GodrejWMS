@@ -1,0 +1,45 @@
+using GodrejWMS.Domain.Enums;
+
+namespace GodrejWMS.Application.Features.InventoryAdjustments.Dtos;
+
+public sealed record InventoryAdjustmentListDto(
+    int Id,
+    string AdjustmentNumber,
+    DateTimeOffset RequestedAt,
+    InventoryAdjustmentStatus Status,
+    long MaterialNumber,
+    string MaterialDescription,
+    string LocationCode,
+    string MfgMonthLabel,
+    decimal SystemQuantity,
+    decimal CountedQuantity,
+    decimal VarianceQuantity,
+    string ReasonCode,
+    string? ReasonText,
+    string? RequestedByUserId,
+    string? RequestedByUserName,
+    string? ReviewedByUserName,
+    DateTimeOffset? ReviewedAt);
+
+public sealed record InventoryAdjustmentDetailDto(
+    int Id,
+    string AdjustmentNumber,
+    DateTimeOffset RequestedAt,
+    InventoryAdjustmentStatus Status,
+    long MaterialNumber,
+    string MaterialDescription,
+    string LocationCode,
+    string MfgMonthLabel,
+    string StockSubtypeName,
+    decimal SystemQuantity,
+    decimal CountedQuantity,
+    decimal VarianceQuantity,
+    string ReasonCode,
+    string? ReasonText,
+    string? RequestedByUserId,
+    string? RequestedByUserName,
+    string? ReviewedByUserName,
+    DateTimeOffset? ReviewedAt,
+    string? ReviewComment,
+    decimal? ActualQuantityBeforePosting,
+    decimal? ActualQuantityAfterPosting);

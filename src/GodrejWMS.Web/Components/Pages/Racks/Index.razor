@@ -57,16 +57,28 @@
                                 @FieldError(nameof(RackFormModel.Code))
                             </div>
                             <div class="col-md-8">
-                                <label class="form-label">Name</label>
-                                <InputText class="form-control" @bind-Value="_form.Name" />
+                                <label class="form-label">Name <span class="required-indicator" aria-hidden="true">*</span></label>
+                                <input class="@FieldClass(nameof(RackFormModel.Name), "form-control")"
+                                       aria-invalid="@HasFieldError(nameof(RackFormModel.Name))"
+                                       @bind="_form.Name" @bind:event="oninput"
+                                       @bind:after="() => ClearFieldError(nameof(RackFormModel.Name))" />
+                                @FieldError(nameof(RackFormModel.Name))
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Columns <span class="required-indicator" aria-hidden="true">*</span></label>
-                                <input type="number" class="@FieldClass(nameof(RackFormModel.Columns), "form-control")"
-                                       aria-invalid="@HasFieldError(nameof(RackFormModel.Columns))"
-                                       @bind="_form.Columns" @bind:event="oninput"
-                                       @bind:after="() => ClearFieldError(nameof(RackFormModel.Columns))" />
-                                @FieldError(nameof(RackFormModel.Columns))
+                                <label class="form-label">From Column <span class="required-indicator" aria-hidden="true">*</span></label>
+                                <input type="number" class="@FieldClass(nameof(RackFormModel.FromColumn), "form-control")"
+                                       aria-invalid="@HasFieldError(nameof(RackFormModel.FromColumn))"
+                                       @bind="_form.FromColumn" @bind:event="oninput"
+                                       @bind:after="() => ClearFieldError(nameof(RackFormModel.FromColumn))" />
+                                @FieldError(nameof(RackFormModel.FromColumn))
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">To Column <span class="required-indicator" aria-hidden="true">*</span></label>
+                                <input type="number" class="@FieldClass(nameof(RackFormModel.ToColumn), "form-control")"
+                                       aria-invalid="@HasFieldError(nameof(RackFormModel.ToColumn))"
+                                       @bind="_form.ToColumn" @bind:event="oninput"
+                                       @bind:after="() => ClearFieldError(nameof(RackFormModel.ToColumn))" />
+                                @FieldError(nameof(RackFormModel.ToColumn))
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Levels <span class="required-indicator" aria-hidden="true">*</span></label>
@@ -258,7 +270,7 @@
                         <tr>
                             <td><span class="record-code">@r.Code</span></td>
                             <td>@r.Name</td>
-                            <td class="text-end">@r.Columns x @r.Levels</td>
+                            <td class="text-end">@r.FromColumn-@r.ToColumn x @r.Levels</td>
                             <td class="text-end">@r.TotalCapacityBoxes.ToString("N0") boxes</td>
                             <td class="text-end fw-semibold">@r.TotalPositions</td>
                             <td class="text-end">@r.OccupiedPositions</td>
@@ -346,8 +358,9 @@
         _form = new RackFormModel
         {
             Code = rack.Code,
-            Name = rack.Name,
-            Columns = rack.Columns,
+            Name = rack.Name ?? string.Empty,
+            FromColumn = rack.FromColumn,
+            ToColumn = rack.ToColumn,
             Levels = rack.Levels,
             ShelfLengthMm = rack.ShelfLengthMm,
             ShelfWidthMm = rack.ShelfWidthMm,
@@ -389,7 +402,7 @@
             {
                 await Mediator.Send(new UpdateRackCommand(
                     _editingRackId.Value,
-                    _form.Code, _form.Name, _form.Columns, _form.Levels,
+                    _form.Code, _form.Name, _form.FromColumn, _form.ToColumn, _form.Levels,
                     _form.ShelfLengthMm, _form.ShelfWidthMm, _form.ShelfHeightMm,
                     _form.LocationTypeId, _form.LocationSubtypeId, _form.ZoneTypeId,
                     _form.StartingDistancePriority, _form.MaxPallets));
@@ -397,7 +410,7 @@
             else
             {
                 await Mediator.Send(new CreateRackCommand(
-                    _form.Code, _form.Name, _form.Columns, _form.Levels,
+                    _form.Code, _form.Name, _form.FromColumn, _form.ToColumn, _form.Levels,
                     _form.ShelfLengthMm, _form.ShelfWidthMm, _form.ShelfHeightMm,
                     _form.LocationTypeId, _form.LocationSubtypeId, _form.ZoneTypeId,
                     _form.StartingDistancePriority, _form.MaxPallets));
@@ -426,7 +439,12 @@
 
         if (string.IsNullOrWhiteSpace(_form.Code)) AddFieldError(nameof(RackFormModel.Code), "Code is required.");
         else if (_form.Code.Trim().Length > 10) AddFieldError(nameof(RackFormModel.Code), "Code must be 10 characters or fewer.");
-        if (_form.Columns is < 1 or > 50) AddFieldError(nameof(RackFormModel.Columns), "Columns must be between 1 and 50.");
+        if (string.IsNullOrWhiteSpace(_form.Name)) AddFieldError(nameof(RackFormModel.Name), "Name is required.");
+        else if (_form.Name.Trim().Length > 100) AddFieldError(nameof(RackFormModel.Name), "Name must be 100 characters or fewer.");
+        if (_form.FromColumn < 1) AddFieldError(nameof(RackFormModel.FromColumn), "From Column must be 1 or greater.");
+        if (_form.ToColumn < 1) AddFieldError(nameof(RackFormModel.ToColumn), "To Column must be 1 or greater.");
+        else if (_form.ToColumn < _form.FromColumn) AddFieldError(nameof(RackFormModel.ToColumn), "To Column must be greater than or equal to From Column.");
+        else if (_form.ToColumn - _form.FromColumn + 1 > 50) AddFieldError(nameof(RackFormModel.ToColumn), "A rack segment can span at most 50 columns.");
         if (_form.Levels is < 1 or > 20) AddFieldError(nameof(RackFormModel.Levels), "Levels must be between 1 and 20.");
         if (_form.MaxPallets is < 1 or > 10) AddFieldError(nameof(RackFormModel.MaxPallets), "Max pallets must be between 1 and 10.");
         if (!_locationTypes.Any(x => x.Id == _form.LocationTypeId)) AddFieldError(nameof(RackFormModel.LocationTypeId), "Select a location type.");
@@ -498,8 +516,8 @@
             {
                 ("name", false) => query.OrderBy(r => r.Name),
                 ("name", true) => query.OrderByDescending(r => r.Name),
-                ("grid", false) => query.OrderBy(r => r.Columns * r.Levels),
-                ("grid", true) => query.OrderByDescending(r => r.Columns * r.Levels),
+                ("grid", false) => query.OrderBy(r => (r.ToColumn - r.FromColumn + 1) * r.Levels),
+                ("grid", true) => query.OrderByDescending(r => (r.ToColumn - r.FromColumn + 1) * r.Levels),
                 ("capacity", false) => query.OrderBy(r => r.TotalCapacityBoxes),
                 ("capacity", true) => query.OrderByDescending(r => r.TotalCapacityBoxes),
                 ("positions", false) => query.OrderBy(r => r.TotalPositions),
@@ -532,23 +550,25 @@
 
     private string DistancePriorityPreview()
     {
-        if (_form.Levels < 1 || _form.Columns < 1)
+        if (_form.Levels < 1 || _form.ToColumn < _form.FromColumn)
         {
             return "-";
         }
 
-        var rackCode = string.IsNullOrWhiteSpace(_form.Code) ? "A" : _form.Code.Trim().ToUpperInvariant();
+        var namePrefix = string.IsNullOrWhiteSpace(_form.Name) ? "A" : _form.Name.Trim();
         var levels = Math.Min(_form.Levels, 20);
-        var columns = Math.Min(_form.Columns, 50);
+        var fromColumn = Math.Max(_form.FromColumn, 1);
+        var toColumn = Math.Min(_form.ToColumn, fromColumn + 49);
+        var columnSpan = toColumn - fromColumn + 1;
 
         return string.Join(" · ", Enumerable.Range(1, levels)
             .Select(level =>
             {
-                var firstCode = PalletPosition.BuildLocationCode(rackCode, column: 1, level);
-                var lastCode = PalletPosition.BuildLocationCode(rackCode, column: columns, level);
+                var firstCode = PalletPosition.BuildLocationCode(namePrefix, fromColumn, level);
+                var lastCode = PalletPosition.BuildLocationCode(namePrefix, toColumn, level);
                 var firstPriority = (level - 1) * 10 + _form.StartingDistancePriority;
-                var lastPriority = (level - 1) * 10 + (_form.StartingDistancePriority + columns - 1);
-                return columns == 1
+                var lastPriority = (level - 1) * 10 + (_form.StartingDistancePriority + columnSpan - 1);
+                return columnSpan == 1
                     ? $"{firstCode}: {firstPriority}"
                     : $"{firstCode}: {firstPriority} … {lastCode}: {lastPriority}";
             }));
@@ -560,8 +580,9 @@
     private class RackFormModel
     {
         public string Code { get; set; } = string.Empty;
-        public string? Name { get; set; }
-        public int Columns { get; set; } = 5;
+        public string Name { get; set; } = string.Empty;
+        public int FromColumn { get; set; } = 1;
+        public int ToColumn { get; set; } = 5;
         public int Levels { get; set; } = 6;
         public decimal ShelfLengthMm { get; set; } = 2000;
         public decimal ShelfWidthMm { get; set; } = 2500;

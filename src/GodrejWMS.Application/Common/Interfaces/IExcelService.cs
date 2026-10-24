@@ -36,10 +36,11 @@ public interface IExcelService
     /// <summary>Parses an "inward" upload: Material Code, Total Stock in CFB(qty), Mfg Month.</summary>
     IReadOnlyList<InwardImportRow> ReadInwardUpload(Stream fileStream);
 
-    /// <summary>Writes a sample "Format inventory pullout-upload" workbook.</summary>
-    byte[] WritePulloutUploadTemplate();
+    /// <summary>Writes a sample "Format inventory pullout-upload" workbook. <paramref name="plantNames"/>
+    /// populates the Plant Name column's dropdown list - purely a convenience, never validated on import.</summary>
+    byte[] WritePulloutUploadTemplate(IReadOnlyList<string> plantNames);
 
-    /// <summary>Parses a "Format inventory pullout-upload": Material Code, Total Stock in CFB.</summary>
+    /// <summary>Parses a "Format inventory pullout-upload": Material Code, Total Stock in CFB, Plant Name.</summary>
     IReadOnlyList<PulloutImportRow> ReadPulloutUpload(Stream fileStream);
 
     /// <summary>Writes the "Format inventory master" / "Format invent pullout-download" layout.</summary>
@@ -55,12 +56,14 @@ public interface IExcelService
     IReadOnlyList<StockMasterImportRow> ReadStockMaster(Stream fileStream);
 
     /// <summary>Writes a pullout download workbook, mirroring "Format invent pullout-download".</summary>
-    byte[] WritePulloutDownload(IReadOnlyList<StockMasterRowDto> rows);
+    byte[] WritePulloutDownload(IReadOnlyList<PulloutDownloadRowDto> rows);
 
     /// <summary>Writes an inward (GRN) allocation workbook: one row per put-away location.</summary>
     byte[] WriteInwardDownload(IReadOnlyList<InwardDownloadRow> rows);
 
+    /// <summary>Reads a previously downloaded GRN allocation workbook after pallet locations were edited.</summary>
+    IReadOnlyList<InwardPutawayReassignmentImportRow> ReadInwardPutawayReassignment(Stream fileStream);
+
     byte[] WriteOperationalReport(string title, IReadOnlyList<(string Header, Func<ReportRow, string> Value)> columns,
         IReadOnlyList<ReportRow> rows);
 }
-

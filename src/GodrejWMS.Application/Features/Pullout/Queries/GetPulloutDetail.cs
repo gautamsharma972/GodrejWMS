@@ -30,7 +30,7 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
             var preview = System.Text.Json.JsonSerializer.Deserialize<PulloutResultDto>(transaction.PreviewJson)!;
             return new PulloutDetailDto(transaction.Id, transaction.ReferenceNumber, transaction.CreatedAt,
                 preview.Lines.Select(l => new PulloutDetailLineDto(l.MaterialNumber, l.MaterialDescription,
-                    l.RequestedQuantityBoxes, l.PickedQuantityBoxes, l.Status, l.Remarks, l.Picks)).ToList(), false,
+                    l.RequestedQuantityBoxes, l.PickedQuantityBoxes, l.Status, l.Remarks, l.Picks, l.PlantName)).ToList(), false,
                 transaction.IsRejected, transaction.RejectedAt, transaction.RejectedByUserName, transaction.RejectionReason);
         }
 
@@ -49,8 +49,10 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
                     .Select(p => new PulloutPickDto(
                         p.PalletPosition.LocationCode,
                         MfgMonthParser.Format(p.MfgMonth),
-                        p.QuantityBoxes))
-                    .ToList()))
+                        p.QuantityBoxes,
+                        p.OverrideReason))
+                    .ToList(),
+                l.PlantName))
             .ToList();
 
         return new PulloutDetailDto(transaction.Id, transaction.ReferenceNumber, transaction.CreatedAt, lines, transaction.IsConfirmed,

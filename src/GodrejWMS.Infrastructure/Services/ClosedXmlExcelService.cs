@@ -344,9 +344,9 @@ public class ClosedXmlExcelService : IExcelService
         return rows;
     }
 
-    public byte[] WritePulloutUploadTemplate()
+    public byte[] WritePulloutUploadTemplate(IReadOnlyList<string> plantNames)
     {
-        string[] headers = ["Material Code", "Total Stock in CFB"];
+        string[] headers = ["Material Code", "Total Stock in CFB", "Plant Name"];
 
         using var workbook = new XLWorkbook();
         var ws = workbook.Worksheets.Add("Pullout Upload");
@@ -369,6 +369,26 @@ public class ClosedXmlExcelService : IExcelService
 
         ws.Column(1).Style.NumberFormat.Format = "0";
         ws.Column(2).Style.NumberFormat.Format = "0.###";
+
+        // Plant Name is a convenience dropdown only - never validated on import (see
+        // ReadPulloutUpload/SubmitPullout). An inline list formula is capped at 255 characters by
+        // Excel, which a few dozen plant names can exceed, so the list lives on a hidden helper
+        // sheet instead and the validation references that range.
+        if (plantNames.Count > 0)
+        {
+            var lookupSheet = workbook.Worksheets.Add("PlantNameLookup");
+            for (var i = 0; i < plantNames.Count; i++)
+            {
+                lookupSheet.Cell(i + 1, 1).Value = plantNames[i];
+            }
+            lookupSheet.Visibility = XLWorksheetVisibility.VeryHidden;
+
+            const int lastPlantDropdownRow = 500;
+            ws.Range(2, 3, lastPlantDropdownRow, 3)
+                .CreateDataValidation()
+                .List(lookupSheet.Range(1, 1, plantNames.Count, 1), true);
+        }
+
         ws.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
@@ -392,10 +412,12 @@ public class ClosedXmlExcelService : IExcelService
                 break;
             }
 
+            var plantName = ws.Cell(row, 3).GetString().Trim();
             rows.Add(new PulloutImportRow(
                 MaterialCode: materialCode,
                 QuantityBoxes: (decimal)ws.Cell(row, 2).GetValue<double>(),
-                RowNumber: row));
+                RowNumber: row,
+                PlantName: string.IsNullOrWhiteSpace(plantName) ? null : plantName));
 
             row++;
         }
@@ -482,9 +504,9 @@ public class ClosedXmlExcelService : IExcelService
         return stream.ToArray();
     }
 
-    public byte[] WritePulloutDownload(IReadOnlyList<StockMasterRowDto> rows)
+    public byte[] WritePulloutDownload(IReadOnlyList<PulloutDownloadRowDto> rows)
     {
-        string[] headers = ["Material Code", "Material Desc.", "Total Stock in CFB", "Mfg Month", "Pallet Position"];
+        string[] headers = ["Material Code", "Material Desc.", "Total Stock in CFB", "Mfg Month", "Pallet Position", "Plant Name"];
 
         return WriteRows("Pullout Download", headers, rows, (ws, r, i) =>
         {
@@ -493,6 +515,7 @@ public class ClosedXmlExcelService : IExcelService
             ws.Cell(r, 3).Value = i.QuantityBoxes;
             ws.Cell(r, 4).Value = i.MfgMonthLabel;
             ws.Cell(r, 5).Value = i.PalletPositionCode;
+            ws.Cell(r, 6).Value = i.PlantName;
         });
     }
 
@@ -502,6 +525,7 @@ public class ClosedXmlExcelService : IExcelService
         [
             "GRN Reference", "Material Code", "Material Desc.", "Mfg Month", "Requested (CFB)", "Allocated (CFB)",
             "Line Status", "Pallet Position", "Qty at Position (CFB)", "Put-away Status"
+            , "Put-away ID"
         ];
 
         using var workbook = new XLWorkbook();
@@ -521,10 +545,14 @@ public class ClosedXmlExcelService : IExcelService
             ws.Cell(rowNum, 8).Value = item.LocationCode;
             ws.Cell(rowNum, 9).Value = item.QuantityBoxes;
             ws.Cell(rowNum, 10).Value = item.PutawayStatus;
+            ws.Cell(rowNum, 11).Value = XLCellValue.FromObject(item.PutawayId);
             rowNum++;
         }
 
         ws.SheetView.FreezeRows(1);
+        ws.RangeUsed()?.SetAutoFilter();
+        ws.Column(8).Style.Fill.BackgroundColor = XLColor.FromHtml("#EAF2FF");
+        ws.Column(11).Hide();
         ws.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
@@ -532,11 +560,59 @@ public class ClosedXmlExcelService : IExcelService
         return stream.ToArray();
     }
 
-    private static byte[] WriteRows(
+    public IReadOnlyList<InwardPutawayReassignmentImportRow> ReadInwardPutawayReassignment(Stream fileStream)
+    {
+        using var workbook = LoadWorkbook(fileStream);
+        var ws = workbook.Worksheets.First();
+        var headerRow = FindHeaderRow(ws, "GRN Reference");
+
+        if (!ws.Cell(headerRow, 11).GetString().Trim().Equals("Put-away ID", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "This workbook does not contain put-away identifiers. Download the GRN Excel again, edit only the Pallet Position column, and re-upload it.");
+        }
+
+        var rows = new List<InwardPutawayReassignmentImportRow>();
+        for (var row = headerRow + 1; ; row++)
+        {
+            var reference = ws.Cell(row, 1).GetString().Trim();
+            if (string.IsNullOrWhiteSpace(reference)) break;
+
+            if (!ws.Cell(row, 2).TryGetValue(out long materialNumber) || materialNumber <= 0)
+            {
+                throw new InvalidOperationException($"Row {row}: Material Code is missing or invalid.");
+            }
+
+            var putawayId = ws.Cell(row, 11).TryGetValue(out int parsedId) && parsedId > 0
+                ? parsedId
+                : (int?)null;
+
+            rows.Add(new InwardPutawayReassignmentImportRow(
+                reference,
+                materialNumber,
+                ws.Cell(row, 4).GetString().Trim(),
+                (decimal)ws.Cell(row, 5).GetValue<double>(),
+                (decimal)ws.Cell(row, 6).GetValue<double>(),
+                ws.Cell(row, 8).GetString().Trim(),
+                (decimal)ws.Cell(row, 9).GetValue<double>(),
+                ws.Cell(row, 10).GetString().Trim(),
+                putawayId,
+                row));
+        }
+
+        if (rows.Count == 0)
+        {
+            throw new InvalidOperationException("The workbook does not contain any GRN allocation rows.");
+        }
+
+        return rows;
+    }
+
+    private static byte[] WriteRows<T>(
         string sheetName,
         string[] headers,
-        IReadOnlyList<StockMasterRowDto> rows,
-        Action<IXLWorksheet, int, StockMasterRowDto> writeRow)
+        IReadOnlyList<T> rows,
+        Action<IXLWorksheet, int, T> writeRow)
     {
         using var workbook = new XLWorkbook();
         var ws = workbook.Worksheets.Add(sheetName);

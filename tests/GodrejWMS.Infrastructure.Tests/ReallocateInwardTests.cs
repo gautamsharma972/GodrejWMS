@@ -22,14 +22,14 @@ public class ReallocateInwardTests
         var db = TestDbContextFactory.Create();
 
         var rack = new Rack { Code = "A", Columns = 1, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
-        var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", CapacityBoxes = firstPositionCapacity };
+        var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = firstPositionCapacity / 10 };
         rack.PalletPositions.Add(position);
         db.Racks.Add(rack);
 
         var material = new Material
         {
             MaterialNumber = 1, Description = "Material A", DesignType = "XOLDH", PackSize = 24, GrossWeightKg = 0.5m,
-            LengthMm = 100, WidthMm = 100, HeightMm = 100, PalletCapacityBoxes = 40, SeasonId = SeasonIds.Rainy
+            LengthMm = 100, WidthMm = 100, HeightMm = 100, PalletCapacityBoxes = 10, SeasonId = SeasonIds.Rainy
         };
         db.Materials.Add(material);
         db.SaveChanges();
@@ -62,7 +62,7 @@ public class ReallocateInwardTests
         var (db, _, transaction, line) = SeedPartialLine(requested: 50, alreadyAllocated: 20);
 
         // Simulates a location freeing up after another GRN was rejected.
-        db.PalletPositions.Add(new PalletPosition { RackId = db.Racks.Single().Id, Column = 2, Level = 1, LocationCode = "A-02-01", CapacityBoxes = 40 });
+        db.PalletPositions.Add(new PalletPosition { RackId = db.Racks.Single().Id, Column = 2, Level = 1, LocationCode = "A-02-01", MaxPallets = 4 });
         await db.SaveChangesAsync();
 
         var handler = new ReallocateInwardHandler(db, new PalletAllocationService(db, new TestClock()));
@@ -87,7 +87,7 @@ public class ReallocateInwardTests
     {
         var (db, _, transaction, line) = SeedPartialLine(requested: 50, alreadyAllocated: 20);
 
-        db.PalletPositions.Add(new PalletPosition { RackId = db.Racks.Single().Id, Column = 2, Level = 1, LocationCode = "A-02-01", CapacityBoxes = 10 });
+        db.PalletPositions.Add(new PalletPosition { RackId = db.Racks.Single().Id, Column = 2, Level = 1, LocationCode = "A-02-01", MaxPallets = 1 });
         await db.SaveChangesAsync();
 
         var handler = new ReallocateInwardHandler(db, new PalletAllocationService(db, new TestClock()));
@@ -115,7 +115,7 @@ public class ReallocateInwardTests
             Remarks = "Warehouse at capacity"
         };
         db.InwardTransactionLines.Add(otherLine);
-        db.PalletPositions.Add(new PalletPosition { RackId = db.Racks.Single().Id, Column = 2, Level = 1, LocationCode = "A-02-01", CapacityBoxes = 40 });
+        db.PalletPositions.Add(new PalletPosition { RackId = db.Racks.Single().Id, Column = 2, Level = 1, LocationCode = "A-02-01", MaxPallets = 4 });
         await db.SaveChangesAsync();
 
         var handler = new ReallocateInwardHandler(db, new PalletAllocationService(db, new TestClock()));

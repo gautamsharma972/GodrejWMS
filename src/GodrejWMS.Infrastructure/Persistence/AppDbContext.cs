@@ -33,6 +33,8 @@ public class AppDbContext(
 
     public DbSet<LocationSubtype> LocationSubtypes => Set<LocationSubtype>();
     public DbSet<SkuMovementType> SkuMovementTypes => Set<SkuMovementType>();
+    public DbSet<PlantType> PlantTypes => Set<PlantType>();
+    public DbSet<Plant> Plants => Set<Plant>();
     public DbSet<ZoneType> ZoneTypes => Set<ZoneType>();
     public DbSet<LocationType> LocationTypes => Set<LocationType>();
     public DbSet<Season> Seasons => Set<Season>();
@@ -61,6 +63,10 @@ public class AppDbContext(
 
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
 
+    public DbSet<InventoryAdjustment> InventoryAdjustments => Set<InventoryAdjustment>();
+
+    public DbSet<InventoryAdjustmentLine> InventoryAdjustmentLines => Set<InventoryAdjustmentLine>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -79,6 +85,8 @@ public class AppDbContext(
         builder.Entity<StockMovement>().HasQueryFilter(m => HasAllWarehouses ||
             (UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == m.SourcePalletPosition.Rack.WarehouseId) &&
              UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == m.DestinationPalletPosition.Rack.WarehouseId)));
+        builder.Entity<InventoryAdjustment>().HasQueryFilter(a => HasAllWarehouses || UserWarehouses.Any(w => w.UserId == AccessUserId && w.WarehouseId == a.WarehouseId));
+        builder.Entity<InventoryAdjustmentLine>().HasQueryFilter(l => HasAllWarehouses || UserWarehouses.Any(w => w.UserId == AccessUserId && w.WarehouseId == l.InventoryAdjustment.WarehouseId));
         builder.Entity<ActivityLog>().HasQueryFilter(a => HasAllWarehouses);
     }
 

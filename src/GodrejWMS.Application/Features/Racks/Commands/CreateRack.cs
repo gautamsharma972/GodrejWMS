@@ -7,16 +7,20 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Application.Features.Racks.Commands;
 
 /// <summary>
-/// Creates a rack and auto-generates its full grid of pallet positions (Columns x Levels),
-/// each addressed as "{Code}-{Column:00}-{Level:00}" per the workbook's nomenclature sheet.
-/// The secondary flat physical label (e.g. "A1") is left blank here — the source workbook shows
-/// each rack can follow a different ad-hoc floor-labeling scheme, so it is edited manually per
-/// position rather than derived by a fixed formula.
+/// Creates a rack and auto-generates its grid of pallet positions (FromColumn..ToColumn x Levels),
+/// each addressed as "{Name}-{Column:00}-{Level:00}" per the workbook's nomenclature sheet. Code
+/// stays the unique business key used to select/identify the rack; Name (not required to be
+/// unique) drives the location-code prefix, which lets two rack rows share one logical name while
+/// covering different, non-overlapping column ranges (e.g. "A" columns 1-5 on one row, "A" columns
+/// 6-10 on another). The secondary flat physical label (e.g. "A1") is left blank here — the source
+/// workbook shows each rack can follow a different ad-hoc floor-labeling scheme, so it is edited
+/// manually per position rather than derived by a fixed formula.
 /// </summary>
 public sealed record CreateRackCommand(
     string Code,
-    string? Name,
-    int Columns,
+    string Name,
+    int FromColumn,
+    int ToColumn,
     int Levels,
     decimal ShelfLengthMm,
     decimal ShelfWidthMm,
@@ -36,7 +40,19 @@ public sealed class CreateRackValidator : AbstractValidator<CreateRackCommand>
             .MaximumLength(10)
             .MustAsync(async (code, ct) => !await db.Racks.AnyAsync(r => r.Code == code, ct))
             .WithMessage("A rack with this code already exists.");
-        RuleFor(x => x.Columns).InclusiveBetween(1, 50);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(100);
+        // The absolute column number isn't capped at 50 here - a rack segment can legitimately
+        // start well past column 50 (e.g. 101-110). It's the segment's span (ToColumn - FromColumn
+        // + 1) that's capped at 50 below, not the raw column numbers.
+        RuleFor(x => x.FromColumn).InclusiveBetween(1, 9999);
+        RuleFor(x => x.ToColumn).InclusiveBetween(1, 9999);
+        RuleFor(x => x)
+            .Must(x => x.ToColumn >= x.FromColumn)
+            .WithName("ToColumn")
+            .WithMessage("To Column must be greater than or equal to From Column.")
+            .Must(x => x.ToColumn - x.FromColumn + 1 <= 50)
+            .WithName("ToColumn")
+            .WithMessage("A rack segment can span at most 50 columns.");
         RuleFor(x => x.Levels).InclusiveBetween(1, 20);
         RuleFor(x => x.ShelfLengthMm).GreaterThan(0);
         RuleFor(x => x.ShelfWidthMm).GreaterThan(0);
@@ -52,6 +68,37 @@ public sealed class CreateRackValidator : AbstractValidator<CreateRackCommand>
             .WithMessage("Zone type is invalid.");
         RuleFor(x => x.StartingDistancePriority).InclusiveBetween(1, 9999);
         RuleFor(x => x.MaxPallets).InclusiveBetween(1, 10);
+
+        RuleFor(x => x).CustomAsync(async (command, context, ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(command.Name) || command.ToColumn < command.FromColumn)
+            {
+                return;
+            }
+
+            var namePrefix = command.Name.Trim();
+            var candidateCodes = new List<string>();
+            for (var level = 1; level <= command.Levels; level++)
+            {
+                for (var column = command.FromColumn; column <= command.ToColumn; column++)
+                {
+                    candidateCodes.Add(PalletPosition.BuildLocationCode(namePrefix, column, level));
+                }
+            }
+
+            var collisions = await db.PalletPositions
+                .Where(p => candidateCodes.Contains(p.LocationCode))
+                .Select(p => p.LocationCode)
+                .ToListAsync(ct);
+
+            if (collisions.Count > 0)
+            {
+                var preview = string.Join(", ", collisions.OrderBy(c => c).Take(5));
+                var suffix = collisions.Count > 5 ? $" and {collisions.Count - 5} more" : string.Empty;
+                context.AddFailure("Name",
+                    $"These location codes already exist under another rack: {preview}{suffix}. Use a different Name or column range.");
+            }
+        });
     }
 }
 
@@ -60,11 +107,14 @@ public sealed class CreateRackHandler(IApplicationDbContext db, IDateTimeProvide
 {
     public async Task<int> Handle(CreateRackCommand request, CancellationToken cancellationToken)
     {
+        var namePrefix = request.Name.Trim();
+
         var rack = new Rack
         {
             Code = request.Code.Trim().ToUpperInvariant(),
-            Name = request.Name,
-            Columns = request.Columns,
+            Name = namePrefix,
+            FromColumn = request.FromColumn,
+            Columns = request.ToColumn - request.FromColumn + 1,
             Levels = request.Levels,
             ShelfLengthMm = request.ShelfLengthMm,
             ShelfWidthMm = request.ShelfWidthMm,
@@ -77,13 +127,13 @@ public sealed class CreateRackHandler(IApplicationDbContext db, IDateTimeProvide
 
         for (var level = 1; level <= request.Levels; level++)
         {
-            for (var column = 1; column <= request.Columns; column++)
+            for (var column = request.FromColumn; column <= request.ToColumn; column++)
             {
                 rack.PalletPositions.Add(new PalletPosition
                 {
                     Column = column,
                     Level = level,
-                    LocationCode = PalletPosition.BuildLocationCode(rack.Code, column, level),
+                    LocationCode = PalletPosition.BuildLocationCode(namePrefix, column, level),
                     LocationTypeId = request.LocationTypeId,
                     LocationSubtypeId = request.LocationSubtypeId,
                     ZoneTypeId = request.ZoneTypeId,

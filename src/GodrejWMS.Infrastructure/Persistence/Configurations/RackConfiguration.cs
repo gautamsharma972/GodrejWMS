@@ -15,6 +15,7 @@ public class RackConfiguration : IEntityTypeConfiguration<Rack>
         builder.HasOne(r => r.Warehouse).WithMany().HasForeignKey(r => r.WarehouseId).OnDelete(DeleteBehavior.Restrict);
         builder.Property(r => r.Code).HasMaxLength(10).IsRequired();
         builder.Property(r => r.Name).HasMaxLength(100);
+        builder.Property(r => r.FromColumn).HasDefaultValue(1);
 
         builder.Property(r => r.ShelfLengthMm).HasPrecision(12, 3);
         builder.Property(r => r.ShelfWidthMm).HasPrecision(12, 3);
