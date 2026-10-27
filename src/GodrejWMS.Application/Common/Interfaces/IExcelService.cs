@@ -21,6 +21,9 @@ public interface IExcelService
     /// <summary>Writes a sample "MaterialMaster" upload workbook with the expected columns.</summary>
     byte[] WriteMaterialMasterTemplate();
 
+    /// <summary>Writes the Material Master list, including calculated and classification fields.</summary>
+    byte[] WriteMaterialMaster(IReadOnlyList<MaterialDto> rows);
+
     /// <summary>Parses Location Master updates by existing Location Code.</summary>
     IReadOnlyList<LocationImportRow> ReadLocationMaster(Stream fileStream);
 
@@ -36,12 +39,17 @@ public interface IExcelService
     /// <summary>Parses an "inward" upload: Material Code, Total Stock in CFB(qty), Mfg Month.</summary>
     IReadOnlyList<InwardImportRow> ReadInwardUpload(Stream fileStream);
 
-    /// <summary>Writes a sample "Format inventory pullout-upload" workbook. <paramref name="plantNames"/>
-    /// populates the Plant Name column's dropdown list - purely a convenience, never validated on import.</summary>
+    /// <summary>Writes a sample "GCPL Loading Sheet" workbook (same layout pullout upload now
+    /// expects). <paramref name="plantNames"/> populates the Destination field's dropdown list -
+    /// purely a convenience, never validated on import.</summary>
     byte[] WritePulloutUploadTemplate(IReadOnlyList<string> plantNames);
 
-    /// <summary>Parses a "Format inventory pullout-upload": Material Code, Total Stock in CFB, Plant Name.</summary>
-    IReadOnlyList<PulloutImportRow> ReadPulloutUpload(Stream fileStream);
+    /// <summary>Parses a "GCPL Loading Sheet" upload: Code and Del Qty from the data table
+    /// (header row found by matching "Code" in column A), Destination from the sheet header as a
+    /// single Plant Name applied to every row, and the remaining header fields (Transport,
+    /// Vehicle no, Gate No, Driver No, Plan/Start/End Time, Date, Weight, Volume) captured
+    /// verbatim for pass-through to the eventual download.</summary>
+    (IReadOnlyList<PulloutImportRow> Rows, PulloutLoadingSheetFieldsDto HeaderFields) ReadPulloutUpload(Stream fileStream);
 
     /// <summary>Writes the "Format inventory master" / "Format invent pullout-download" layout.</summary>
     byte[] WriteStockMaster(IReadOnlyList<StockMasterRowDto> rows);
@@ -55,8 +63,14 @@ public interface IExcelService
     /// "inward" upload, it does not run the put-away allocation engine.</summary>
     IReadOnlyList<StockMasterImportRow> ReadStockMaster(Stream fileStream);
 
-    /// <summary>Writes a pullout download workbook, mirroring "Format invent pullout-download".</summary>
-    byte[] WritePulloutDownload(IReadOnlyList<PulloutDownloadRowDto> rows);
+    /// <summary>Writes a pullout download workbook: the existing "Pullout Download" sheet
+    /// (unchanged, mirrors "Format invent pullout-download"), plus a second "Loading Sheet" tab
+    /// replicating the GCPL Loading Sheet's exact layout, with Remarks set per line from its
+    /// allocation outcome.</summary>
+    byte[] WritePulloutDownload(
+        IReadOnlyList<PulloutDownloadRowDto> rows,
+        PulloutLoadingSheetHeaderDto loadingSheetHeader,
+        IReadOnlyList<PulloutLoadingSheetRowDto> loadingSheetRows);
 
     /// <summary>Writes an inward (GRN) allocation workbook: one row per put-away location.</summary>
     byte[] WriteInwardDownload(IReadOnlyList<InwardDownloadRow> rows);

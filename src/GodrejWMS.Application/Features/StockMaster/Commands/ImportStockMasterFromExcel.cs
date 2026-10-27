@@ -1,6 +1,7 @@
 using FluentValidation;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Services;
 using MediatR;
@@ -27,14 +28,14 @@ public sealed class ImportStockMasterFromExcelValidator : AbstractValidator<Impo
 }
 
 public sealed class ImportStockMasterFromExcelHandler(
-    IApplicationDbContext db, IExcelService excel, IDateTimeProvider clock, ICurrentUserService currentUser)
+    IApplicationDbContext db, IExcelService excel, IDateTimeProvider clock, ICurrentUserService currentUser, IPermissionService permissions)
     : IRequestHandler<ImportStockMasterFromExcelCommand, ImportStockMasterResult>
 {
     public async Task<ImportStockMasterResult> Handle(ImportStockMasterFromExcelCommand request, CancellationToken cancellationToken)
     {
-        if (!currentUser.IsInRole("Admin"))
+        if (!await permissions.HasPermissionAsync(PermissionKeys.Inventory.Import, cancellationToken))
         {
-            throw new UnauthorizedAccessException("Only an Admin can directly import opening inventory. Quantity corrections must use the adjustment approval workflow.");
+            throw new UnauthorizedAccessException("You don't have permission to directly import opening inventory. Quantity corrections must use the adjustment approval workflow.");
         }
 
         var rows = excel.ReadStockMaster(request.FileStream);

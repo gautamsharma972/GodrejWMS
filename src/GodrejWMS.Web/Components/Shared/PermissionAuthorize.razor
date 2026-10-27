@@ -1,0 +1,29 @@
+@* Permission-matrix equivalent of AuthorizeView: shows ChildContent only if the current user's
+   role currently holds the given permission key, per the Role & Permission Management screen.
+   AuthorizeView can't do this check (it only understands raw ASP.NET Core roles/policies), so
+   this resolves it from IPermissionService instead - the same check the Application layer
+   enforces server-side for the matching command/query, so this is never the only gate. *@
+@using GodrejWMS.Application.Common.Permissions
+@inject IPermissionService PermissionService
+
+@if (_granted)
+{
+    @ChildContent
+}
+else
+{
+    @NotAuthorized
+}
+
+@code {
+    [Parameter, EditorRequired] public string Permission { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? NotAuthorized { get; set; }
+
+    private bool _granted;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _granted = await PermissionService.HasPermissionAsync(Permission);
+    }
+}

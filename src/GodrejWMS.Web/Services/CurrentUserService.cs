@@ -26,4 +26,7 @@ public class CurrentUserService : ICurrentUserService
     public string? UserName => _user.Value.Identity?.Name;
 
     public bool IsInRole(string role) => _user.Value.IsInRole(role);
+
+    public IReadOnlyList<string> Roles =>
+        _user.Value.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
 }

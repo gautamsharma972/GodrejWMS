@@ -1,0 +1,679 @@
+@page "/users"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewUserManagement)]
+@using GodrejWMS.Application.Features.Users.Commands
+@using GodrejWMS.Application.Features.Users.Dtos
+@using GodrejWMS.Application.Features.Users.Queries
+@using GodrejWMS.Application.Features.UserScope.Commands
+@using GodrejWMS.Application.Features.UserScope.Dtos
+@using GodrejWMS.Application.Features.UserScope.Queries
+@using GodrejWMS.Application.Features.Warehouses.Dtos
+@using GodrejWMS.Application.Features.Warehouses.Queries
+@using GodrejWMS.Application.Features.Regions.Dtos
+@using GodrejWMS.Application.Features.Regions.Queries
+@using GodrejWMS.Application.Features.Roles.Queries
+@inject IMediator Mediator
+@inject ILogger<Index> Logger
+@inject IJSRuntime JsRuntime
+
+<PageTitle>User Management - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Access Control</div>
+            <h1>User Management</h1>
+            <p class="page-kicker">@(_isSuperadmin ? "Create, edit, delete, assign, and secure user accounts." : "Manage permitted users assigned to your warehouse.")</p>
+        </div>
+        <AuthorizeView Roles="Superadmin,Platform Admin" Context="createContext">
+            <button class="btn btn-primary" @onclick="ShowCreateForm">
+                <i class="bi bi-person-plus" aria-hidden="true"></i>
+                New User
+            </button>
+        </AuthorizeView>
+    </div>
+
+    @if (_lastTemporaryPassword is not null)
+    {
+        <div class="alert alert-success">
+            <strong>@_lastTemporaryPasswordLabel</strong> One-time temporary password (shown once, not stored - copy it now):
+            <code class="ms-2">@_lastTemporaryPassword</code>
+            <button type="button" class="btn-close float-end" aria-label="Dismiss" @onclick="() => _lastTemporaryPassword = null"></button>
+        </div>
+    }
+    @if (_actionError is not null)
+    {
+        <div class="alert alert-danger">@_actionError</div>
+    }
+
+    @if (_showCreateForm)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseCreateForm">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="user-create-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">New account</div>
+                        <h2 class="slide-over-title" id="user-create-title">Create User</h2>
+                        <p class="slide-over-subtitle">A random temporary password is generated - you'll see it once after creating the account.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Close" @onclick="CloseCreateForm">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <EditForm Model="_createForm" FormName="user-create-form" OnValidSubmit="CreateAsync" class="slide-over-form">
+                    <div class="slide-over-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label">Email</label>
+                                <InputText class="form-control" type="email" @bind-Value="_createForm.Email" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Full Name</label>
+                                <InputText class="form-control" @bind-Value="_createForm.FullName" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Role</label>
+                                <InputSelect class="form-select" @bind-Value="_createForm.Role">
+                                    @foreach (var role in Roles)
+                                    {
+                                        <option value="@role">@role</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(_createError))
+                        {
+                            <div class="alert alert-danger mt-3 mb-0">@_createError</div>
+                        }
+                    </div>
+                    <div class="slide-over-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseCreateForm">Cancel</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check2" aria-hidden="true"></i>
+                            Create User
+                        </button>
+                    </div>
+                </EditForm>
+            </section>
+        </div>
+    }
+
+    @if (_scopeTarget is not null)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseScopeEditor">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="scope-edit-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Data access scope</div>
+                        <h2 class="slide-over-title" id="scope-edit-title">@_scopeTarget.FullName</h2>
+                        <p class="slide-over-subtitle">
+                            @if (_scopeTarget.Role == "Superadmin")
+                            {
+                                <text>Superadmin has organization-wide access and needs no scope assignment.</text>
+                            }
+                            else if (_scopeTarget.Role == "Logistic Manager")
+                            {
+                                <text>Logistic Manager gets access to every warehouse in the selected region(s).</text>
+                            }
+                            else
+                            {
+                                <text>@(_scopeTarget.Role ?? "This role") is assigned exactly one warehouse.</text>
+                            }
+                        </p>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Close" @onclick="CloseScopeEditor">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    @if (_scopeTarget.Role == "Superadmin")
+                    {
+                        <div class="empty-state">No scope needed.</div>
+                    }
+                    else if (_scopeTarget.Role == "Logistic Manager")
+                    {
+                        <div class="row g-2">
+                            @foreach (var region in _regions)
+                            {
+                                <div class="col-12">
+                                    <div class="form-check">
+                                        <input type="checkbox" class="form-check-input" id="@($"region-{region.Id}")"
+                                               checked="@_selectedRegionIds.Contains(region.Id)"
+                                               @onchange="e => OnRegionToggled(region.Id, e)" />
+                                        <label class="form-check-label" for="@($"region-{region.Id}")">@region.Name</label>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <label class="form-label">Warehouse</label>
+                        <select class="form-select" @bind="_selectedWarehouseId">
+                            <option value="">-- None --</option>
+                            @foreach (var wh in _warehouses)
+                            {
+                                <option value="@wh.Id">@wh.Name</option>
+                            }
+                        </select>
+                    }
+
+                    @if (_scopeError is not null)
+                    {
+                        <div class="alert alert-danger mt-3 mb-0">@_scopeError</div>
+                    }
+                </div>
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseScopeEditor">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveScopeAsync" disabled="@(_scopeTarget.Role == "Superadmin")">
+                        <i class="bi bi-check2" aria-hidden="true"></i>
+                        Save Scope
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
+
+    @if (_editTarget is not null)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseEditForm">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="user-edit-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">User account</div>
+                        <h2 class="slide-over-title" id="user-edit-title">Edit User</h2>
+                        <p class="slide-over-subtitle">Update the user's sign-in email and display name.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Close user editor" @onclick="CloseEditForm">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <EditForm Model="_editForm" FormName="user-edit-form" OnValidSubmit="SaveUserAsync" class="slide-over-form">
+                    <div class="slide-over-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label">Email</label>
+                                <InputText class="form-control" type="email" @bind-Value="_editForm.Email" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Full Name</label>
+                                <InputText class="form-control" @bind-Value="_editForm.FullName" />
+                            </div>
+                        </div>
+                        @if (_editError is not null)
+                        {
+                            <div class="alert alert-danger mt-3 mb-0">@_editError</div>
+                        }
+                    </div>
+                    <div class="slide-over-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseEditForm">Cancel</button>
+                        <button type="submit" class="btn btn-primary" disabled="@_savingUser">
+                            @if (_savingUser)
+                            {
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-check2" aria-hidden="true"></i>
+                            }
+                            Save Changes
+                        </button>
+                    </div>
+                </EditForm>
+            </section>
+        </div>
+    }
+
+    @if (_deleteTarget is not null)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CancelDelete">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="user-delete-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Delete account</div>
+                        <h2 class="slide-over-title" id="user-delete-title">Delete @_deleteTarget.Email?</h2>
+                        <p class="slide-over-subtitle">This permanently removes the account, its role assignment, and its warehouse or region scope. This cannot be undone.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Cancel delete" @onclick="CancelDelete">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    @if (_deleteError is not null)
+                    {
+                        <div class="alert alert-danger mb-0">@_deleteError</div>
+                    }
+                </div>
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelDelete">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmDeleteAsync" disabled="@_deletingUser">
+                        @if (_deletingUser)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-trash" aria-hidden="true"></i>
+                        }
+                        Delete User
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
+
+    @if (_users is null)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading users...
+        </div>
+    }
+    else if (_users.Count == 0)
+    {
+        <div class="empty-state">No users in scope.</div>
+    }
+    else
+    {
+        <div class="table-responsive panel-table users-table-shell">
+            <table class="table table-hover align-middle mb-0 users-table">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Full Name</th>
+                        <th>Role</th>
+                        <th>Scope</th>
+                        <th class="users-status-column">Active</th>
+                        <th class="table-actions users-actions-column">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _users)
+                    {
+                        <tr>
+                            <td>
+                                <div class="user-identity">
+                                    <span class="user-avatar" aria-hidden="true">@UserInitial(row.Email)</span>
+                                    <span class="record-code user-email">@row.Email</span>
+                                </div>
+                            </td>
+                            <td><span class="user-full-name">@row.FullName</span></td>
+                            <td>
+                                @if (_isSuperadmin)
+                                {
+                                    <select class="form-select user-role-select" aria-label="@($"Role for {row.Email}")" value="@row.Role" @onchange="e => OnRoleChanged(row, e)">
+                                        @foreach (var role in Roles)
+                                        {
+                                            <option value="@role">@role</option>
+                                        }
+                                    </select>
+                                }
+                                else
+                                {
+                                    @row.Role
+                                }
+                            </td>
+                            <td>
+                                <div class="user-scope-cell">
+                                    @if (row.Role == "Superadmin")
+                                    {
+                                        <span class="status-pill info">Organization-wide</span>
+                                    }
+                                    else if (row.WarehouseName is not null)
+                                    {
+                                        <span class="status-pill">@row.WarehouseName</span>
+                                    }
+                                    else if (row.RegionNames.Count > 0)
+                                    {
+                                        <span class="status-pill">@string.Join(", ", row.RegionNames)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="status-pill warning">Unassigned</span>
+                                    }
+                                    @if (_isSuperadmin && row.Role != "Superadmin")
+                                    {
+                                        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Users.AssignRoleAndScope">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary table-action-btn user-scope-button"
+                                                    title="@($"Edit scope for {row.Email}")" aria-label="@($"Edit scope for {row.Email}")"
+                                                    @onclick="() => OpenScopeEditor(row)">
+                                                <i class="bi bi-pencil-square" aria-hidden="true"></i>
+                                            </button>
+                                        </PermissionAuthorize>
+                                    }
+                                </div>
+                            </td>
+                            <td class="users-status-column">
+                                @if (_isSuperadmin)
+                                {
+                                    <div class="form-check form-switch user-active-switch">
+                                        <input type="checkbox" role="switch" class="form-check-input" checked="@row.IsActive"
+                                               title="@($"{(row.IsActive ? "Deactivate" : "Activate")} {row.Email}")"
+                                               aria-label="@($"{(row.IsActive ? "Deactivate" : "Activate")} {row.Email}")"
+                                               @onchange="e => OnActiveChanged(row, e)" />
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="status-pill @(row.IsActive ? "success" : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span>
+                                }
+                            </td>
+                            <td class="table-actions users-actions-column">
+                                <div class="user-action-group">
+                                    <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Users.Edit">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary table-action-btn user-account-edit-button"
+                                                title="@($"Edit {row.Email}")" aria-label="@($"Edit {row.Email}")"
+                                                @onclick="() => OpenEditForm(row)">
+                                            <i class="bi bi-pencil-square" aria-hidden="true"></i>
+                                        </button>
+                                    </PermissionAuthorize>
+                                    @if (row.UserId != _currentUserId)
+                                    {
+                                        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Users.ResetPassword">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary table-action-btn user-reset-button"
+                                                    title="@($"Reset password for {row.Email}")" aria-label="@($"Reset password for {row.Email}")"
+                                                    @onclick="() => ResetPasswordAsync(row)" disabled="@_resetting">
+                                                <i class="bi bi-key" aria-hidden="true"></i>
+                                            </button>
+                                        </PermissionAuthorize>
+                                        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Users.Delete">
+                                            <button type="button" class="btn btn-sm btn-outline-danger table-action-btn user-delete-button"
+                                                    title="@($"Delete {row.Email}")" aria-label="@($"Delete {row.Email}")"
+                                                    @onclick="() => ShowDeleteConfirm(row)">
+                                                <i class="bi bi-trash" aria-hidden="true"></i>
+                                            </button>
+                                        </PermissionAuthorize>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<string> Roles = [];
+
+    private List<UserListItemDto>? _users;
+    private IReadOnlyList<WarehouseDto> _warehouses = [];
+    private IReadOnlyList<RegionDto> _regions = [];
+    private bool _isSuperadmin;
+
+    private bool _showCreateForm;
+    private CreateFormModel _createForm = new();
+    private string? _createError;
+    private string? _actionError;
+    private string? _lastTemporaryPassword;
+    private string? _lastTemporaryPasswordLabel;
+    private bool _resetting;
+
+    private UserListItemDto? _editTarget;
+    private EditUserFormModel _editForm = new();
+    private string? _editError;
+    private bool _savingUser;
+    private UserListItemDto? _deleteTarget;
+    private string? _deleteError;
+    private bool _deletingUser;
+
+    private UserListItemDto? _scopeTarget;
+    private int? _selectedWarehouseId;
+    private readonly HashSet<int> _selectedRegionIds = [];
+    private string? _scopeError;
+    private string? _currentUserId;
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            _isSuperadmin = state.User.IsInRole("Superadmin") || state.User.IsInRole("Platform Admin");
+            _currentUserId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        }
+
+        _warehouses = await Mediator.Send(new GetWarehousesQuery());
+        _regions = await Mediator.Send(new GetRegionsQuery());
+        Roles = await Mediator.Send(new GetRoleNamesQuery());
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _users = (await Mediator.Send(new GetUsersQuery())).ToList();
+    }
+
+    private void ShowCreateForm()
+    {
+        _createError = null;
+        _createForm = new CreateFormModel();
+        _showCreateForm = true;
+    }
+
+    private void CloseCreateForm()
+    {
+        _showCreateForm = false;
+        _createError = null;
+    }
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            var result = await Mediator.Send(new CreateUserCommand(_createForm.Email, _createForm.FullName, _createForm.Role));
+            _lastTemporaryPassword = result.TemporaryPassword;
+            _lastTemporaryPasswordLabel = $"Account created for {_createForm.Email}.";
+            _showCreateForm = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to create user");
+            _createError = ex.Message;
+        }
+    }
+
+    private async Task OnActiveChanged(UserListItemDto row, ChangeEventArgs e)
+    {
+        var isActive = e.Value is bool b && b;
+        _actionError = null;
+        try
+        {
+            await Mediator.Send(new SetUserActiveCommand(row.UserId, isActive));
+            await LoadAsync();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", isActive ? $"{row.Email} activated." : $"{row.Email} deactivated.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to change active status for {UserId}", row.UserId);
+            _actionError = ex.Message;
+        }
+    }
+
+    private async Task OnRoleChanged(UserListItemDto row, ChangeEventArgs e)
+    {
+        var role = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(role)) return;
+        _actionError = null;
+        try
+        {
+            await Mediator.Send(new SetUserRoleCommand(row.UserId, role));
+            await LoadAsync();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"{row.Email}'s role set to {role}.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to change role for {UserId}", row.UserId);
+            _actionError = ex.Message;
+        }
+    }
+
+    private async Task ResetPasswordAsync(UserListItemDto row)
+    {
+        _actionError = null;
+        _resetting = true;
+        try
+        {
+            var temporaryPassword = await Mediator.Send(new ResetUserPasswordCommand(row.UserId));
+            _lastTemporaryPassword = temporaryPassword;
+            _lastTemporaryPasswordLabel = $"Password reset for {row.Email}.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to reset password for {UserId}", row.UserId);
+            _actionError = ex.Message;
+        }
+        finally
+        {
+            _resetting = false;
+        }
+    }
+
+    private void OpenEditForm(UserListItemDto row)
+    {
+        _editTarget = row;
+        _editForm = new EditUserFormModel { Email = row.Email, FullName = row.FullName };
+        _editError = null;
+    }
+
+    private void CloseEditForm()
+    {
+        _editTarget = null;
+        _editError = null;
+    }
+
+    private async Task SaveUserAsync()
+    {
+        if (_editTarget is null) return;
+        var targetUserId = _editTarget.UserId;
+        _savingUser = true;
+        _editError = null;
+        try
+        {
+            await Mediator.Send(new UpdateUserCommand(targetUserId, _editForm.Email, _editForm.FullName));
+            var editedOwnAccount = targetUserId == _currentUserId;
+            _editTarget = null;
+            await LoadAsync();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", editedOwnAccount
+                ? "Account updated. Sign in again if your email changed."
+                : "User account updated.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to update user {UserId}", targetUserId);
+            _editError = ex.Message;
+        }
+        finally
+        {
+            _savingUser = false;
+        }
+    }
+
+    private void ShowDeleteConfirm(UserListItemDto row)
+    {
+        _deleteTarget = row;
+        _deleteError = null;
+    }
+
+    private void CancelDelete()
+    {
+        _deleteTarget = null;
+        _deleteError = null;
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_deleteTarget is null) return;
+        var targetUserId = _deleteTarget.UserId;
+        var email = _deleteTarget.Email;
+        _deletingUser = true;
+        _deleteError = null;
+        try
+        {
+            await Mediator.Send(new DeleteUserCommand(targetUserId));
+            _deleteTarget = null;
+            await LoadAsync();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"{email} deleted.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to delete user {UserId}", targetUserId);
+            _deleteError = ex.Message;
+        }
+        finally
+        {
+            _deletingUser = false;
+        }
+    }
+
+    private void OpenScopeEditor(UserListItemDto row)
+    {
+        _scopeTarget = row;
+        _scopeError = null;
+        _selectedWarehouseId = row.WarehouseId;
+        _selectedRegionIds.Clear();
+        // Region Ids aren't on the row DTO (only names) - resolve them from the loaded region list.
+        foreach (var name in row.RegionNames)
+        {
+            var match = _regions.FirstOrDefault(r => r.Name == name);
+            if (match is not null) _selectedRegionIds.Add(match.Id);
+        }
+    }
+
+    private void CloseScopeEditor()
+    {
+        _scopeTarget = null;
+        _scopeError = null;
+    }
+
+    private void OnRegionToggled(int regionId, ChangeEventArgs e)
+    {
+        var isChecked = e.Value is bool b && b;
+        if (isChecked) _selectedRegionIds.Add(regionId);
+        else _selectedRegionIds.Remove(regionId);
+    }
+
+    private static string UserInitial(string? email) =>
+        string.IsNullOrWhiteSpace(email) ? "U" : email.Trim()[0].ToString().ToUpperInvariant();
+
+    private async Task SaveScopeAsync()
+    {
+        if (_scopeTarget is null) return;
+        _scopeError = null;
+        try
+        {
+            if (_scopeTarget.Role == "Logistic Manager")
+            {
+                await Mediator.Send(new AssignUserRegionsCommand(_scopeTarget.UserId, _selectedRegionIds.ToList()));
+            }
+            else
+            {
+                await Mediator.Send(new AssignUserWarehouseCommand(_scopeTarget.UserId, _selectedWarehouseId));
+            }
+            _scopeTarget = null;
+            await LoadAsync();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Scope saved.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save scope");
+            _scopeError = ex.Message;
+        }
+    }
+
+    private class CreateFormModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public string Role { get; set; } = "Office Staff";
+    }
+
+    private class EditUserFormModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+    }
+}

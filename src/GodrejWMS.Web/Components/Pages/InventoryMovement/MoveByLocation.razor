@@ -1,5 +1,5 @@
 @page "/inventory-movement/by-location"
-@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInventoryMovement)]
 @using GodrejWMS.Application.Common.Exceptions
 @using GodrejWMS.Application.Features.InventoryMovement.Commands
 @using GodrejWMS.Application.Features.InventoryMovement.Dtos

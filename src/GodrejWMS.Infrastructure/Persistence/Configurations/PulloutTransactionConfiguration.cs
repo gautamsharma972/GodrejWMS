@@ -20,6 +20,16 @@ public class PulloutTransactionConfiguration : IEntityTypeConfiguration<PulloutT
         builder.Property(t => t.RejectionReason).HasMaxLength(500);
         builder.Property(t => t.CreatedByUserId).HasMaxLength(450);
         builder.Property(t => t.UpdatedByUserId).HasMaxLength(450);
+        builder.Property(t => t.TransportName).HasMaxLength(200);
+        builder.Property(t => t.VehicleNumber).HasMaxLength(50);
+        builder.Property(t => t.GateNumber).HasMaxLength(50);
+        builder.Property(t => t.DriverNumber).HasMaxLength(100);
+        builder.Property(t => t.PlanTime).HasMaxLength(50);
+        builder.Property(t => t.DateText).HasMaxLength(50);
+        builder.Property(t => t.StartTime).HasMaxLength(50);
+        builder.Property(t => t.EndTime).HasMaxLength(50);
+        builder.Property(t => t.WeightText).HasMaxLength(100);
+        builder.Property(t => t.VolumeText).HasMaxLength(100);
 
         builder.HasMany(t => t.Lines)
             .WithOne(l => l.PulloutTransaction)
@@ -37,6 +47,7 @@ public class PulloutTransactionLineConfiguration : IEntityTypeConfiguration<Pull
         builder.Property(l => l.RequestedQuantityBoxes).HasPrecision(14, 3);
         builder.Property(l => l.PickedQuantityBoxes).HasPrecision(14, 3);
         builder.Property(l => l.Remarks).HasMaxLength(500);
+        builder.Property(l => l.Priority).HasMaxLength(50);
 
         builder.HasOne(l => l.Material)
             .WithMany()

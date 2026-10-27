@@ -18,7 +18,7 @@
             <h1>Season &amp; Month Mapping</h1>
             <p class="page-kicker">Assign each calendar month to a season. Used to classify material seasonal demand.</p>
         </div>
-        <AuthorizeView Roles="Admin,Supervisor,Operator" Context="editContext">
+        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Edit">
             <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
                 @if (_saving)
                 {
@@ -30,7 +30,7 @@
                 }
                 Save Mapping
             </button>
-        </AuthorizeView>
+        </PermissionAuthorize>
     </div>
 
     @if (_saveError is not null)
@@ -78,19 +78,19 @@
                         <tr>
                             <td class="fw-semibold">@MonthName(row.Month)</td>
                             <td style="max-width: 220px">
-                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="rowEditContext">
-                                    <Authorized>
+                                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Edit">
+                                    <ChildContent>
                                         <select class="form-select" value="@row.SeasonId" @onchange="e => OnSeasonChanged(row.Month, e)">
                                             @foreach (var s in SeasonOptions(row.SeasonId))
                                             {
                                                 <option value="@s.Id">@s.DisplayName</option>
                                             }
                                         </select>
-                                    </Authorized>
+                                    </ChildContent>
                                     <NotAuthorized>
                                         <span class="status-pill @SeasonClass(row.SeasonCode)">@row.SeasonName</span>
                                     </NotAuthorized>
-                                </AuthorizeView>
+                                </PermissionAuthorize>
                             </td>
                         </tr>
                     }

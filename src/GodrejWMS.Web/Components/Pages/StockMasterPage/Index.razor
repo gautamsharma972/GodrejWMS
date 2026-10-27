@@ -32,7 +32,7 @@
             <button type="button" class="tour-launch page-tour" data-tour-start="inventory" title="Take a tour of this page">
                 <i class="bi bi-compass" aria-hidden="true"></i> Page tour
             </button>
-            <AuthorizeView Roles="Admin" Context="headerActionsContext">
+            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.Import">
                 <button class="btn btn-outline-secondary" @onclick="DownloadTemplateAsync">
                     <i class="bi bi-file-earmark-arrow-down" aria-hidden="true"></i>
                     Sample Format
@@ -50,7 +50,7 @@
                     }
                 </label>
                 <InputFile id="stock-master-excel-upload" OnChange="OnImportFileSelected" class="visually-hidden" />
-            </AuthorizeView>
+            </PermissionAuthorize>
             <button class="btn btn-outline-primary" data-tour="inv-export" @onclick="DownloadAsync">
                 <i class="bi bi-download" aria-hidden="true"></i>
                 Export Excel
@@ -108,6 +108,8 @@
                 <option value="true">Active</option>
                 <option value="false">Inactive</option>
             </select>
+            <WarehouseSelect WarehouseId="_warehouseFilter" WarehouseIdChanged="OnWarehouseFilterChangedAsync"
+                              AllowClear="true" Placeholder="Filter by warehouse..." />
         </div>
         @if (_page is not null)
         {
@@ -267,6 +269,7 @@
     private IReadOnlyList<SkuMovementTypeDto> _movementTypes = [];
     private int _pageNumber = 1;
     private string _search = string.Empty;
+    private int? _warehouseFilter;
     private string _designTypeFilter = string.Empty;
     private int? _movementFilter;
     private int? _seasonFilter;
@@ -339,6 +342,7 @@
                 MovementTypeId: _movementFilter,
                 SeasonId: _seasonFilter,
                 IsActive: bool.TryParse(_activeFilterText, out var isActive) ? isActive : null,
+                WarehouseId: _warehouseFilter,
                 SortBy: _sortBy,
                 SortDescending: _sortDescending,
                 PageNumber: page,
@@ -355,6 +359,12 @@
     }
 
     private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadPage(1);
+
+    private async Task OnWarehouseFilterChangedAsync(int? warehouseId)
+    {
+        _warehouseFilter = warehouseId;
+        await LoadPage(1);
+    }
 
     private async Task OnDesignTypeFilterChanged(ChangeEventArgs e)
     {

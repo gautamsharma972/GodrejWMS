@@ -1,7 +1,8 @@
 @page "/reports/operations"
-@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewReports)]
 @implements IAsyncDisposable
 @using GodrejWMS.Application.Common
+@using GodrejWMS.Application.Common.Interfaces
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Features.Reports.Core
 @inject IMediator Mediator

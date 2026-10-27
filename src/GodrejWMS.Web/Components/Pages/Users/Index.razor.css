@@ -1,0 +1,199 @@
+.users-table-shell {
+    overflow-x: auto;
+    overflow-y: visible;
+    border: 1px solid #dce5f0;
+    border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+}
+
+.users-table {
+    min-width: 1040px;
+    table-layout: fixed;
+}
+
+.users-table th,
+.users-table td {
+    padding: 1rem 1.1rem;
+    vertical-align: middle;
+}
+
+.users-table thead th {
+    padding-top: 0.9rem;
+    padding-bottom: 0.9rem;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.76rem;
+    letter-spacing: 0.035em;
+}
+
+.users-table th:first-child,
+.users-table td:first-child {
+    width: 23%;
+}
+
+.users-table th:nth-child(2),
+.users-table td:nth-child(2) {
+    width: 18%;
+}
+
+.users-table th:nth-child(3),
+.users-table td:nth-child(3) {
+    width: 18%;
+}
+
+.users-table th:nth-child(4),
+.users-table td:nth-child(4) {
+    width: 23%;
+}
+
+.users-table tbody tr {
+    min-height: 72px;
+    transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.users-table tbody tr:hover {
+    box-shadow: inset 3px 0 0 #60a5fa;
+}
+
+.user-identity {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+}
+
+.user-avatar {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #bfdbfe;
+    border-radius: 9px;
+    background: linear-gradient(145deg, #dbeafe, #eff6ff);
+    color: #1d4ed8;
+    font-size: 0.8rem;
+    font-weight: 850;
+}
+
+.user-email {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-full-name {
+    color: #334155;
+    font-weight: 650;
+}
+
+.user-role-select {
+    min-height: 42px;
+    padding-inline: 0.85rem 2.25rem;
+    border-color: #cfd9e6;
+    border-radius: 8px;
+    background-color: #fbfdff;
+    font-weight: 650;
+}
+
+.user-scope-cell {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.user-scope-cell .status-pill {
+    min-width: 0;
+    max-width: calc(100% - 44px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-scope-button,
+.user-reset-button {
+    flex: 0 0 38px;
+}
+
+.user-scope-button:hover,
+.user-scope-button:focus-visible,
+.user-account-edit-button:hover,
+.user-account-edit-button:focus-visible {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.user-reset-button:hover,
+.user-reset-button:focus-visible {
+    border-color: #fcd34d;
+    background: #fffbeb;
+    color: #a16207;
+}
+
+.users-status-column {
+    width: 6%;
+    text-align: center;
+}
+
+.users-actions-column {
+    width: 12%;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.user-action-group {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.45rem;
+}
+
+.user-action-group:empty {
+    display: none;
+}
+
+.user-active-switch {
+    min-height: 0;
+    display: inline-flex;
+    justify-content: center;
+    padding-left: 2.5rem;
+    margin: 0;
+}
+
+.user-active-switch .form-check-input {
+    width: 2.25rem;
+    height: 1.2rem;
+    margin-top: 0;
+    cursor: pointer;
+}
+
+.users-actions-column .table-action-btn {
+    width: 38px;
+    height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border-radius: 8px;
+    vertical-align: middle;
+}
+
+.user-delete-button:hover,
+.user-delete-button:focus-visible {
+    background: #fff1f2;
+}
+
+@media (max-width: 1100px) {
+    .users-table {
+        min-width: 1040px;
+    }
+
+    .users-table th,
+    .users-table td {
+        padding-inline: 0.85rem;
+    }
+}

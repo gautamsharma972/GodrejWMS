@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.Racks.Queries;
 
-public sealed record GetRacksQuery : IRequest<IReadOnlyList<RackDto>>;
+public sealed record GetRacksQuery(int? WarehouseId = null) : IRequest<IReadOnlyList<RackDto>>;
 
 public sealed class GetRacksHandler(IApplicationDbContext db) : IRequestHandler<GetRacksQuery, IReadOnlyList<RackDto>>
 {
@@ -14,6 +14,7 @@ public sealed class GetRacksHandler(IApplicationDbContext db) : IRequestHandler<
     {
         var racks = await db.Racks
             .AsNoTracking()
+            .Where(r => request.WarehouseId == null || r.WarehouseId == request.WarehouseId)
             .OrderBy(r => r.Code)
             .Select(r => new
             {

@@ -1,0 +1,377 @@
+@page "/warehouses"
+@attribute [Authorize]
+@using GodrejWMS.Application.Features.Warehouses.Commands
+@using GodrejWMS.Application.Features.Warehouses.Dtos
+@using GodrejWMS.Application.Features.Warehouses.Queries
+@using GodrejWMS.Application.Features.WarehouseCategories.Dtos
+@using GodrejWMS.Application.Features.WarehouseCategories.Queries
+@using GodrejWMS.Application.Features.Regions.Dtos
+@using GodrejWMS.Application.Features.Regions.Queries
+@using GodrejWMS.Application.Features.States.Dtos
+@using GodrejWMS.Application.Features.States.Queries
+@using GodrejWMS.Application.Features.Cities.Dtos
+@using GodrejWMS.Application.Features.Cities.Queries
+@inject IMediator Mediator
+@inject ILogger<Index> Logger
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Warehouse Master - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Organization</div>
+            <h1>Warehouse Master</h1>
+            <p class="page-kicker">Every warehouse belongs to a City, which derives its State and Region - code, name, category, location, and address.</p>
+        </div>
+        <AuthorizeView Roles="Superadmin" Context="createContext">
+            <button class="btn btn-primary" @onclick="ShowCreateForm">
+                <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                New Warehouse
+            </button>
+        </AuthorizeView>
+    </div>
+
+    @if (_showForm)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseForm">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="warehouse-form-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Organization</div>
+                        <h2 class="slide-over-title" id="warehouse-form-title">@(_editingId.HasValue ? "Edit Warehouse" : "Create Warehouse")</h2>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Close" @onclick="CloseForm">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <EditForm Model="_form" FormName="warehouse-form" OnValidSubmit="SaveAsync" class="slide-over-form">
+                    <div class="slide-over-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Code</label>
+                                <InputText class="form-control" @bind-Value="_form.Code" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Name</label>
+                                <InputText class="form-control" @bind-Value="_form.Name" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Category</label>
+                                <InputSelect class="form-select" @bind-Value="_form.WarehouseCategoryId">
+                                    @foreach (var category in _categories.Where(c => c.IsActive))
+                                    {
+                                        <option value="@category.Id">@category.Name</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Region</label>
+                                <select class="form-select" value="@_form.RegionId" @onchange="OnRegionChanged">
+                                    @foreach (var region in _regions.Where(r => r.IsActive))
+                                    {
+                                        <option value="@region.Id">@region.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">State</label>
+                                <select class="form-select" value="@_form.StateId" @onchange="OnStateChanged">
+                                    @foreach (var state in _states.Where(s => s.RegionId == _form.RegionId && (s.IsActive || s.Id == _form.StateId)))
+                                    {
+                                        <option value="@state.Id">@state.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">City</label>
+                                <InputSelect class="form-select" @bind-Value="_form.CityId">
+                                    @foreach (var city in _cities.Where(c => c.StateId == _form.StateId && (c.IsActive || c.Id == _form.CityId)))
+                                    {
+                                        <option value="@city.Id">@city.Name</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Address</label>
+                                <InputText class="form-control" @bind-Value="_form.Address" />
+                            </div>
+                            @if (_editingId.HasValue)
+                            {
+                                <div class="col-12">
+                                    <div class="form-check">
+                                        <InputCheckbox class="form-check-input" id="warehouse-active" @bind-Value="_form.IsActive" />
+                                        <label class="form-check-label" for="warehouse-active">Active</label>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(_formError))
+                        {
+                            <div class="alert alert-danger mt-3 mb-0">@_formError</div>
+                        }
+                    </div>
+                    <div class="slide-over-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check2" aria-hidden="true"></i>
+                            @(_editingId.HasValue ? "Save Warehouse" : "Create Warehouse")
+                        </button>
+                    </div>
+                </EditForm>
+            </section>
+        </div>
+    }
+
+    @if (_deleteTarget is not null)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CancelDelete">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="warehouse-delete-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Delete warehouse</div>
+                        <h2 class="slide-over-title" id="warehouse-delete-title">Delete "@_deleteTarget.Name"?</h2>
+                        <p class="slide-over-subtitle">This cannot be undone. If it has racks, locations, or transaction history, the delete will be blocked below - deactivate it instead.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Cancel delete" @onclick="CancelDelete">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    @if (_deleteError is not null)
+                    {
+                        <div class="alert alert-danger mb-0">@_deleteError</div>
+                    }
+                </div>
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelDelete">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmDeleteAsync" disabled="@_deleting">
+                        @if (_deleting)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-trash" aria-hidden="true"></i>
+                        }
+                        Delete
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
+
+    @if (_rows is null)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading warehouses...
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive panel-table">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>City</th>
+                        <th>State</th>
+                        <th>Region</th>
+                        <th>Active</th>
+                        <th class="table-actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        <tr>
+                            <td><span class="record-code">@row.Code</span></td>
+                            <td>@row.Name</td>
+                            <td>@(row.WarehouseCategoryName ?? "-")</td>
+                            <td>@(row.CityName ?? "-")</td>
+                            <td>@(row.StateName ?? "-")</td>
+                            <td>@(row.RegionName ?? "-")</td>
+                            <td><span class="status-pill @(row.IsActive ? "success" : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span></td>
+                            <td class="table-actions">
+                                <AuthorizeView Roles="Superadmin" Context="rowEditContext">
+                                    <button class="btn btn-sm btn-outline-secondary" title="@($"Edit {row.Name}")" aria-label="@($"Edit {row.Name}")" @onclick="() => ShowEditForm(row)">
+                                        <i class="bi bi-pencil-square" aria-hidden="true"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" title="@($"Delete {row.Name}")" aria-label="@($"Delete {row.Name}")" @onclick="() => ShowDeleteConfirm(row)">
+                                        <i class="bi bi-trash" aria-hidden="true"></i>
+                                    </button>
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<WarehouseDto>? _rows;
+    private IReadOnlyList<WarehouseCategoryDto> _categories = [];
+    private IReadOnlyList<RegionDto> _regions = [];
+    private IReadOnlyList<StateDto> _states = [];
+    private IReadOnlyList<CityDto> _cities = [];
+
+    private bool _showForm;
+    private int? _editingId;
+    private FormModel _form = new();
+    private string? _formError;
+
+    private WarehouseDto? _deleteTarget;
+    private string? _deleteError;
+    private bool _deleting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _categories = await Mediator.Send(new GetWarehouseCategoriesQuery());
+        _regions = await Mediator.Send(new GetRegionsQuery());
+        _states = await Mediator.Send(new GetStatesQuery());
+        _cities = await Mediator.Send(new GetCitiesQuery());
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var result = await Mediator.Send(new GetWarehousesQuery());
+        _rows = result.OrderBy(r => r.Name).ToList();
+    }
+
+    private void ShowCreateForm()
+    {
+        _formError = null;
+        _editingId = null;
+        _form = new FormModel
+        {
+            WarehouseCategoryId = _categories.FirstOrDefault()?.Id ?? 0,
+            RegionId = _regions.FirstOrDefault()?.Id ?? 0,
+            IsActive = true
+        };
+        _form.StateId = _states.FirstOrDefault(s => s.RegionId == _form.RegionId)?.Id ?? 0;
+        _form.CityId = _cities.FirstOrDefault(c => c.StateId == _form.StateId)?.Id ?? 0;
+        _showForm = true;
+    }
+
+    private void ShowEditForm(WarehouseDto row)
+    {
+        _formError = null;
+        _editingId = row.Id;
+        _form = new FormModel
+        {
+            Code = row.Code,
+            Name = row.Name,
+            WarehouseCategoryId = row.WarehouseCategoryId ?? _categories.FirstOrDefault()?.Id ?? 0,
+            RegionId = row.RegionId ?? _regions.FirstOrDefault()?.Id ?? 0,
+            StateId = row.StateId ?? 0,
+            CityId = row.CityId ?? 0,
+            Address = row.Address,
+            IsActive = row.IsActive
+        };
+        _showForm = true;
+    }
+
+    private void CloseForm()
+    {
+        _showForm = false;
+        _formError = null;
+        _editingId = null;
+    }
+
+    private void OnRegionChanged(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var regionId)) return;
+        _form.RegionId = regionId;
+        _form.StateId = _states.FirstOrDefault(s => s.RegionId == regionId)?.Id ?? 0;
+        _form.CityId = _cities.FirstOrDefault(c => c.StateId == _form.StateId)?.Id ?? 0;
+    }
+
+    private void OnStateChanged(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var stateId)) return;
+        _form.StateId = stateId;
+        _form.CityId = _cities.FirstOrDefault(c => c.StateId == stateId)?.Id ?? 0;
+    }
+
+    private async Task SaveAsync()
+    {
+        _formError = null;
+        var wasEditing = _editingId.HasValue;
+        try
+        {
+            if (_editingId.HasValue)
+            {
+                await Mediator.Send(new UpdateWarehouseCommand(
+                    _editingId.Value, _form.Code, _form.Name, _form.WarehouseCategoryId, _form.CityId, _form.Address, _form.IsActive));
+            }
+            else
+            {
+                await Mediator.Send(new CreateWarehouseCommand(
+                    _form.Code, _form.Name, _form.WarehouseCategoryId, _form.CityId, _form.Address));
+            }
+            _showForm = false;
+            _editingId = null;
+            await LoadAsync();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", wasEditing ? "Warehouse updated." : "Warehouse created.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save warehouse");
+            _formError = ex.Message;
+        }
+    }
+
+    private void ShowDeleteConfirm(WarehouseDto row)
+    {
+        _deleteTarget = row;
+        _deleteError = null;
+    }
+
+    private void CancelDelete()
+    {
+        _deleteTarget = null;
+        _deleteError = null;
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_deleteTarget is null) return;
+        _deleting = true;
+        _deleteError = null;
+        try
+        {
+            await Mediator.Send(new DeleteWarehouseCommand(_deleteTarget.Id));
+            _deleteTarget = null;
+            await LoadAsync();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Warehouse deleted.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to delete warehouse");
+            _deleteError = ex.Message;
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
+
+    private class FormModel
+    {
+        public string Code { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public int WarehouseCategoryId { get; set; }
+        public int RegionId { get; set; }
+        public int StateId { get; set; }
+        public int CityId { get; set; }
+        public string? Address { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+}

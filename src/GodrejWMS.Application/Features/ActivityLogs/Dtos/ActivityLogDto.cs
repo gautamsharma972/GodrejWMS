@@ -7,6 +7,7 @@ public sealed record ActivityLogDto(
     string Action,
     string EntityName,
     string? EntityId,
+    string? WarehouseName,
     string Summary,
     string? OldValuesJson,
     string? NewValuesJson);

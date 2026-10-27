@@ -54,7 +54,10 @@ cd publish/ui && ASPNETCORE_URLS=http://0.0.0.0:5000 ./GodrejWMS.Web            
 
 On IIS the generated `web.config` hosts it (ASP.NET Core Hosting Bundle required; `web.config` is
 only produced for Windows-hostable output, so it's absent from `ui-linux`).
-The app applies EF migrations and seeds reference data and the default users on startup.
+The app applies pending EF Core schema/table migrations on startup through
+`DatabaseMigrationRunner`. Application/demo/reference-data seeders are not included in the
+startup path, so a fresh database needs its Role & Permission Management, Warehouse Master, etc.
+data entered through the app (or a reviewed one-off script) after the first deploy.
 
 ## Run as a systemd service (Ubuntu)
 
@@ -91,8 +94,6 @@ keep, but not required for port 5003.
 `/home/ubuntu/GCPL/warehouse-gate/godrejwms.env` (create with `chmod 600`, owned by the service user):
 ```
 ConnectionStrings__Default=Server=...;Port=3306;Database=GodrejWMS;User=...;Password=...;
-DefaultAdmin__Email=admin@yourcompany.com
-DefaultAdmin__Password=<a real password, not the seeded default>
 ```
 
 Deploying a new build (stop first so files aren't overwritten while the process has them open):
@@ -117,12 +118,8 @@ rather than editing the published files:
 | Setting | Environment variable |
 | --- | --- |
 | Database | `ConnectionStrings__Default="Server=...;Port=3306;Database=GodrejWMS;User=...;Password=...;"` |
-| First admin account (only used when the user does not exist yet) | `DefaultAdmin__Email`, `DefaultAdmin__Password` |
 | Listen address | `ASPNETCORE_URLS` |
 | Environment name | `ASPNETCORE_ENVIRONMENT` (defaults to `Production`) |
-
-Also change the default admin password after the first login and, if you keep the seeded
-`supervisor@` and `operator@` sample accounts, change or remove them.
 
 Production notes:
 - Serve over HTTPS (reverse proxy or Kestrel certificate). The app redirects HTTP to HTTPS when it

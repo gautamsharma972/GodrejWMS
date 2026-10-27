@@ -1,6 +1,8 @@
 using System.Reflection;
 using FluentValidation;
 using GodrejWMS.Application.Common.Behaviours;
+using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Common.Permissions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GodrejWMS.Application;
@@ -18,6 +20,8 @@ public static class DependencyInjection
         });
 
         services.AddValidatorsFromAssembly(assembly);
+        services.AddScoped<IPermissionService, PermissionService>();
+        services.AddScoped<IWarehouseAccessService, WarehouseAccessService>();
 
         return services;
     }

@@ -1,0 +1,223 @@
+.material-stock-report {
+    display: grid;
+    gap: 1rem;
+}
+
+.report-filter-card {
+    padding: 0.9rem 1rem 1rem;
+    border: 1px solid var(--wms-border);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+}
+
+.report-filter-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.report-filter-heading h2 {
+    margin: 0;
+    color: #172033;
+    font-size: 1rem;
+    font-weight: 850;
+}
+
+.report-filter-heading h2 i {
+    margin-right: 0.35rem;
+    color: var(--wms-primary);
+}
+
+.panel-subtitle {
+    margin: 0.25rem 0 0;
+    color: var(--wms-muted);
+    font-size: 0.78rem;
+}
+
+.filter-clear {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #2563eb;
+    font-size: 0.74rem;
+    font-weight: 750;
+}
+
+.material-filter-grid {
+    display: grid;
+    grid-template-columns:
+        minmax(190px, 1.25fr)
+        minmax(185px, 1.15fr)
+        minmax(245px, 1.45fr)
+        minmax(190px, 1fr)
+        minmax(180px, 0.9fr)
+        auto;
+    gap: 0.65rem;
+    align-items: end;
+}
+
+.filter-field {
+    min-width: 0;
+    display: grid;
+    gap: 0.35rem;
+}
+
+.filter-field > span {
+    color: #475569;
+    font-size: 0.69rem;
+    font-weight: 800;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+}
+
+.filter-field .form-control,
+.filter-field .form-select,
+.filter-field .input-group-text {
+    min-height: 40px;
+    border-color: #d5dfeb;
+}
+
+.filter-field .input-group-text {
+    background: #f8fafc;
+    color: #64748b;
+}
+
+.range-control {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.range-control > span {
+    color: #94a3b8;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.range-control .form-control {
+    min-width: 0;
+    padding-left: 0.65rem;
+    padding-right: 0.65rem;
+}
+
+.filter-apply {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding-inline: 1rem;
+    white-space: nowrap;
+}
+
+.material-report-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.material-report-summary > div {
+    min-height: 76px;
+    display: grid;
+    align-content: center;
+    gap: 0.15rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid #dfe7f1;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.material-report-summary span {
+    color: #64748b;
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.material-report-summary strong {
+    color: #0f172a;
+    font-size: 1.18rem;
+    font-weight: 900;
+}
+
+.material-report-summary .summary-primary {
+    border-color: #bfdbfe;
+    background: linear-gradient(135deg, #fff, #eff6ff);
+}
+
+.material-report-panel {
+    overflow: hidden;
+}
+
+.material-report-table {
+    min-width: 760px;
+}
+
+.material-report-table th,
+.material-report-table td {
+    padding: 0.85rem 1rem;
+}
+
+.material-report-table th:nth-child(1) { width: 17%; }
+.material-report-table th:nth-child(2) { width: 40%; }
+.material-report-table th:nth-child(3) { width: 16%; }
+.material-report-table th:nth-child(4) { width: 13%; }
+.material-report-table th:nth-child(5) { width: 14%; }
+
+.material-description {
+    color: #334155;
+}
+
+.material-report-empty {
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.material-report-empty i {
+    margin-bottom: 0.25rem;
+    color: #94a3b8;
+    font-size: 1.8rem;
+}
+
+.material-report-empty span {
+    color: #64748b;
+    font-size: 0.82rem;
+}
+
+@media (max-width: 1400px) {
+    .material-filter-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .filter-apply {
+        grid-column: auto;
+    }
+}
+
+@media (max-width: 900px) {
+    .material-filter-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 760px) {
+    .material-filter-grid,
+    .material-report-summary {
+        grid-template-columns: 1fr;
+    }
+
+    .page-header .toolbar-group {
+        width: 100%;
+    }
+
+    .page-header .toolbar-group .btn {
+        flex: 1;
+    }
+}

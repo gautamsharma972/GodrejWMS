@@ -11,6 +11,8 @@
 @using GodrejWMS.Application.Features.LocationTypes.Queries
 @using GodrejWMS.Domain.Entities
 @inject IMediator Mediator
+@inject ILogger<Layout> Logger
+@inject IJSRuntime JsRuntime
 
 <PageTitle>Rack Layout - Godrej WMS</PageTitle>
 
@@ -201,12 +203,12 @@ else
                                     <span>Physical label</span>
                                     <strong>@(!string.IsNullOrWhiteSpace(_selected.FlatLabel) ? _selected.FlatLabel : "Not assigned")</strong>
                                 </div>
-                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="adminContext">
+                                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.ManageRacks">
                                     <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="OpenLabelEditor">
                                         <i class="bi bi-pencil-square" aria-hidden="true"></i>
                                         Edit
                                     </button>
-                                </AuthorizeView>
+                                </PermissionAuthorize>
                             </section>
                         </div>
                     }
@@ -281,10 +283,14 @@ else
                                     </div>
                                 </div>
                             </div>
+                            @if (_labelError is not null)
+                            {
+                                <div class="alert alert-danger mt-3 mb-0">@_labelError</div>
+                            }
                         </div>
                         <div class="slide-over-footer">
                             <button type="button" class="btn btn-outline-secondary" @onclick="CloseLabelEditor">Cancel</button>
-                            <button type="submit" class="btn btn-primary">
+                            <button type="submit" class="btn btn-primary" disabled="@_savingLabel">
                                 <i class="bi bi-check2" aria-hidden="true"></i>
                                 Save Location
                             </button>
@@ -303,6 +309,8 @@ else
     private PalletPositionDto? _selected;
     private LabelFormModel _labelForm = new();
     private bool _showLabelForm;
+    private bool _savingLabel;
+    private string? _labelError;
     private string _rackSearch = string.Empty;
     private string _occupancyFilter = string.Empty;
     private bool _heatmapMode;
@@ -354,6 +362,7 @@ else
         if (_selected is null) return;
 
         _labelForm = CreateLabelForm(_selected);
+        _labelError = null;
         _showLabelForm = true;
     }
 
@@ -366,18 +375,33 @@ else
     {
         if (_selected is null) return;
 
-        await Mediator.Send(new UpdatePalletPositionLabelCommand(
-            _selected.Id,
-            _labelForm.FlatLabel,
-            _labelForm.LocationTypeId,
-            _labelForm.LocationSubtypeId,
-            _labelForm.ZoneTypeId,
-            _labelForm.DistancePriority,
-            _labelForm.MaxPallets,
-            _labelForm.IsActive));
-        await LoadAsync();
-        _selected = _layout!.Positions.FirstOrDefault(p => p.Id == _selected.Id);
-        _showLabelForm = false;
+        _savingLabel = true;
+        _labelError = null;
+        try
+        {
+            await Mediator.Send(new UpdatePalletPositionLabelCommand(
+                _selected.Id,
+                _labelForm.FlatLabel,
+                _labelForm.LocationTypeId,
+                _labelForm.LocationSubtypeId,
+                _labelForm.ZoneTypeId,
+                _labelForm.DistancePriority,
+                _labelForm.MaxPallets,
+                _labelForm.IsActive));
+            await LoadAsync();
+            _selected = _layout!.Positions.FirstOrDefault(p => p.Id == _selected.Id);
+            _showLabelForm = false;
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Location updated.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save pallet position label");
+            _labelError = ex.Message;
+        }
+        finally
+        {
+            _savingLabel = false;
+        }
     }
 
     private static LabelFormModel CreateLabelForm(PalletPositionDto position) => new()

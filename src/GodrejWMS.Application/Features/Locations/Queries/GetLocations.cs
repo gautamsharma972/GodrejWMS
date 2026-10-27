@@ -13,6 +13,7 @@ public sealed record GetLocationsQuery(
     int? LocationSubtypeId = null,
     int? ZoneTypeId = null,
     bool? IsActive = null,
+    int? WarehouseId = null,
     string SortBy = "location",
     bool SortDescending = false,
     int PageNumber = 1,
@@ -25,6 +26,7 @@ public sealed class GetLocationsHandler(IApplicationDbContext db)
     {
         var query = db.PalletPositions
             .AsNoTracking()
+            .Where(p => request.WarehouseId == null || p.Rack.WarehouseId == request.WarehouseId)
             .Select(p => new
             {
                 p.Id,

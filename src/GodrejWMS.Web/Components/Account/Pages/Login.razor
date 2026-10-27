@@ -9,7 +9,6 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject SignInManager<ApplicationUser> SignInManager
 @inject ILogger<Login> Logger
-@inject NavigationManager NavigationManager
 @inject IdentityRedirectManager RedirectManager
 
 <PageTitle>Sign in - Godrej WMS</PageTitle>
@@ -81,7 +80,6 @@
                         <InputCheckbox @bind-Value="Input.RememberMe" class="darker-border-checkbox form-check-input" />
                         Remember this device
                     </label>
-                    <a href="Account/ForgotPassword">Forgot password?</a>
                 </div>
 
                 <button type="submit" class="w-100 btn btn-lg btn-primary login-submit">
@@ -89,10 +87,6 @@
                     Sign in
                 </button>
 
-                <div class="login-links">
-                    <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">Request a new user account</a>
-                    <a href="Account/ResendEmailConfirmation">Resend email confirmation</a>
-                </div>
             </EditForm>
         </div>
 
@@ -117,6 +111,15 @@
         Input ??= new();
 
         editContext = new EditContext(Input);
+
+        // The form embeds a per-response antiforgery token tied to the antiforgery cookie at
+        // render time. Letting the browser serve this page from its disk/back-forward cache
+        // (e.g. after navigating away and back, or after a forced sign-out elsewhere) can hand
+        // back a token that no longer matches the current cookie, failing validation on submit
+        // with "A valid antiforgery token was not provided" - so this page must always be
+        // re-fetched from the server, never cached.
+        HttpContext.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+        HttpContext.Response.Headers.Pragma = "no-cache";
 
         if (HttpMethods.IsGet(HttpContext.Request.Method))
         {

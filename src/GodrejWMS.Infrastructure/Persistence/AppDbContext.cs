@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Common;
 using GodrejWMS.Domain.Entities;
@@ -22,9 +23,23 @@ public class AppDbContext(
 {
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
     public DbSet<UserWarehouse> UserWarehouses => Set<UserWarehouse>();
-    private bool HasAllWarehouses => currentUser.IsInRole("Admin") ||
-        currentUser.IsInRole("Supervisor") || currentUser.IsInRole("Operator");
+    public DbSet<UserRegion> UserRegions => Set<UserRegion>();
+
+    /// <summary>Superadmin and Platform Admin have organization-wide scope. Every other role
+    /// (Logistic Manager, Office Staff, Head Supervisor, Supervisor) is scoped - by region or by a
+    /// single warehouse, see <see cref="HasWarehouseAccess"/> - per the org-hierarchy access model.</summary>
+    private bool HasAllWarehouses => currentUser.IsPlatformLevel();
     private string? AccessUserId => currentUser.UserId;
+
+    // EF Core can translate a plain parameterless property (HasAllWarehouses) inside a query
+    // filter, but not a call to a parametrized instance method - so the "does the current user
+    // have access to warehouse X" check has to be inlined into every filter below rather than
+    // shared via a helper method. Every copy follows this same shape (Superadmin always; a
+    // Logistic Manager if X's region is one of their assigned regions; anyone else if X is one of
+    // their directly assigned warehouses):
+    //   HasAllWarehouses || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == X)
+    //       || UserRegions.Any(r => r.UserId == AccessUserId &&
+    //           Warehouses.Any(w => w.Id == X && w.City != null && w.City.State.RegionId == r.RegionId))
     public DbSet<Material> Materials => Set<Material>();
 
     public DbSet<DesignType> DesignTypes => Set<DesignType>();
@@ -35,6 +50,10 @@ public class AppDbContext(
     public DbSet<SkuMovementType> SkuMovementTypes => Set<SkuMovementType>();
     public DbSet<PlantType> PlantTypes => Set<PlantType>();
     public DbSet<Plant> Plants => Set<Plant>();
+    public DbSet<WarehouseCategory> WarehouseCategories => Set<WarehouseCategory>();
+    public DbSet<Region> Regions => Set<Region>();
+    public DbSet<State> States => Set<State>();
+    public DbSet<City> Cities => Set<City>();
     public DbSet<ZoneType> ZoneTypes => Set<ZoneType>();
     public DbSet<LocationType> LocationTypes => Set<LocationType>();
     public DbSet<Season> Seasons => Set<Season>();
@@ -67,27 +86,63 @@ public class AppDbContext(
 
     public DbSet<InventoryAdjustmentLine> InventoryAdjustmentLines => Set<InventoryAdjustmentLine>();
 
+    public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
+
+    public DbSet<OrganizationSettings> OrganizationSettings => Set<OrganizationSettings>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
 
         builder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
         builder.Entity<UserWarehouse>().HasOne<ApplicationUser>().WithMany().HasForeignKey(w => w.UserId);
-        builder.Entity<Rack>().HasQueryFilter(r => HasAllWarehouses || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == r.WarehouseId));
-        builder.Entity<PalletPosition>().HasQueryFilter(p => HasAllWarehouses || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == p.Rack.WarehouseId));
-        builder.Entity<StockBatch>().HasQueryFilter(b => HasAllWarehouses || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == b.PalletPosition.Rack.WarehouseId));
-        builder.Entity<InwardTransaction>().HasQueryFilter(t => HasAllWarehouses || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == t.WarehouseId));
-        builder.Entity<InwardTransactionLine>().HasQueryFilter(l => HasAllWarehouses || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == l.InwardTransaction.WarehouseId));
-        builder.Entity<InwardPutaway>().HasQueryFilter(p => HasAllWarehouses || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == p.InwardTransactionLine.InwardTransaction.WarehouseId));
-        builder.Entity<PulloutTransaction>().HasQueryFilter(t => HasAllWarehouses || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == t.WarehouseId));
-        builder.Entity<PulloutTransactionLine>().HasQueryFilter(l => HasAllWarehouses || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == l.PulloutTransaction.WarehouseId));
-        builder.Entity<PulloutPick>().HasQueryFilter(p => HasAllWarehouses || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == p.PulloutTransactionLine.PulloutTransaction.WarehouseId));
-        builder.Entity<StockMovement>().HasQueryFilter(m => HasAllWarehouses ||
-            (UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == m.SourcePalletPosition.Rack.WarehouseId) &&
-             UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == m.DestinationPalletPosition.Rack.WarehouseId)));
-        builder.Entity<InventoryAdjustment>().HasQueryFilter(a => HasAllWarehouses || UserWarehouses.Any(w => w.UserId == AccessUserId && w.WarehouseId == a.WarehouseId));
-        builder.Entity<InventoryAdjustmentLine>().HasQueryFilter(l => HasAllWarehouses || UserWarehouses.Any(w => w.UserId == AccessUserId && w.WarehouseId == l.InventoryAdjustment.WarehouseId));
-        builder.Entity<ActivityLog>().HasQueryFilter(a => HasAllWarehouses);
+        builder.Entity<Rack>().HasQueryFilter(r => HasAllWarehouses
+            || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == r.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == r.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<PalletPosition>().HasQueryFilter(p => HasAllWarehouses
+            || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == p.Rack.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == p.Rack.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<StockBatch>().HasQueryFilter(b => HasAllWarehouses
+            || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == b.PalletPosition.Rack.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == b.PalletPosition.Rack.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<InwardTransaction>().HasQueryFilter(t => HasAllWarehouses
+            || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == t.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == t.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<InwardTransactionLine>().HasQueryFilter(l => HasAllWarehouses
+            || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == l.InwardTransaction.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == l.InwardTransaction.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<InwardPutaway>().HasQueryFilter(p => HasAllWarehouses
+            || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == p.InwardTransactionLine.InwardTransaction.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == p.InwardTransactionLine.InwardTransaction.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<PulloutTransaction>().HasQueryFilter(t => HasAllWarehouses
+            || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == t.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == t.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<PulloutTransactionLine>().HasQueryFilter(l => HasAllWarehouses
+            || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == l.PulloutTransaction.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == l.PulloutTransaction.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<PulloutPick>().HasQueryFilter(p => HasAllWarehouses
+            || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == p.PulloutTransactionLine.PulloutTransaction.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == p.PulloutTransactionLine.PulloutTransaction.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<StockMovement>().HasQueryFilter(m =>
+            (HasAllWarehouses
+                || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == m.SourcePalletPosition.Rack.WarehouseId)
+                || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == m.SourcePalletPosition.Rack.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)))
+            && (HasAllWarehouses
+                || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == m.DestinationPalletPosition.Rack.WarehouseId)
+                || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == m.DestinationPalletPosition.Rack.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId))));
+        builder.Entity<InventoryAdjustment>().HasQueryFilter(a => HasAllWarehouses
+            || UserWarehouses.Any(uw => uw.UserId == AccessUserId && uw.WarehouseId == a.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == a.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<InventoryAdjustmentLine>().HasQueryFilter(l => HasAllWarehouses
+            || UserWarehouses.Any(uw => uw.UserId == AccessUserId && uw.WarehouseId == l.InventoryAdjustment.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == l.InventoryAdjustment.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        // ActivityLog is a generic audit sink for every entity type in the app, including
+        // non-warehouse-scoped master data, so WarehouseId is nullable: rows where it couldn't be
+        // resolved (BuildActivityLogs) stay Superadmin-only, the same safe default as before this
+        // column existed.
+        builder.Entity<ActivityLog>().HasQueryFilter(a => HasAllWarehouses
+            || (a.WarehouseId != null && (UserWarehouses.Any(uw => uw.UserId == AccessUserId && uw.WarehouseId == a.WarehouseId)
+                || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == a.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)))));
     }
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -150,6 +205,7 @@ public class AppDbContext(
                 Action = action,
                 EntityName = entityName,
                 EntityId = GetPrimaryKey(entry),
+                WarehouseId = ResolveWarehouseId(entry.Entity),
                 Summary = BuildSummary(action, entityName, entry),
                 OldValuesJson = entry.State is EntityState.Added ? null : SerializeValues(entry, originalValues: true),
                 NewValuesJson = entry.State is EntityState.Deleted ? null : SerializeValues(entry, originalValues: false)
@@ -158,6 +214,30 @@ public class AppDbContext(
 
         return logs;
     }
+
+    /// <summary>Best-effort WarehouseId for the audit row: a direct scalar where the entity has
+    /// one, otherwise a navigation chain up to the warehouse-scoped root - which only resolves if
+    /// that navigation happens to already be loaded on the tracked entity. Unresolvable or
+    /// genuinely warehouse-less entities (shared master data) return null and the row stays
+    /// Superadmin-only, per the ActivityLog query filter.</summary>
+    private static int? ResolveWarehouseId(object entity) => entity switch
+    {
+        Rack r => r.WarehouseId,
+        InwardTransaction t => t.WarehouseId,
+        PulloutTransaction t => t.WarehouseId,
+        InventoryAdjustment a => a.WarehouseId,
+        PalletPosition p => p.Rack?.WarehouseId,
+        StockBatch b => b.PalletPosition?.Rack?.WarehouseId,
+        InwardTransactionLine l => l.InwardTransaction?.WarehouseId,
+        InwardPutaway p => p.InwardTransactionLine?.InwardTransaction?.WarehouseId,
+        PulloutTransactionLine l => l.PulloutTransaction?.WarehouseId,
+        PulloutPick p => p.PulloutTransactionLine?.PulloutTransaction?.WarehouseId,
+        InventoryAdjustmentLine l => l.InventoryAdjustment?.WarehouseId,
+        // Source and destination can differ; the source side is the one the moving stock is
+        // attributed to for audit purposes.
+        StockMovement m => m.SourcePalletPosition?.Rack?.WarehouseId,
+        _ => null
+    };
 
     private string? SafeCurrentUserId()
     {

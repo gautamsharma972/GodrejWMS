@@ -64,7 +64,7 @@ public sealed class ReallocateInwardHandler(
                 continue;
             }
 
-            await ReallocateLineAsync(line, remaining, cancellationToken);
+            await ReallocateLineAsync(line, remaining, transaction.WarehouseId, cancellationToken);
         }
 
         return InwardResultMapper.ToResult(transaction);
@@ -76,13 +76,13 @@ public sealed class ReallocateInwardHandler(
     /// doesn't force redoing every other line) - see that method's remarks for why the atomicity
     /// this relies on is a standard relational-provider guarantee, not proven by an InMemory test.
     /// </summary>
-    private async Task ReallocateLineAsync(InwardTransactionLine line, decimal remaining, CancellationToken cancellationToken)
+    private async Task ReallocateLineAsync(InwardTransactionLine line, decimal remaining, int warehouseId, CancellationToken cancellationToken)
     {
         var originalAllocated = line.AllocatedQuantityBoxes;
 
         for (var attempt = 1; attempt <= MaxAllocationAttempts; attempt++)
         {
-            var allocation = await allocator.AllocateAsync(line.MaterialId, remaining, line.MfgMonth, cancellationToken: cancellationToken);
+            var allocation = await allocator.AllocateAsync(line.MaterialId, remaining, line.MfgMonth, warehouseId, cancellationToken: cancellationToken);
 
             var addedPutaways = new List<InwardPutaway>();
             foreach (var putaway in allocation.Lines)

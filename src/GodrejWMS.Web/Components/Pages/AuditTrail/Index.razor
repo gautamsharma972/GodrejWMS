@@ -1,5 +1,5 @@
 @page "/audit-trail"
-@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewAuditTrail)]
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Features.ActivityLogs.Dtos
 @using GodrejWMS.Application.Features.ActivityLogs.Queries
@@ -43,6 +43,8 @@
             </select>
             <input class="form-control filter-control" type="date" title="From date" value="@_from" @onchange="OnFromChanged" />
             <input class="form-control filter-control" type="date" title="To date" value="@_to" @onchange="OnToChanged" />
+            <WarehouseSelect WarehouseId="_warehouseFilter" WarehouseIdChanged="OnWarehouseFilterChangedAsync"
+                              AllowClear="true" Placeholder="Filter by warehouse..." />
         </div>
         @if (_page is not null)
         {
@@ -71,6 +73,7 @@
                         <th><button class="sort-button" @onclick='@(() => SortBy("user"))'>User <i class='bi @SortIcon("user")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("action"))'>Action <i class='bi @SortIcon("action")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("entity"))'>Entity <i class='bi @SortIcon("entity")'></i></button></th>
+                        <th>Warehouse</th>
                         <th>Summary</th>
                         <th class="table-actions">Details</th>
                     </tr>
@@ -89,6 +92,7 @@
                                     <span class="text-muted">#@row.EntityId</span>
                                 }
                             </td>
+                            <td>@(row.WarehouseName ?? "-")</td>
                             <td>@row.Summary</td>
                             <td class="table-actions">
                                 <button class="btn btn-sm btn-outline-primary" title="View audit details" aria-label="View audit details" @onclick="() => ShowDetails(row)">
@@ -189,6 +193,7 @@
     private int _loadSequence;
     private string _search = string.Empty;
     private string _actionFilter = string.Empty;
+    private int? _warehouseFilter;
     private string _entityFilter = string.Empty;
     private string _from = string.Empty;
     private string _to = string.Empty;
@@ -229,12 +234,19 @@
             EntityName: string.IsNullOrWhiteSpace(_entityFilter) ? null : _entityFilter,
             From: ParseDate(_from),
             To: ParseDate(_to)?.AddDays(1),
+            WarehouseId: _warehouseFilter,
             SortBy: _sortBy,
             SortDescending: _sortDescending,
             PageNumber: page,
             PageSize: pageSize);
 
     private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadPage(1);
+
+    private async Task OnWarehouseFilterChangedAsync(int? warehouseId)
+    {
+        _warehouseFilter = warehouseId;
+        await LoadPage(1);
+    }
 
     private async Task OnActionChanged(ChangeEventArgs e)
     {
@@ -284,8 +296,9 @@
             Csv(a.Action),
             Csv(EntityLabel(a.EntityName)),
             Csv(a.EntityId ?? string.Empty),
+            Csv(a.WarehouseName ?? string.Empty),
             Csv(a.Summary)));
-        var csv = "Occurred,User,Action,Entity,Entity Id,Summary\r\n" + string.Join("\r\n", rows);
+        var csv = "Occurred,User,Action,Entity,Entity Id,Warehouse,Summary\r\n" + string.Join("\r\n", rows);
         var base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(csv));
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "audit-trail.csv", base64, "text/csv");
     }

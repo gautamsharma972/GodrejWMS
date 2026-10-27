@@ -12,8 +12,8 @@
        @onchange="OnSidebarChangedAsync" />
 
 <div class="page">
-    <aside class="sidebar">
-        <NavMenu SidebarCollapsed="sidebarCollapsed" />
+    <aside class="sidebar" @onmouseenter="ExpandSidebarOnHover" @onmouseleave="CollapseSidebarAfterHover">
+        <NavMenu SidebarCollapsed="EffectiveSidebarCollapsed" />
     </aside>
 
     <main class="workspace @(IsPutawayExecution ? "putaway-execution-workspace" : null) @(IsReportPage ? "report-workspace" : null)">
@@ -57,10 +57,7 @@
                             <span class="tour-launch-text">Take a tour</span>
                         </button>
 
-                        <span class="live-chip" data-tour="topbar-live" title="Realtime sync active" data-bs-toggle="tooltip" data-bs-placement="bottom">
-                            <span class="live-dot"></span>
-                            Live
-                        </span>
+                        <WarehouseScopeBadge data-tour="topbar-live" />
 
                         <NotificationCenter />
 
@@ -133,7 +130,9 @@
 
 @code {
     private bool sidebarCollapsed = true;
+    private bool sidebarHovering;
     private string? currentUrl;
+    private bool EffectiveSidebarCollapsed => sidebarCollapsed && !sidebarHovering;
     private bool IsReportPage => (currentUrl ?? string.Empty).StartsWith("reports/", StringComparison.OrdinalIgnoreCase);
 
     private string CurrentPath => (currentUrl ?? string.Empty).Split('?', '#')[0].Trim('/');
@@ -159,29 +158,24 @@
         NavigationManager.LocationChanged += OnLocationChanged;
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    protected override Task OnAfterRenderAsync(bool firstRender)
     {
-        // JS interop (localStorage) isn't available during static prerendering, so the initial
-        // page's visit is only tracked once the interactive circuit actually connects here;
-        // later navigations are tracked from OnLocationChanged instead, which only ever fires
-        // after that point.
         if (firstRender)
         {
-            var savedState = await JsRuntime.InvokeAsync<bool?>("godrejWms.getSidebarCollapsed");
-            if (savedState.HasValue && savedState.Value != sidebarCollapsed)
-            {
-                sidebarCollapsed = savedState.Value;
-                StateHasChanged();
-            }
             TrackVisit();
         }
+
+        return Task.CompletedTask;
     }
 
-    private async Task OnSidebarChangedAsync(ChangeEventArgs args)
+    private void OnSidebarChangedAsync(ChangeEventArgs args)
     {
         sidebarCollapsed = args.Value is bool isChecked && isChecked;
-        await JsRuntime.InvokeVoidAsync("godrejWms.setSidebarCollapsed", sidebarCollapsed);
     }
+
+    private void ExpandSidebarOnHover() => sidebarHovering = true;
+
+    private void CollapseSidebarAfterHover() => sidebarHovering = false;
 
     private void TrackVisit()
     {

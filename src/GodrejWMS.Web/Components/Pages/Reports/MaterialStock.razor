@@ -1,0 +1,289 @@
+@page "/reports/material-stock"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewReports)]
+@using System.Globalization
+@using GodrejWMS.Application.Common
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Features.Reports.Core
+@using GodrejWMS.Application.Features.Reports.Dtos
+@using GodrejWMS.Application.Features.Reports.Queries
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Material Stock Report - Godrej WMS</PageTitle>
+
+<div class="page-shell material-stock-report">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Reports / Inventory</div>
+            <h1>Material Stock Report</h1>
+            <p class="page-kicker">Material and PKM-level stock with MRP and current box quantity.</p>
+        </div>
+        <div class="toolbar-group">
+            <button type="button" class="btn btn-outline-secondary" @onclick="ResetAsync" disabled="@_loading">
+                <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+                Reset
+            </button>
+            <button type="button" class="btn btn-outline-primary" @onclick="ExportCsvAsync" disabled="@(_loading || _rows.Count == 0)">
+                <i class="bi bi-download" aria-hidden="true"></i>
+                Export CSV
+            </button>
+        </div>
+    </div>
+
+    <section class="report-filter-card" aria-labelledby="material-stock-filters">
+        <div class="report-filter-heading">
+            <h2 id="material-stock-filters"><i class="bi bi-funnel" aria-hidden="true"></i> Filters</h2>
+            @if (ActiveFilterCount > 0)
+            {
+                <button type="button" class="filter-clear" @onclick="ResetAsync">Clear filters</button>
+            }
+        </div>
+
+        <div class="material-filter-grid" @onkeydown="HandleFilterKeyDown">
+            <label class="filter-field">
+                <span>Material</span>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                    <input class="form-control" placeholder="Code or description" @bind="_search" @bind:event="oninput" />
+                </div>
+            </label>
+
+            <label class="filter-field">
+                <span>Warehouse</span>
+                <select class="form-select" @bind="_warehouseText">
+                    <option value="">All assigned warehouses</option>
+                    @foreach (var warehouse in _warehouses)
+                    {
+                        <option value="@warehouse.Id">@warehouse.Code — @warehouse.Name</option>
+                    }
+                </select>
+            </label>
+
+            <div class="filter-field filter-range">
+                <span>PKM range</span>
+                <div class="range-control">
+                    <input class="form-control" type="month" aria-label="PKM from" value="@_pkmFromText"
+                           @onchange="e => _pkmFromText = e.Value?.ToString() ?? string.Empty" />
+                    <span>to</span>
+                    <input class="form-control" type="month" aria-label="PKM to" value="@_pkmToText"
+                           @onchange="e => _pkmToText = e.Value?.ToString() ?? string.Empty" />
+                </div>
+            </div>
+
+            <div class="filter-field filter-range">
+                <span>MRP range</span>
+                <div class="range-control">
+                    <input class="form-control" type="number" min="0" step="0.01" aria-label="Minimum MRP" placeholder="Min ₹" @bind="_minMrpText" />
+                    <span>to</span>
+                    <input class="form-control" type="number" min="0" step="0.01" aria-label="Maximum MRP" placeholder="Max ₹" @bind="_maxMrpText" />
+                </div>
+            </div>
+
+            <div class="filter-field filter-range">
+                <span>Box quantity</span>
+                <div class="range-control">
+                    <input class="form-control" type="number" min="0" step="0.001" aria-label="Minimum boxes" placeholder="Min" @bind="_minBoxesText" />
+                    <span>to</span>
+                    <input class="form-control" type="number" min="0" step="0.001" aria-label="Maximum boxes" placeholder="Max" @bind="_maxBoxesText" />
+                </div>
+            </div>
+
+            <button type="button" class="btn btn-primary filter-apply" @onclick="LoadAsync" disabled="@_loading">
+                @if (_loading)
+                {
+                    <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                    <span>Filtering…</span>
+                }
+                else
+                {
+                    <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+                    <span>Apply filters</span>
+                }
+            </button>
+        </div>
+    </section>
+
+    @if (_error is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_error</div>
+    }
+
+    <div class="material-report-summary" aria-label="Report summary">
+        <div><span>Rows</span><strong>@_rows.Count.ToString("N0")</strong></div>
+        <div><span>Materials</span><strong>@_rows.Select(row => row.MaterialCode).Distinct().Count().ToString("N0")</strong></div>
+        <div><span>PKM periods</span><strong>@_rows.Select(row => row.Pkm).Distinct().Count().ToString("N0")</strong></div>
+        <div class="summary-primary"><span>Total box quantity</span><strong>@_rows.Sum(row => row.BoxQuantity).ToString("N3")</strong></div>
+    </div>
+
+    <div class="panel material-report-panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Stock details</h2>
+                <p class="panel-subtitle">Grouped by material, PKM, and MRP across the selected warehouse scope.</p>
+            </div>
+            <span class="sync-chip"><span class="live-dot"></span> Current stock</span>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="loading-panel"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Loading report...</div>
+        }
+        else if (_rows.Count == 0)
+        {
+            <div class="empty-state material-report-empty">
+                <i class="bi bi-inboxes" aria-hidden="true"></i>
+                <strong>No stock matches these filters</strong>
+                <span>Broaden or clear one of the active filters.</span>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 material-report-table">
+                    <thead>
+                        <tr>
+                            <th><button class="sort-button" @onclick='() => SortBy("code")'>Material Code @SortIcon("code")</button></th>
+                            <th><button class="sort-button" @onclick='() => SortBy("description")'>Material Description @SortIcon("description")</button></th>
+                            <th><button class="sort-button" @onclick='() => SortBy("pkm")'>PKM @SortIcon("pkm")</button></th>
+                            <th class="text-end"><button class="sort-button" @onclick='() => SortBy("mrp")'>MRP @SortIcon("mrp")</button></th>
+                            <th class="text-end"><button class="sort-button" @onclick='() => SortBy("boxes")'>Box Qty @SortIcon("boxes")</button></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in SortedRows)
+                        {
+                            <tr>
+                                <td><span class="record-code">@row.MaterialCode</span></td>
+                                <td class="material-description">@row.MaterialDescription</td>
+                                <td><span class="status-pill neutral">@MfgMonthParser.Format(row.Pkm)</span></td>
+                                <td class="text-end">₹@row.Mrp.ToString("N2")</td>
+                                <td class="text-end"><strong>@row.BoxQuantity.ToString("N3")</strong></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<WarehouseOption> _warehouses = [];
+    private IReadOnlyList<MaterialStockReportRowDto> _rows = [];
+    private bool _loading = true;
+    private string? _error;
+    private string _search = string.Empty;
+    private string _warehouseText = string.Empty;
+    private string _pkmFromText = string.Empty;
+    private string _pkmToText = string.Empty;
+    private string _minMrpText = string.Empty;
+    private string _maxMrpText = string.Empty;
+    private string _minBoxesText = string.Empty;
+    private string _maxBoxesText = string.Empty;
+    private string _sortBy = "code";
+    private bool _sortDescending;
+
+    private int ActiveFilterCount => new[] { _search, _warehouseText, _pkmFromText, _pkmToText, _minMrpText, _maxMrpText, _minBoxesText, _maxBoxesText }
+        .Count(value => !string.IsNullOrWhiteSpace(value));
+
+    private IEnumerable<MaterialStockReportRowDto> SortedRows => (_sortBy, _sortDescending) switch
+    {
+        ("code", false) => _rows.OrderBy(row => row.MaterialCode).ThenBy(row => row.Pkm),
+        ("code", true) => _rows.OrderByDescending(row => row.MaterialCode).ThenByDescending(row => row.Pkm),
+        ("description", false) => _rows.OrderBy(row => row.MaterialDescription).ThenBy(row => row.MaterialCode),
+        ("description", true) => _rows.OrderByDescending(row => row.MaterialDescription).ThenByDescending(row => row.MaterialCode),
+        ("pkm", false) => _rows.OrderBy(row => row.Pkm).ThenBy(row => row.MaterialCode),
+        ("pkm", true) => _rows.OrderByDescending(row => row.Pkm).ThenBy(row => row.MaterialCode),
+        ("mrp", false) => _rows.OrderBy(row => row.Mrp).ThenBy(row => row.MaterialCode),
+        ("mrp", true) => _rows.OrderByDescending(row => row.Mrp).ThenBy(row => row.MaterialCode),
+        ("boxes", false) => _rows.OrderBy(row => row.BoxQuantity).ThenBy(row => row.MaterialCode),
+        _ => _rows.OrderByDescending(row => row.BoxQuantity).ThenBy(row => row.MaterialCode)
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _warehouses = await Mediator.Send(new GetAccessibleWarehousesQuery());
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var filter = new MaterialStockReportFilter(
+                int.TryParse(_warehouseText, out var warehouseId) ? warehouseId : null,
+                Null(_search),
+                ParseMonth(_pkmFromText),
+                ParseMonth(_pkmToText),
+                ParseDecimal(_minMrpText),
+                ParseDecimal(_maxMrpText),
+                ParseDecimal(_minBoxesText),
+                ParseDecimal(_maxBoxesText));
+            _rows = await Mediator.Send(new GetMaterialStockReportQuery(filter));
+        }
+        catch (Exception ex)
+        {
+            _rows = [];
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        _search = _warehouseText = _pkmFromText = _pkmToText = _minMrpText = _maxMrpText = _minBoxesText = _maxBoxesText = string.Empty;
+        await LoadAsync();
+    }
+
+    private async Task HandleFilterKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await LoadAsync();
+    }
+
+    private void SortBy(string column)
+    {
+        if (_sortBy == column)
+            _sortDescending = !_sortDescending;
+        else
+        {
+            _sortBy = column;
+            _sortDescending = false;
+        }
+    }
+
+    private MarkupString SortIcon(string column) => _sortBy == column
+        ? new MarkupString($"<i class=\"bi bi-arrow-{(_sortDescending ? "down" : "up")}\" aria-hidden=\"true\"></i>")
+        : new MarkupString(string.Empty);
+
+    private async Task ExportCsvAsync()
+    {
+        var lines = SortedRows.Select(row => string.Join(",",
+            row.MaterialCode.ToString(CultureInfo.InvariantCulture),
+            Csv(row.MaterialDescription),
+            Csv(MfgMonthParser.Format(row.Pkm)),
+            row.Mrp.ToString("0.00", CultureInfo.InvariantCulture),
+            row.BoxQuantity.ToString("0.###", CultureInfo.InvariantCulture)));
+        var csv = "Material Code,Material Description,PKM,MRP,Box Qty\r\n" + string.Join("\r\n", lines);
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "material-stock-report.csv",
+            Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(csv)), "text/csv");
+    }
+
+    private static string? Null(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static int? ParseMonth(string value) => DateOnly.TryParseExact(value + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var month)
+        ? month.Year * 100 + month.Month
+        : null;
+    private static decimal? ParseDecimal(string value) => decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)
+        ? parsed
+        : decimal.TryParse(value, out parsed) ? parsed : null;
+    private static string Csv(string value)
+    {
+        var escaped = value.Replace("\"", "\"\"");
+        return escaped.Contains(',') || escaped.Contains('"') || escaped.Contains('\n') ? $"\"{escaped}\"" : escaped;
+    }
+}

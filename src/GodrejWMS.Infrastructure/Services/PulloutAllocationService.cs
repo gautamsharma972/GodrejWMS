@@ -16,6 +16,7 @@ public class PulloutAllocationService(IApplicationDbContext db) : IPulloutAlloca
     public async Task<PulloutAllocationResult> AllocateAsync(
         int materialId,
         decimal quantityBoxes,
+        int warehouseId,
         CancellationToken cancellationToken = default,
         bool preview = false)
     {
@@ -30,7 +31,8 @@ public class PulloutAllocationService(IApplicationDbContext db) : IPulloutAlloca
                 && b.StockSubtypeId == LocationSubtypeIds.Good
                 && b.QuantityBoxes > 0
                 && b.PalletPosition.IsActive
-                && b.PalletPosition.LocationSubtypeId == LocationSubtypeIds.Good)
+                && b.PalletPosition.LocationSubtypeId == LocationSubtypeIds.Good
+                && b.PalletPosition.Rack.WarehouseId == warehouseId)
             .Include(b => b.PalletPosition)
             .OrderBy(b => b.MfgMonth)
             .ThenBy(b => b.PalletPosition.Rack.Code)

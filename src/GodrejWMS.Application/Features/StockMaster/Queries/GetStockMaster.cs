@@ -15,6 +15,7 @@ public sealed record GetStockMasterQuery(
     int? MovementTypeId = null,
     int? SeasonId = null,
     bool? IsActive = null,
+    int? WarehouseId = null,
     string SortBy = "material",
     bool SortDescending = false,
     int PageNumber = 1,
@@ -47,8 +48,14 @@ public sealed class GetStockMasterHandler(IApplicationDbContext db)
                 b.MfgMonth,
                 StockSubtypeName = b.StockSubtype.DisplayName,
                 b.PalletPosition.LocationCode,
-                RackCode = b.PalletPosition.Rack.Code
+                RackCode = b.PalletPosition.Rack.Code,
+                b.PalletPosition.Rack.WarehouseId
             });
+
+        if (request.WarehouseId.HasValue)
+        {
+            query = query.Where(b => b.WarehouseId == request.WarehouseId.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(request.MaterialSearch))
         {

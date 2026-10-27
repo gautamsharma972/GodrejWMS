@@ -1,11 +1,32 @@
 using System.IO.Compression;
 using GodrejWMS.Infrastructure.Services;
+using GodrejWMS.Application.Features.Materials.Dtos;
 using Xunit;
 
 namespace GodrejWMS.Infrastructure.Tests;
 
 public class ClosedXmlExcelServiceTests
 {
+    [Fact]
+    public void WriteMaterialMaster_WritesCompleteExportWithTypedValues()
+    {
+        var material = new MaterialDto(
+            1, 40019311, "Test material", "GGAF1", "CHAR", 48, 99.50m,
+            41.7m, 23.9m, 22.4m, 22325m, 0.1m, 0.2m, 9.6m, 40, 8m,
+            1, "FastMoving", "Fast-moving", 1, "Summer", "Summer", 2, "Fast zone", true, true);
+
+        var bytes = new ClosedXmlExcelService().WriteMaterialMaster([material]);
+
+        using var workbook = new ClosedXML.Excel.XLWorkbook(new MemoryStream(bytes));
+        var sheet = workbook.Worksheet("Material Master");
+        Assert.Equal("Material Code", sheet.Cell("A1").GetString());
+        Assert.Equal(40019311L, sheet.Cell("A2").GetValue<long>());
+        Assert.Equal(99.50m, sheet.Cell("F2").GetValue<decimal>());
+        Assert.Equal("Fast zone (required)", sheet.Cell("Q2").GetString());
+        Assert.Equal("Active", sheet.Cell("S2").GetString());
+        Assert.True(sheet.AutoFilter.IsEnabled);
+    }
+
     [Fact]
     public void WriteOperationalReport_WritesHeadersAndRows()
     {

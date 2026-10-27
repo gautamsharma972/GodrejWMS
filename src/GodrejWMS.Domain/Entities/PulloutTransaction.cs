@@ -29,6 +29,20 @@ public class PulloutTransaction : AuditableEntity
     public string? PreviewJson { get; set; }
     public int RowVersion { get; set; }
 
+    // Loading Sheet header fields, captured verbatim from the uploaded Excel (if any) and carried
+    // through to the downloaded Loading Sheet unchanged - this app has no domain concept of
+    // transport/vehicle/driver/etc., so these are free text, never validated.
+    public string? TransportName { get; set; }
+    public string? VehicleNumber { get; set; }
+    public string? GateNumber { get; set; }
+    public string? DriverNumber { get; set; }
+    public string? PlanTime { get; set; }
+    public string? DateText { get; set; }
+    public string? StartTime { get; set; }
+    public string? EndTime { get; set; }
+    public string? WeightText { get; set; }
+    public string? VolumeText { get; set; }
+
     public ICollection<PulloutTransactionLine> Lines { get; set; } = new List<PulloutTransactionLine>();
 }
 
@@ -60,6 +74,10 @@ public class PulloutTransactionLine
     /// <summary>Destination plant name as entered on this line - free text, not a foreign key to
     /// <see cref="Entities.Plant"/>, so it's never validated against the Plant Master.</summary>
     public string? PlantName { get; set; }
+
+    /// <summary>Priority as entered in the "Priority" column of the uploaded GCPL Loading Sheet -
+    /// free text (e.g. "GIT"), carried through unchanged to the downloaded Loading Sheet.</summary>
+    public string? Priority { get; set; }
 
     public ICollection<PulloutPick> Picks { get; set; } = new List<PulloutPick>();
 }

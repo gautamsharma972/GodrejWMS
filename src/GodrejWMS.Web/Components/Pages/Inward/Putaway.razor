@@ -1,5 +1,5 @@
 @page "/inward/{TransactionId:int}/putaway"
-@attribute [Authorize(Roles = "Admin,Operator,Supervisor")]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward)]
 @using GodrejWMS.Application.Features.Inward.Commands
 @using GodrejWMS.Application.Features.Inward.Dtos
 @using GodrejWMS.Application.Features.Inward.Queries

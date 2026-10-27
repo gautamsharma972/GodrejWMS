@@ -11,13 +11,15 @@ public interface IPulloutAllocationService
 {
     /// <summary>
     /// Picks <paramref name="quantityBoxes"/> of <paramref name="materialId"/> from the oldest
-    /// available batches first. Mutates/deletes tracked <see cref="Domain.Entities.StockBatch"/>
-    /// entities via <see cref="IApplicationDbContext"/> but does not call SaveChanges — the caller
-    /// owns the unit of work. With preview enabled, only detached batches are changed.
+    /// available batches first, within <paramref name="warehouseId"/> only. Mutates/deletes tracked
+    /// <see cref="Domain.Entities.StockBatch"/> entities via <see cref="IApplicationDbContext"/>
+    /// but does not call SaveChanges — the caller owns the unit of work. With preview enabled,
+    /// only detached batches are changed.
     /// </summary>
     Task<PulloutAllocationResult> AllocateAsync(
         int materialId,
         decimal quantityBoxes,
+        int warehouseId,
         CancellationToken cancellationToken = default,
         bool preview = false);
 }

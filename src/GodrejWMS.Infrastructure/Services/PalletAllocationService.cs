@@ -36,6 +36,7 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
         int materialId,
         decimal quantityBoxes,
         int mfgMonth,
+        int warehouseId,
         int stockSubtypeId = LocationSubtypeIds.Good,
         CancellationToken cancellationToken = default)
     {
@@ -71,7 +72,7 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
         var requiredZoneTypeId = material.RequirePreferredZone ? material.PreferredZoneTypeId : null;
 
         var candidatePositions = await db.PalletPositions
-            .Where(p => p.IsActive && p.LocationSubtypeId == stockSubtypeId
+            .Where(p => p.IsActive && p.LocationSubtypeId == stockSubtypeId && p.Rack.WarehouseId == warehouseId
                 && (requiredZoneTypeId == null || p.ZoneTypeId == requiredZoneTypeId))
             .Include(p => p.Rack)
             .Include(p => p.StockBatches)
@@ -103,7 +104,8 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
         if (remaining > 0)
         {
             var oldestMfgMonth = await db.StockBatches
-                .Where(b => b.MaterialId == materialId && b.StockSubtypeId == stockSubtypeId && b.QuantityBoxes > 0)
+                .Where(b => b.MaterialId == materialId && b.StockSubtypeId == stockSubtypeId && b.QuantityBoxes > 0
+                    && b.PalletPosition.Rack.WarehouseId == warehouseId)
                 .MinAsync(b => (int?)b.MfgMonth, cancellationToken);
 
             var racksWithSameDesignType = await GetRacksWithSameDesignTypeAsync(candidatePositions, pendingReservations, material, cancellationToken);

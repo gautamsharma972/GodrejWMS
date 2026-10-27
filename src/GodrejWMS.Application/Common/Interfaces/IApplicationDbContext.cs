@@ -8,10 +8,13 @@ namespace GodrejWMS.Application.Common.Interfaces;
 /// Persistence seam the Application layer codes against, so it never takes a compile-time
 /// dependency on EF Core or MySQL — those live entirely in Infrastructure.
 /// </summary>
-public interface IApplicationDbContext
+public interface IApplicationDbContext : IAsyncDisposable
 {
     DbSet<Warehouse> Warehouses { get; }
     DbSet<UserWarehouse> UserWarehouses { get; }
+    DbSet<UserRegion> UserRegions { get; }
+    DbSet<RolePermission> RolePermissions { get; }
+    DbSet<OrganizationSettings> OrganizationSettings { get; }
     DbSet<Material> Materials { get; }
 
     DbSet<DesignType> DesignTypes { get; }
@@ -22,6 +25,10 @@ public interface IApplicationDbContext
     DbSet<SkuMovementType> SkuMovementTypes { get; }
     DbSet<PlantType> PlantTypes { get; }
     DbSet<Plant> Plants { get; }
+    DbSet<WarehouseCategory> WarehouseCategories { get; }
+    DbSet<Region> Regions { get; }
+    DbSet<State> States { get; }
+    DbSet<City> Cities { get; }
     DbSet<ZoneType> ZoneTypes { get; }
     DbSet<LocationType> LocationTypes { get; }
     DbSet<Season> Seasons { get; }

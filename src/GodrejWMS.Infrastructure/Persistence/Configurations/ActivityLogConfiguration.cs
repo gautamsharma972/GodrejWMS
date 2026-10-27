@@ -23,5 +23,6 @@ public class ActivityLogConfiguration : IEntityTypeConfiguration<ActivityLog>
         builder.HasIndex(a => a.Action);
         builder.HasIndex(a => a.EntityName);
         builder.HasIndex(a => a.UserName);
+        builder.HasIndex(a => a.WarehouseId);
     }
 }

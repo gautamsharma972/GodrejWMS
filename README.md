@@ -118,8 +118,8 @@ Edit `src/GodrejWMS.Web/appsettings.json` (or use `dotnet user-secrets` for loca
 dotnet ef database update --project src/GodrejWMS.Infrastructure --startup-project src/GodrejWMS.Web
 ```
 
-(The app also auto-applies pending migrations at startup via `DbInitializer`, so this step is
-optional for local dev — useful mainly if you want to inspect the schema first.)
+(The app also auto-applies pending schema migrations at startup via
+`DatabaseMigrationRunner`, so this step is optional for local development.)
 
 ### 3. Run
 
@@ -127,14 +127,8 @@ optional for local dev — useful mainly if you want to inspect the schema first
 dotnet run --project src/GodrejWMS.Web
 ```
 
-On first run, `DbInitializer` seeds:
-- Roles: `Admin`, `Supervisor`, `Operator`
-- A default admin account — **change the password after first login**:
-  - Email: `admin@godrejwms.local` (configurable under `DefaultAdmin` in appsettings)
-  - Password: `Godrej@WMS123!`
-- Two demo racks (`A`, `B`, 5×5 grid each) and a handful of demo materials, so the app is
-  immediately explorable. Demo data is only seeded when the `Racks` table is empty — it never
-  overwrites real data.
+Startup seeding is disabled. The application applies pending database migrations only; it does
+not create demo racks/materials, roles, sample users, or a default administrator account.
 
 ### Tests
 
@@ -173,4 +167,3 @@ This scaffold is deliberately runnable out of the box; before going live, revisi
   variables), not `appsettings.json`.
 - Configure a real `IEmailSender<ApplicationUser>` (currently a no-op) if you want email
   confirmation / password-reset emails.
-- Review `DbInitializer`'s demo-data seeding — remove it once real Material Master / rack data is imported.

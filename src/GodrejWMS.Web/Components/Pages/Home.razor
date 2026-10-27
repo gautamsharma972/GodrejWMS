@@ -15,9 +15,9 @@
     </div>
     <div class="header-actions">
         <a class="btn btn-outline-secondary" href="inventory-master"><i class="bi bi-database-check"></i> Inventory</a>
-        <AuthorizeView Roles="Admin,Operator,Supervisor" Context="opsContext">
+        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward">
             <a class="btn btn-primary" href="inward"><i class="bi bi-box-arrow-in-down"></i> Inward</a>
-        </AuthorizeView>
+        </PermissionAuthorize>
     </div>
 </div>
 
@@ -92,12 +92,30 @@ else
         </div>
         <div class="audit-summary-card accent-indigo">
             <div class="audit-summary-top">
-                <span class="audit-summary-icon"><i class="bi bi-arrow-left-right" aria-hidden="true"></i></span>
-                <span class="audit-summary-status">Today movement</span>
+                <span class="audit-summary-icon"><i class="bi bi-box-arrow-in-down" aria-hidden="true"></i></span>
+                <span class="audit-summary-status">Today's inward</span>
             </div>
-            <div class="audit-summary-value">@TodayNetFlow().ToString("N0")</div>
-            <div class="audit-summary-label">Net inbound boxes today</div>
-            <div class="audit-summary-meta">@_summary.TodayInwardBoxes.ToString("N0") received, @_summary.TodayConfirmedBoxes.ToString("N0") confirmed, @_summary.TodayPulloutBoxes.ToString("N0") picked</div>
+            <div class="audit-summary-value">@_summary.TodayInwardTransactions.ToString("N0")</div>
+            <div class="audit-summary-label">Inward transaction(s)</div>
+            <div class="audit-summary-meta">@_summary.TodayInwardBoxes.ToString("N0") boxes received · @_summary.TodayConfirmedBoxes.ToString("N0") confirmed</div>
+        </div>
+        <div class="audit-summary-card accent-indigo">
+            <div class="audit-summary-top">
+                <span class="audit-summary-icon"><i class="bi bi-box-arrow-up" aria-hidden="true"></i></span>
+                <span class="audit-summary-status">Today's outward</span>
+            </div>
+            <div class="audit-summary-value">@_summary.TodayPulloutTransactions.ToString("N0")</div>
+            <div class="audit-summary-label">Pullout transaction(s)</div>
+            <div class="audit-summary-meta">@_summary.TodayPickedBoxes.ToString("N0") boxes picked · @_summary.TodayPulloutBoxes.ToString("N0") confirmed</div>
+        </div>
+        <div class="audit-summary-card @PendingAccentClass()">
+            <div class="audit-summary-top">
+                <span class="audit-summary-icon"><i class="bi bi-hourglass-split" aria-hidden="true"></i></span>
+                <span class="audit-summary-status">Pending confirmations</span>
+            </div>
+            <div class="audit-summary-value">@PendingConfirmationCount().ToString("N0")</div>
+            <div class="audit-summary-label">Transaction(s) awaiting confirmation</div>
+            <div class="audit-summary-meta">@_summary.PendingPutawayTransactions inward · @_summary.PendingPulloutTransactions pullout</div>
         </div>
         <div class="audit-summary-card @ExceptionAccentClass()">
             <div class="audit-summary-top">
@@ -165,10 +183,12 @@ else
     <div class="quick-actions">
         <a class="btn btn-outline-primary" href="inventory-master"><i class="bi bi-database-check"></i> View Inventory Master</a>
         <a class="btn btn-outline-secondary" href="racks"><i class="bi bi-grid-3x3-gap"></i> View Rack Layout</a>
-        <AuthorizeView Roles="Admin,Operator,Supervisor" Context="opsContext">
+        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward">
             <a class="btn btn-primary" href="inward"><i class="bi bi-box-arrow-in-down"></i> Record Inward</a>
+        </PermissionAuthorize>
+        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewPullout">
             <a class="btn btn-primary" href="pullout"><i class="bi bi-box-arrow-up"></i> Record Pullout</a>
-        </AuthorizeView>
+        </PermissionAuthorize>
     </div>
 }
 
@@ -230,14 +250,17 @@ else
     private string SortIcon(string column) =>
         _sortBy == column ? (_sortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
 
-    private decimal TodayNetFlow() =>
-        _summary is null ? 0 : _summary.TodayInwardBoxes - _summary.TodayPulloutBoxes;
+    private int PendingConfirmationCount() =>
+        _summary is null ? 0 : _summary.PendingPutawayTransactions + _summary.PendingPulloutTransactions;
 
     private decimal FreeCapacityPercent() =>
         _summary is null || _summary.TotalCapacityBoxes <= 0 ? 0 : Math.Clamp(_summary.FreeCapacityBoxes / _summary.TotalCapacityBoxes * 100, 0, 100);
 
     private string ExceptionAccentClass() =>
         _summary?.ExceptionLineCount > 0 ? "accent-indigo" : "accent-green";
+
+    private string PendingAccentClass() =>
+        PendingConfirmationCount() > 0 ? "accent-indigo" : "accent-green";
 
     private static string SeasonClass(string code) =>
         code.ToLowerInvariant();

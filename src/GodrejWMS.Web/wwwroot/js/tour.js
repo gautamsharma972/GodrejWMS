@@ -124,8 +124,8 @@
             id: 'topbar-live',
             target: '[data-tour="topbar-live"]',
             placement: 'bottom',
-            title: 'Realtime status',
-            body: 'This shows the console is connected and updating live, so what you see is current.'
+            title: 'Your warehouse scope',
+            body: 'This shows the warehouse or region your account is assigned to - what you see across the console is scoped to it.'
         },
         {
             id: 'topbar-account',
@@ -209,7 +209,7 @@
             target: '[data-tour="pullout-upload"]',
             placement: 'left',
             title: 'Or upload from Excel',
-            body: 'For a large request, download the Sample Format, fill in Material Code and quantity, and upload it.'
+            body: 'For a large request, download the Sample Format (the GCPL Loading Sheet layout), fill in Code and Del Qty, and upload it.'
         },
         {
             id: 'pullout-logic',

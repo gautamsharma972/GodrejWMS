@@ -1,5 +1,5 @@
 @page "/pullout"
-@attribute [Authorize(Roles = "Admin,Operator,Supervisor")]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewPullout)]
 @implements IAsyncDisposable
 @using GodrejWMS.Application.Common.Interfaces
 @using GodrejWMS.Application.Features.Materials.Dtos
@@ -28,6 +28,13 @@
                 <i class="bi bi-compass" aria-hidden="true"></i> Page tour
             </button>
             <span class="sync-chip"><span class="live-dot"></span> FIFO by PKM</span>
+        </div>
+    </div>
+
+    <div class="toolbar-panel">
+        <div class="toolbar-group">
+            <label class="form-label mb-0">Warehouse <span class="required-indicator" aria-hidden="true">*</span></label>
+            <WarehouseSelect @bind-WarehouseId="_warehouseId" />
         </div>
     </div>
 
@@ -120,7 +127,7 @@
             <div class="panel-header">
                 <div>
                     <h2 class="panel-title">Bulk Upload</h2>
-                    <p class="panel-subtitle">Material Code, Total Stock in CFB.</p>
+                    <p class="panel-subtitle">GCPL Loading Sheet format (Code, Description, Del Qty).</p>
                 </div>
             </div>
             <div class="panel-body upload-panel" data-tour="pullout-upload">
@@ -137,7 +144,7 @@
                 </div>
                 <div class="upload-guidance">
                     <i class="bi bi-info-circle" aria-hidden="true"></i>
-                    <span>Accepted columns: Material Code, Total Stock in CFB, Plant Name (optional). Maximum file size: 10 MB.</span>
+                    <span>GCPL Loading Sheet format - Code, Del Qty from the data table, and Destination from the header (optional). Maximum file size: 10 MB.</span>
                 </div>
             </div>
         </div>
@@ -319,7 +326,7 @@
                                                         <button type="button"
                                                                 class="btn btn-sm btn-outline-secondary allocation-change-button"
                                                                 title="Change pick location"
-                                                                @onclick="() => OpenPickLocationChangeAsync(row.Line, row.Pick)">
+                                                                @onclick="() => OpenPickLocationChange(row.Line, row.Pick)">
                                                             <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
                                                             <span>Change</span>
                                                         </button>
@@ -356,128 +363,16 @@
         </div>
     }
 
-    @if (_isPickLocationChangeOpen)
-    {
-        <div class="slide-over-backdrop" role="presentation" @onclick="ClosePickLocationChange">
-            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="change-pick-location-title" @onclick:stopPropagation="true">
-                <div class="slide-over-header">
-                    <div>
-                        <div class="eyebrow">Pick Allocation Override</div>
-                        <h2 id="change-pick-location-title" class="slide-over-title">Change Pick Location</h2>
-                        <p class="slide-over-subtitle">Currently allocated from @_changeCurrentLocationCode · @_changeMfgMonthLabel</p>
-                    </div>
-                    <button type="button" class="slide-over-close" aria-label="Close change pick location" @onclick="ClosePickLocationChange">
-                        <i class="bi bi-x-lg" aria-hidden="true"></i>
-                    </button>
-                </div>
-
-                <div class="slide-over-body">
-                    @if (!string.IsNullOrWhiteSpace(_changeLocationError))
-                    {
-                        <div class="alert alert-danger mb-3">@_changeLocationError</div>
-                    }
-
-                    <div class="mb-3">
-                        <label class="form-label">Reason for location change <span class="text-danger">*</span></label>
-                        <input class="form-control" maxlength="250" placeholder="e.g. Pallet is inaccessible during picking"
-                               @bind="_changeLocationReason" @bind:event="oninput" />
-                    </div>
-
-                    @if (_pickChangeOptions is null)
-                    {
-                        <div class="loading-panel">
-                            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
-                            Loading available pick locations...
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="position-metric-grid mb-3">
-                            <div class="position-metric">
-                                <span>Required</span>
-                                <strong>@_changeRequiredQuantity.ToString("0.###")</strong>
-                            </div>
-                            <div class="position-metric">
-                                <span>Selected</span>
-                                <strong>@SelectedPickQuantity.ToString("0.###")</strong>
-                            </div>
-                            <div class="position-metric">
-                                <span>Remaining</span>
-                                <strong>@RemainingPickQuantity.ToString("0.###")</strong>
-                            </div>
-                        </div>
-
-                        <div class="toolbar-panel change-location-toolbar">
-                            <div class="toolbar-group">
-                                <div class="input-group search-control">
-                                    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
-                                    <input class="form-control" placeholder="Search location or PKM"
-                                           @bind="_changeLocationSearch" @bind:event="oninput" />
-                                </div>
-                            </div>
-                            <span class="sync-chip">@DisplayPickChangeOptions.Count().ToString("N0") location(s)</span>
-                        </div>
-
-                        <div class="table-responsive">
-                            <table class="table table-hover align-middle mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>Location</th>
-                                        <th>PKM</th>
-                                        <th class="text-end">Available Stock</th>
-                                        <th class="table-actions"></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var option in DisplayPickChangeOptions)
-                                    {
-                                        var selection = FindPickSourceSelection(option);
-                                        <tr class="@(option.IsCurrent ? "table-active" : null)">
-                                            <td><span class="record-code">@option.LocationCode</span></td>
-                                            <td><span class="status-pill neutral">@option.MfgMonthLabel</span></td>
-                                            <td class="text-end">@option.AvailableBoxes.ToString("0.###") box(es)</td>
-                                            <td class="table-actions">
-                                                @if (option.IsCurrent)
-                                                {
-                                                    <span class="status-pill info">Current</span>
-                                                }
-                                                @if (selection is not null)
-                                                {
-                                                    <span class="status-pill success">@selection.QuantityBoxes.ToString("0.###") selected</span>
-                                                    <button type="button" class="btn btn-sm btn-outline-danger"
-                                                            disabled="@_changingPickLocation"
-                                                            @onclick="() => RemovePickSource(option)">
-                                                        Remove
-                                                    </button>
-                                                }
-                                                else
-                                                {
-                                                    <button type="button" class="btn btn-sm btn-primary"
-                                                            disabled="@(_changingPickLocation || RemainingPickQuantity <= 0)"
-                                                            @onclick="() => AddPickSource(option)">
-                                                        Pick from here
-                                                    </button>
-                                                }
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                </div>
-
-                <div class="slide-over-footer">
-                    <button type="button" class="btn btn-outline-secondary" @onclick="ClosePickLocationChange">Close</button>
-                    <button type="button" class="btn btn-primary"
-                            disabled="@(_changingPickLocation || RemainingPickQuantity != 0 || _selectedPickSources.Count == 0 || string.IsNullOrWhiteSpace(_changeLocationReason))"
-                            @onclick="ChangePickLocationsAsync">
-                        @(_changingPickLocation ? "Saving…" : "Apply pick sources")
-                    </button>
-                </div>
-            </div>
-        </div>
-    }
+    <PulloutPickSourcePanel IsOpen="_isPickLocationChangeOpen"
+                            ReferenceNumber="@(_result?.ReferenceNumber ?? string.Empty)"
+                            MaterialNumber="_changeMaterialNumber"
+                            CurrentLocationCode="@_changeCurrentLocationCode"
+                            MfgMonthLabel="@_changeMfgMonthLabel"
+                            CurrentPickQuantity="_changeCurrentPickQuantity"
+                            LineRequestedQuantity="_changeLineRequestedQuantity"
+                            OtherLinePicks="_changeOtherPicks"
+                            OnClose="ClosePickLocationChange"
+                            OnChanged="OnPickSourceChangedAsync" />
 
 </div>
 
@@ -495,6 +390,7 @@
     private string _rejectReason = string.Empty;
     private string? _rejectError;
     private string? _error;
+    private int? _warehouseId;
     private PulloutResultDto? _result;
     private string _statusFilter = string.Empty;
     private bool _isResultModalOpen;
@@ -503,16 +399,12 @@
     private string _sortBy = "material";
     private bool _sortDescending;
     private bool _isPickLocationChangeOpen;
-    private IReadOnlyList<PulloutPickChangeOptionDto>? _pickChangeOptions;
     private long _changeMaterialNumber;
     private string _changeCurrentLocationCode = string.Empty;
     private string _changeMfgMonthLabel = string.Empty;
-    private string _changeLocationReason = string.Empty;
-    private string _changeLocationSearch = string.Empty;
-    private string? _changeLocationError;
-    private bool _changingPickLocation;
-    private decimal _changeRequiredQuantity;
-    private readonly List<PickSourceSelection> _selectedPickSources = [];
+    private decimal _changeCurrentPickQuantity;
+    private decimal _changeLineRequestedQuantity;
+    private IReadOnlyList<PulloutPickDto> _changeOtherPicks = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -545,7 +437,7 @@
         ClosePickLocationChange();
     }
 
-    private async Task OpenPickLocationChangeAsync(PulloutLineResultDto line, PulloutPickDto pick)
+    private void OpenPickLocationChange(PulloutLineResultDto line, PulloutPickDto pick)
     {
         if (_result is null || _confirmed || _rejected)
             return;
@@ -553,117 +445,22 @@
         _changeMaterialNumber = line.MaterialNumber;
         _changeCurrentLocationCode = pick.LocationCode;
         _changeMfgMonthLabel = pick.MfgMonthLabel;
-        _changeRequiredQuantity = pick.QuantityBoxes;
-        _changeLocationReason = string.Empty;
-        _changeLocationSearch = string.Empty;
-        _changeLocationError = null;
-        _selectedPickSources.Clear();
-        _pickChangeOptions = null;
+        _changeCurrentPickQuantity = pick.QuantityBoxes;
+        _changeLineRequestedQuantity = line.RequestedQuantityBoxes;
+        _changeOtherPicks = line.Picks
+            .Where(p => !(p.LocationCode.Equals(pick.LocationCode, StringComparison.OrdinalIgnoreCase)
+                && p.MfgMonthLabel.Equals(pick.MfgMonthLabel, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
         _isPickLocationChangeOpen = true;
-
-        try
-        {
-            _pickChangeOptions = await Mediator.Send(new GetPulloutPickChangeOptionsQuery(
-                _result.ReferenceNumber,
-                line.MaterialNumber,
-                pick.LocationCode,
-                pick.MfgMonthLabel));
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Failed to load alternate pick locations");
-            _changeLocationError = ex.Message;
-            _pickChangeOptions = [];
-        }
     }
 
-    private void AddPickSource(PulloutPickChangeOptionDto option)
+    private void ClosePickLocationChange() => _isPickLocationChangeOpen = false;
+
+    private Task OnPickSourceChangedAsync(PulloutResultDto updated)
     {
-        if (RemainingPickQuantity <= 0 || FindPickSourceSelection(option) is not null)
-            return;
-
-        var quantity = Math.Min(option.AvailableBoxes, RemainingPickQuantity);
-        if (quantity <= 0)
-            return;
-
-        _selectedPickSources.Add(new(
-            option.PalletPositionId,
-            option.LocationCode,
-            option.MfgMonthLabel,
-            quantity));
-        _changeLocationError = null;
+        _result = updated;
+        return Task.CompletedTask;
     }
-
-    private void RemovePickSource(PulloutPickChangeOptionDto option)
-    {
-        var selection = FindPickSourceSelection(option);
-        if (selection is not null)
-            _selectedPickSources.Remove(selection);
-    }
-
-    private PickSourceSelection? FindPickSourceSelection(PulloutPickChangeOptionDto option) =>
-        _selectedPickSources.FirstOrDefault(selection =>
-            selection.PalletPositionId == option.PalletPositionId
-            && selection.MfgMonthLabel.Equals(option.MfgMonthLabel, StringComparison.OrdinalIgnoreCase));
-
-    private decimal SelectedPickQuantity => _selectedPickSources.Sum(source => source.QuantityBoxes);
-
-    private decimal RemainingPickQuantity => Math.Max(0, _changeRequiredQuantity - SelectedPickQuantity);
-
-    private async Task ChangePickLocationsAsync()
-    {
-        if (_result is null || _changingPickLocation || string.IsNullOrWhiteSpace(_changeLocationReason)
-            || _selectedPickSources.Count == 0 || RemainingPickQuantity != 0)
-            return;
-
-        _changingPickLocation = true;
-        _changeLocationError = null;
-        try
-        {
-            _result = await Mediator.Send(new ChangePulloutPickLocationCommand(
-                _result.ReferenceNumber,
-                _changeMaterialNumber,
-                _changeCurrentLocationCode,
-                _changeMfgMonthLabel,
-                _selectedPickSources.Select(source => new PulloutPickSource(
-                    source.PalletPositionId,
-                    source.MfgMonthLabel,
-                    source.QuantityBoxes)).ToList(),
-                _changeLocationReason));
-            ClosePickLocationChange();
-            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Pick sources updated. Review the allocation before confirming.");
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Failed to change pick location");
-            _changeLocationError = ex.Message;
-        }
-        finally
-        {
-            _changingPickLocation = false;
-        }
-    }
-
-    private void ClosePickLocationChange()
-    {
-        _isPickLocationChangeOpen = false;
-        _pickChangeOptions = null;
-        _changeLocationError = null;
-        _selectedPickSources.Clear();
-        _changeRequiredQuantity = 0;
-    }
-
-    private IEnumerable<PulloutPickChangeOptionDto> DisplayPickChangeOptions =>
-        (_pickChangeOptions ?? [])
-            .Where(option => string.IsNullOrWhiteSpace(_changeLocationSearch)
-                || option.LocationCode.Contains(_changeLocationSearch.Trim(), StringComparison.OrdinalIgnoreCase)
-                || option.MfgMonthLabel.Contains(_changeLocationSearch.Trim(), StringComparison.OrdinalIgnoreCase));
-
-    private sealed record PickSourceSelection(
-        int PalletPositionId,
-        string LocationCode,
-        string MfgMonthLabel,
-        decimal QuantityBoxes);
 
     private async Task SubmitAsync()
     {
@@ -681,11 +478,18 @@
             return;
         }
 
+        if (_warehouseId is null)
+        {
+            _error = "Select a warehouse before submitting.";
+            return;
+        }
+
         _submitting = true;
         try
         {
             var command = new SubmitPulloutCommand(
-                validLines.Select(l => new SubmitPulloutLine(l.MaterialCode, l.QuantityBoxes, string.IsNullOrWhiteSpace(l.PlantName) ? null : l.PlantName)).ToList());
+                validLines.Select(l => new SubmitPulloutLine(l.MaterialCode, l.QuantityBoxes, string.IsNullOrWhiteSpace(l.PlantName) ? null : l.PlantName)).ToList(),
+                WarehouseId: _warehouseId);
 
             _result = await Mediator.Send(command);
             _isResultModalOpen = true;
@@ -710,6 +514,13 @@
         _showRejectPanel = false;
         _error = null;
         _result = null;
+
+        if (_warehouseId is null)
+        {
+            _error = "Select a warehouse before uploading.";
+            return;
+        }
+
         _submitting = true;
         try
         {
@@ -718,7 +529,7 @@
             await stream.CopyToAsync(memory);
             memory.Position = 0;
 
-            _result = await Mediator.Send(new ImportPulloutFromExcelCommand(memory));
+            _result = await Mediator.Send(new ImportPulloutFromExcelCommand(memory, _warehouseId.Value));
             _isResultModalOpen = true;
         }
         catch (Exception ex)
@@ -802,8 +613,14 @@
             .SelectMany(l => l.Picks.Select(p => new PulloutDownloadRowDto(
                 l.MaterialNumber, l.MaterialDescription, p.QuantityBoxes, p.MfgMonthLabel, p.LocationCode, l.PlantName)))
             .ToList();
+        var loadingSheetHeader = new PulloutLoadingSheetHeaderDto(
+            _result.ReferenceNumber, _result.CreatedAt, _result.Lines.Select(l => l.PlantName).FirstOrDefault(p => p is not null),
+            _result.HeaderFields, _result.WarehouseAddress);
+        var loadingSheetRows = _result.Lines
+            .Select(l => new PulloutLoadingSheetRowDto(l.MaterialNumber, l.MaterialDescription, l.RequestedQuantityBoxes, l.Status, l.Priority))
+            .ToList();
 
-        var bytes = ExcelService.WritePulloutDownload(rows);
+        var bytes = ExcelService.WritePulloutDownload(rows, loadingSheetHeader, loadingSheetRows);
         var base64 = Convert.ToBase64String(bytes);
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"pullout-{_result.ReferenceNumber}.xlsx", base64,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

@@ -12,6 +12,7 @@ public sealed record GetInwardHistoryQuery(
     DateTimeOffset? From = null,
     DateTimeOffset? To = null,
     AllocationStatus? Status = null,
+    int? WarehouseId = null,
     string SortBy = "created",
     bool SortDescending = true,
     int PageNumber = 1,
@@ -23,6 +24,11 @@ public sealed class GetInwardHistoryHandler(IApplicationDbContext db)
     public Task<PaginatedList<InwardHistoryDto>> Handle(GetInwardHistoryQuery request, CancellationToken cancellationToken)
     {
         var transactions = db.InwardTransactions.AsNoTracking();
+
+        if (request.WarehouseId.HasValue)
+        {
+            transactions = transactions.Where(t => t.WarehouseId == request.WarehouseId.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(request.Search))
         {

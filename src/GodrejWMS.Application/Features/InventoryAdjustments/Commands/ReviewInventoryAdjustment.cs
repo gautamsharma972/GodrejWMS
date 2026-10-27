@@ -1,6 +1,8 @@
 using FluentValidation;
+using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.InventoryAdjustments.Dtos;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
@@ -45,12 +47,13 @@ public sealed class ApproveInventoryAdjustmentHandler(
     IApplicationDbContext db,
     IDateTimeProvider clock,
     ICurrentUserService currentUser,
-    IRealtimeNotificationService notifications)
+    IRealtimeNotificationService notifications,
+    IPermissionService permissions)
     : IRequestHandler<ApproveInventoryAdjustmentCommand, InventoryAdjustmentDetailDto>
 {
     public async Task<InventoryAdjustmentDetailDto> Handle(ApproveInventoryAdjustmentCommand request, CancellationToken cancellationToken)
     {
-        EnsureReviewer(currentUser);
+        await EnsureReviewerAsync(permissions, cancellationToken);
         var adjustment = await LoadTrackedAsync(db, request.AdjustmentId, cancellationToken);
         EnsurePending(adjustment);
 
@@ -119,11 +122,11 @@ public sealed class ApproveInventoryAdjustmentHandler(
         return await LoadDetailAsync(db, adjustment.Id, cancellationToken);
     }
 
-    private static void EnsureReviewer(ICurrentUserService user)
+    internal static async Task EnsureReviewerAsync(IPermissionService permissions, CancellationToken cancellationToken)
     {
-        if (!user.IsInRole("Supervisor") && !user.IsInRole("Admin"))
+        if (!await permissions.HasPermissionAsync(PermissionKeys.Inventory.ApproveAdjustment, cancellationToken))
         {
-            throw new UnauthorizedAccessException("Only a Supervisor or Admin can approve inventory adjustments.");
+            throw new UnauthorizedAccessException("You do not have permission to approve inventory adjustments.");
         }
     }
 
@@ -166,15 +169,13 @@ public sealed class RejectInventoryAdjustmentHandler(
     IApplicationDbContext db,
     IDateTimeProvider clock,
     ICurrentUserService currentUser,
-    IRealtimeNotificationService notifications)
+    IRealtimeNotificationService notifications,
+    IPermissionService permissions)
     : IRequestHandler<RejectInventoryAdjustmentCommand, InventoryAdjustmentDetailDto>
 {
     public async Task<InventoryAdjustmentDetailDto> Handle(RejectInventoryAdjustmentCommand request, CancellationToken cancellationToken)
     {
-        if (!currentUser.IsInRole("Supervisor") && !currentUser.IsInRole("Admin"))
-        {
-            throw new UnauthorizedAccessException("Only a Supervisor or Admin can reject inventory adjustments.");
-        }
+        await ApproveInventoryAdjustmentHandler.EnsureReviewerAsync(permissions, cancellationToken);
 
         var adjustment = await ApproveInventoryAdjustmentHandler.LoadTrackedAsync(db, request.AdjustmentId, cancellationToken);
         ApproveInventoryAdjustmentHandler.EnsurePending(adjustment);
@@ -214,7 +215,7 @@ public sealed class CancelInventoryAdjustmentHandler(
     {
         var adjustment = await ApproveInventoryAdjustmentHandler.LoadTrackedAsync(db, request.AdjustmentId, cancellationToken);
         ApproveInventoryAdjustmentHandler.EnsurePending(adjustment);
-        if (adjustment.RequestedByUserId != currentUser.UserId && !currentUser.IsInRole("Admin"))
+        if (adjustment.RequestedByUserId != currentUser.UserId && !currentUser.IsPlatformLevel())
         {
             throw new UnauthorizedAccessException("You can only cancel your own pending adjustment requests.");
         }
@@ -234,7 +235,7 @@ public sealed class CancelInventoryAdjustmentHandler(
             "info",
             "/inventory-adjustments",
             clock.UtcNow,
-            AudienceRoles: ["Supervisor", "Admin"],
+            AudienceRoles: ["Supervisor", "Superadmin"],
             ExcludeUserId: currentUser.UserId), cancellationToken);
         return await ApproveInventoryAdjustmentHandler.LoadDetailAsync(db, adjustment.Id, cancellationToken);
     }

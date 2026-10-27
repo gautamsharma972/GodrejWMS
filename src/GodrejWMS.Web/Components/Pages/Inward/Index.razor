@@ -1,5 +1,5 @@
 @page "/inward"
-@attribute [Authorize(Roles = "Admin,Operator,Supervisor")]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward)]
 @implements IAsyncDisposable
 @using GodrejWMS.Application.Common.Interfaces
 @using GodrejWMS.Application.Common.Exceptions
@@ -30,6 +30,13 @@
                 <i class="bi bi-compass" aria-hidden="true"></i> Page tour
             </button>
             <span class="sync-chip"><span class="live-dot"></span> Allocation ready</span>
+        </div>
+    </div>
+
+    <div class="toolbar-panel">
+        <div class="toolbar-group">
+            <label class="form-label mb-0">Warehouse <span class="required-indicator" aria-hidden="true">*</span></label>
+            <WarehouseSelect @bind-WarehouseId="_warehouseId" />
         </div>
     </div>
 
@@ -707,6 +714,7 @@
     private int? _activeMaterialLineIndex;
     private bool _submitting;
     private string? _error;
+    private int? _warehouseId;
     private readonly Dictionary<string, string> _lineFieldErrors = new(StringComparer.Ordinal);
     private InwardResultDto? _result;
     private string _statusFilter = string.Empty;
@@ -992,6 +1000,12 @@
     {
         _error = null;
         _result = null;
+
+        if (_warehouseId is null)
+        {
+            _error = "Select a warehouse before submitting.";
+            return;
+        }
         var validLineIndexes = ValidateManualLines();
 
         if (_lineFieldErrors.Count > 0)
@@ -1005,7 +1019,8 @@
         try
         {
             var command = new SubmitInwardCommand(
-                validLines.Select(l => new SubmitInwardLine(l.MaterialCode, l.QuantityBoxes, l.MfgMonthText)).ToList());
+                validLines.Select(l => new SubmitInwardLine(l.MaterialCode, l.QuantityBoxes, l.MfgMonthText)).ToList(),
+                _warehouseId.Value);
 
             _result = await Mediator.Send(command);
             _statusFilter = string.Empty;
@@ -1149,6 +1164,13 @@
     {
         _error = null;
         _result = null;
+
+        if (_warehouseId is null)
+        {
+            _error = "Select a warehouse before uploading.";
+            return;
+        }
+
         _submitting = true;
         try
         {
@@ -1157,7 +1179,7 @@
             await stream.CopyToAsync(memory);
             memory.Position = 0;
 
-            _result = await Mediator.Send(new ImportInwardFromExcelCommand(memory));
+            _result = await Mediator.Send(new ImportInwardFromExcelCommand(memory, _warehouseId.Value));
             _statusFilter = string.Empty;
             _isResultModalOpen = true;
 

@@ -13,6 +13,7 @@
 @using GodrejWMS.Domain.Entities
 @inject IMediator Mediator
 @inject ILogger<Index> Logger
+@inject IJSRuntime JsRuntime
 
 <PageTitle>Racks - Godrej WMS</PageTitle>
 
@@ -23,12 +24,12 @@
             <h1>Racks &amp; Pallet Positions</h1>
             <p class="page-kicker">Manage rack definitions and generated location master records for warehouse storage.</p>
         </div>
-        <AuthorizeView Roles="Admin,Supervisor,Operator" Context="adminContext">
+        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.ManageRacks">
             <button class="btn btn-primary" @onclick="ShowCreateForm">
                 <i class="bi bi-plus-lg" aria-hidden="true"></i>
                 New Rack
             </button>
-        </AuthorizeView>
+        </PermissionAuthorize>
     </div>
 
     @if (_showForm)
@@ -48,6 +49,14 @@
                 <EditForm Model="_form" FormName="rack-form" OnValidSubmit="SaveRackAsync" class="slide-over-form">
                     <div class="slide-over-body">
                         <div class="row g-3">
+                            @if (!_editingRackId.HasValue)
+                            {
+                                <div class="col-md-12">
+                                    <label class="form-label">Warehouse <span class="required-indicator" aria-hidden="true">*</span></label>
+                                    <WarehouseSelect @bind-WarehouseId="_form.WarehouseId" />
+                                    @FieldError(nameof(RackFormModel.WarehouseId))
+                                </div>
+                            }
                             <div class="col-md-4">
                                 <label class="form-label">Code <span class="required-indicator" aria-hidden="true">*</span></label>
                                 <input class="@FieldClass(nameof(RackFormModel.Code), "form-control")"
@@ -246,6 +255,8 @@
                     <option value="partial">Partial</option>
                     <option value="full">Full</option>
                 </select>
+                <WarehouseSelect WarehouseId="_warehouseFilter" WarehouseIdChanged="OnWarehouseFilterChangedAsync"
+                                  AllowClear="true" Placeholder="Filter by warehouse..." />
             </div>
             <span class="sync-chip">@DisplayRacks.Count().ToString("N0") racks</span>
         </div>
@@ -276,11 +287,11 @@
                             <td class="text-end">@r.OccupiedPositions</td>
                             <td class="text-end"><span class="status-pill @OccupancyClass(r.OccupancyPercent)">@r.OccupancyPercent%</span></td>
                             <td class="table-actions">
-                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="rowAdminContext">
+                                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.ManageRacks">
                                     <button type="button" class="btn btn-sm btn-outline-secondary" title="@($"Edit rack {r.Code}")" aria-label="@($"Edit rack {r.Code}")" @onclick="() => ShowEditFormAsync(r)">
                                         <i class="bi bi-pencil-square" aria-hidden="true"></i>
                                     </button>
-                                </AuthorizeView>
+                                </PermissionAuthorize>
                                 <a class="btn btn-sm btn-outline-secondary" title="@($"Open layout for rack {r.Code}")" aria-label="@($"Open layout for rack {r.Code}")" href="@($"racks/{r.Id}/layout")">
                                     <i class="bi bi-diagram-3" aria-hidden="true"></i>
                                 </a>
@@ -297,6 +308,7 @@
     private IReadOnlyList<RackDto>? _racks;
     private string _rackSearch = string.Empty;
     private string _occupancyFilter = string.Empty;
+    private int? _warehouseFilter;
     private string _sortBy = "code";
     private bool _sortDescending;
     private bool _showForm;
@@ -385,7 +397,13 @@
 
     private async Task LoadAsync()
     {
-        _racks = await Mediator.Send(new GetRacksQuery());
+        _racks = await Mediator.Send(new GetRacksQuery(_warehouseFilter));
+    }
+
+    private Task OnWarehouseFilterChangedAsync(int? warehouseId)
+    {
+        _warehouseFilter = warehouseId;
+        return LoadAsync();
     }
 
     private async Task SaveRackAsync()
@@ -396,6 +414,7 @@
             return;
         }
 
+        var wasEditing = _editingRackId.HasValue;
         try
         {
             if (_editingRackId.HasValue)
@@ -413,13 +432,14 @@
                     _form.Code, _form.Name, _form.FromColumn, _form.ToColumn, _form.Levels,
                     _form.ShelfLengthMm, _form.ShelfWidthMm, _form.ShelfHeightMm,
                     _form.LocationTypeId, _form.LocationSubtypeId, _form.ZoneTypeId,
-                    _form.StartingDistancePriority, _form.MaxPallets));
+                    _form.StartingDistancePriority, _form.MaxPallets, _form.WarehouseId!.Value));
             }
 
             _showForm = false;
             _editingRackId = null;
             _form = new RackFormModel();
             await LoadAsync();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", wasEditing ? "Rack updated." : "Rack created.");
         }
         catch (ValidationException ex)
         {
@@ -437,6 +457,7 @@
     {
         _fieldErrors.Clear();
 
+        if (!_editingRackId.HasValue && _form.WarehouseId is null) AddFieldError(nameof(RackFormModel.WarehouseId), "Select a warehouse.");
         if (string.IsNullOrWhiteSpace(_form.Code)) AddFieldError(nameof(RackFormModel.Code), "Code is required.");
         else if (_form.Code.Trim().Length > 10) AddFieldError(nameof(RackFormModel.Code), "Code must be 10 characters or fewer.");
         if (string.IsNullOrWhiteSpace(_form.Name)) AddFieldError(nameof(RackFormModel.Name), "Name is required.");
@@ -579,6 +600,7 @@
 
     private class RackFormModel
     {
+        public int? WarehouseId { get; set; }
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public int FromColumn { get; set; } = 1;

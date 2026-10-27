@@ -1,5 +1,6 @@
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Common.Models;
+using GodrejWMS.Application.Common.Permissions;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,22 +8,21 @@ namespace GodrejWMS.Application.Features.Reports.Core;
 
 public sealed class GetOperationalReportHandler(
     IApplicationDbContext db,
-    ICurrentUserService user,
-    IUserDisplayNameService userDisplayNames)
+    IUserDisplayNameService userDisplayNames,
+    IWarehouseAccessService warehouseAccess,
+    IPermissionService permissions)
     : IRequestHandler<GetOperationalReportQuery, PaginatedList<ReportRow>>
 {
     public async Task<PaginatedList<ReportRow>> Handle(GetOperationalReportQuery request, CancellationToken ct)
     {
-        if (!user.IsInRole("Admin") && !user.IsInRole("Supervisor") && !user.IsInRole("Operator"))
+        if (!await permissions.HasPermissionAsync(PermissionKeys.Reports.View, ct))
             throw new UnauthorizedAccessException("Reports require an authorized warehouse role.");
         if (!Enum.IsDefined(request.Kind) || request.Page < 1 || request.PageSize is < 1 or > 10000)
             throw new ArgumentException("Invalid report or pagination.");
         if (request.Filter.From > request.Filter.To) throw new ArgumentException("From date must be before To date.");
         if (request.Filter.Pkm is int month && (month / 100 < 1900 || month % 100 is < 1 or > 12))
             throw new ArgumentException("PKM must be yyyyMM.");
-        if (request.Filter.WarehouseId is int warehouse &&
-            (!await db.Warehouses.AnyAsync(w => w.Id == warehouse, ct) ||
-             (!HasFullAccess(user) && !await db.UserWarehouses.AnyAsync(a => a.UserId == user.UserId && a.WarehouseId == warehouse, ct))))
+        if (request.Filter.WarehouseId is int warehouse && !await warehouseAccess.HasAccessAsync(warehouse, ct))
             throw new UnauthorizedAccessException("Warehouse is not assigned to you.");
         if (request.Sort is not ("date" or "sku" or "location" or "quantity" or "reference"))
         {
@@ -73,9 +73,6 @@ public sealed class GetOperationalReportHandler(
 
         return new PaginatedList<ReportRow>(page, totalCount, request.Page, request.PageSize);
     }
-
-    private static bool HasFullAccess(ICurrentUserService user) =>
-        user.IsInRole("Admin") || user.IsInRole("Supervisor") || user.IsInRole("Operator");
 
     private IQueryable<ReportRow> Apply(IQueryable<ReportRow> q, ReportFilter f)
     {

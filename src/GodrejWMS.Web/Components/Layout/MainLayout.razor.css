@@ -39,15 +39,20 @@
     transition: width 180ms ease;
 }
 
-.sidebar-state-control:checked + .page .sidebar {
-    width: 88px;
-}
-
 .workspace {
     flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
+}
+
+/* Keep the browser at 100% while presenting the desktop workspace at the requested
+   90% density. The sidebar stays outside this scaled surface so sticky positioning,
+   hover expansion, and responsive navigation remain stable. */
+@media (min-width: 861px) {
+    .workspace {
+        zoom: var(--wms-workspace-scale);
+    }
 }
 
 .top-row {
@@ -116,78 +121,78 @@
     color: var(--wms-primary);
 }
 
-.sidebar-state-control:checked + .page ::deep .brand-panel {
-    justify-content: center;
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
-}
+@media (min-width: 861px) and (hover: hover) {
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) {
+        width: 88px;
+    }
 
-.sidebar-state-control:checked + .page ::deep .brand-name,
-.sidebar-state-control:checked + .page ::deep .brand-subtitle,
-.sidebar-state-control:checked + .page ::deep .nav-section-label,
-.sidebar-state-control:checked + .page ::deep .nav-link-text,
-.sidebar-state-control:checked + .page ::deep .nav-status-text {
-    display: none;
-}
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .brand-panel {
+        justify-content: center;
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+    }
 
-.sidebar-state-control:checked + .page ::deep .sidebar-user-details,
-.sidebar-state-control:checked + .page ::deep .sidebar-logout-text {
-    display: none;
-}
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .brand-name,
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .brand-subtitle,
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .nav-section-label,
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .nav-link-text,
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .nav-status-text,
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .sidebar-user-details,
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .sidebar-logout-text {
+        display: none;
+    }
 
-.sidebar-state-control:checked + .page ::deep .sidebar-user-footer {
-    flex-direction: column;
-    gap: 0.45rem;
-    padding: 0.65rem;
-}
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .sidebar-user-footer {
+        flex-direction: column;
+        gap: 0.45rem;
+        padding: 0.65rem;
+    }
 
-.sidebar-state-control:checked + .page ::deep .sidebar-user-profile {
-    flex: 0 0 auto;
-    justify-content: center;
-    padding: 0;
-}
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .sidebar-user-profile {
+        flex: 0 0 auto;
+        justify-content: center;
+        padding: 0;
+    }
 
-.sidebar-state-control:checked + .page ::deep .sidebar-logout {
-    width: 38px;
-    padding: 0;
-}
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .sidebar-logout {
+        width: 38px;
+        padding: 0;
+    }
 
-.sidebar-state-control:checked + .page ::deep .navbar-brand,
-.sidebar-state-control:checked + .page ::deep .nav-item .nav-link,
-.sidebar-state-control:checked + .page ::deep .nav-status {
-    justify-content: center;
-}
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .navbar-brand,
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .nav-item .nav-link,
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .nav-status {
+        justify-content: center;
+    }
 
-.sidebar-state-control:checked + .page ::deep .nav-item .nav-link {
-    min-height: 46px;
-    padding-left: 0;
-    padding-right: 0;
-}
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .nav-item .nav-link {
+        min-height: 46px;
+        padding-left: 0;
+        padding-right: 0;
+    }
 
-.sidebar-state-control:checked + .page ::deep .nav-item .nav-link i {
-    width: auto;
-    font-size: 1.08rem;
-}
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .nav-item .nav-link i {
+        width: auto;
+        font-size: 1.08rem;
+    }
 
-.sidebar-state-control:checked + .page ::deep .nav-status {
-    padding-left: 0;
-    padding-right: 0;
-}
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .nav-status {
+        padding-left: 0;
+        padding-right: 0;
+    }
 
-/* Collapsed rail has no room for an expand/collapse interaction, so submenu icons
-   (e.g. Inward > Entry/History) always show regardless of the toggle's expanded state. */
-.sidebar-state-control:checked + .page ::deep .nav-submenu {
-    display: grid;
-    margin-left: 0;
-    padding-left: 0;
-}
+    /* The collapsed rail exposes submenu destinations as icons. Hovering restores
+       the normal expandable group behavior through the NavMenu parameter above. */
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .nav-submenu {
+        display: grid;
+        margin-left: 0;
+        padding-left: 0;
+    }
 
-.sidebar-state-control:checked + .page ::deep .nav-submenu::before {
-    display: none;
-}
-
-.sidebar-state-control:checked + .page ::deep .nav-parent .nav-chevron {
-    display: none;
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .nav-submenu::before,
+    .sidebar-state-control:checked + .page .sidebar:not(:hover) ::deep .nav-parent .nav-chevron {
+        display: none;
+    }
 }
 
 .top-row-title {

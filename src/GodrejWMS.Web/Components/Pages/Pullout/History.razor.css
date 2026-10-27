@@ -1,3 +1,19 @@
+.pullout-history-header-actions {
+    flex-wrap: nowrap;
+}
+
+.pullout-history-header-actions ::deep .warehouse-select {
+    flex: 0 1 18rem;
+    width: 18rem;
+    min-width: 15rem;
+    max-width: 18rem;
+}
+
+.pullout-history-header-actions .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
 .pullout-history-toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -23,46 +39,79 @@
     flex-shrink: 0;
 }
 
-/* Reserve space for all seven columns, including confirmation and its separate action. */
+/* Reserve space for all nine columns, including destination and vehicle metadata. */
 .history-table.pullout-history-table {
-    min-width: 1100px;
+    min-width: 1420px;
     table-layout: fixed;
 }
 
 .pullout-history-table th:first-child,
 .pullout-history-table td:first-child {
-    width: 26%;
+    width: 18%;
     overflow-wrap: anywhere;
 }
 
 .pullout-history-table th:nth-child(2),
 .pullout-history-table td:nth-child(2) {
-    width: 20%;
+    width: 12%;
 }
 
 .pullout-history-table th:nth-child(3),
 .pullout-history-table td:nth-child(3) {
-    width: 10%;
+    width: 11%;
 }
 
 .pullout-history-table th:nth-child(4),
 .pullout-history-table td:nth-child(4) {
-    width: 7%;
+    width: 16%;
 }
 
 .pullout-history-table th:nth-child(5),
 .pullout-history-table td:nth-child(5) {
-    width: 15%;
+    width: 9%;
 }
 
 .pullout-history-table th:nth-child(6),
 .pullout-history-table td:nth-child(6) {
-    width: 14%;
+    width: 6%;
+}
+
+.pullout-history-table th:nth-child(7),
+.pullout-history-table td:nth-child(7) {
+    width: 11%;
+}
+
+.pullout-history-table th:nth-child(8),
+.pullout-history-table td:nth-child(8) {
+    width: 10%;
     white-space: nowrap;
 }
 
 .pullout-history-table th:last-child,
 .pullout-history-table td:last-child {
-    width: 8%;
+    width: 7%;
     text-align: center;
+}
+
+.history-vehicle {
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+    .history-register .panel-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .pullout-history-header-actions {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .pullout-history-header-actions ::deep .warehouse-select {
+        flex: 1 1 15rem;
+        width: auto;
+        max-width: none;
+    }
 }

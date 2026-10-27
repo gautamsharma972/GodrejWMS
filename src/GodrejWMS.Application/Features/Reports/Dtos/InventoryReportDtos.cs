@@ -1,5 +1,12 @@
 namespace GodrejWMS.Application.Features.Reports.Dtos;
 
+public sealed record MaterialStockReportRowDto(
+    long MaterialCode,
+    string MaterialDescription,
+    int Pkm,
+    decimal Mrp,
+    decimal BoxQuantity);
+
 public sealed record InventoryValuationRowDto(
     int MaterialId,
     long MaterialNumber,

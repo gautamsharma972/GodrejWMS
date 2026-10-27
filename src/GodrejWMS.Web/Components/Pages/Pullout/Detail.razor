@@ -1,5 +1,5 @@
 @page "/pullout/{TransactionId:int}"
-@attribute [Authorize(Roles = "Admin,Operator,Supervisor")]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewPullout)]
 @using GodrejWMS.Application.Features.Pullout.Dtos
 @using GodrejWMS.Application.Features.Pullout.Queries
 @using GodrejWMS.Application.Features.Pullout.Commands
@@ -193,7 +193,20 @@
                                         <div class="chip-list">
                                             @foreach (var pick in line.Picks)
                                             {
-                                                <span class="status-pill info">@pick.LocationCode [@pick.MfgMonthLabel] (-@pick.QuantityBoxes.ToString("N0"))</span>
+                                                <span class="allocation-location-pill">
+                                                    <span>@pick.LocationCode [@pick.MfgMonthLabel]</span>
+                                                    <strong>-@pick.QuantityBoxes.ToString("N0")</strong>
+                                                </span>
+                                                @if (!_detail.IsConfirmed && !_detail.IsRejected)
+                                                {
+                                                    <button type="button"
+                                                            class="btn btn-sm btn-outline-secondary allocation-change-button"
+                                                            title="Change pick location"
+                                                            @onclick="() => OpenPickLocationChange(line, pick)">
+                                                        <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+                                                        <span>Change</span>
+                                                    </button>
+                                                }
                                             }
                                         </div>
                                     }
@@ -204,6 +217,17 @@
                 </table>
             </div>
         </div>
+
+        <PulloutPickSourcePanel IsOpen="_isPickLocationChangeOpen"
+                                ReferenceNumber="@_detail.ReferenceNumber"
+                                MaterialNumber="_changeMaterialNumber"
+                                CurrentLocationCode="@_changeCurrentLocationCode"
+                                MfgMonthLabel="@_changeMfgMonthLabel"
+                                CurrentPickQuantity="_changeCurrentPickQuantity"
+                                LineRequestedQuantity="_changeLineRequestedQuantity"
+                                OtherLinePicks="_changeOtherPicks"
+                                OnClose="ClosePickLocationChange"
+                                OnChanged="OnPickSourceChangedAsync" />
     }
 </div>
 
@@ -219,6 +243,40 @@
     private string _rejectReason = string.Empty;
     private string? _rejectError;
 
+    private bool _isPickLocationChangeOpen;
+    private long _changeMaterialNumber;
+    private string _changeCurrentLocationCode = string.Empty;
+    private string _changeMfgMonthLabel = string.Empty;
+    private decimal _changeCurrentPickQuantity;
+    private decimal _changeLineRequestedQuantity;
+    private IReadOnlyList<PulloutPickDto> _changeOtherPicks = [];
+
+    private void OpenPickLocationChange(PulloutDetailLineDto line, PulloutPickDto pick)
+    {
+        if (_detail is null || _detail.IsConfirmed || _detail.IsRejected)
+            return;
+
+        _changeMaterialNumber = line.MaterialNumber;
+        _changeCurrentLocationCode = pick.LocationCode;
+        _changeMfgMonthLabel = pick.MfgMonthLabel;
+        _changeCurrentPickQuantity = pick.QuantityBoxes;
+        _changeLineRequestedQuantity = line.RequestedQuantityBoxes;
+        _changeOtherPicks = line.Picks
+            .Where(p => !(p.LocationCode.Equals(pick.LocationCode, StringComparison.OrdinalIgnoreCase)
+                && p.MfgMonthLabel.Equals(pick.MfgMonthLabel, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        _isPickLocationChangeOpen = true;
+    }
+
+    private void ClosePickLocationChange() => _isPickLocationChangeOpen = false;
+
+    private async Task OnPickSourceChangedAsync(PulloutResultDto updated)
+    {
+        // The panel's own command result is a PulloutResultDto (preview shape); this page displays
+        // PulloutDetailDto, so re-fetch through the page's normal query instead of mapping it.
+        _detail = await Mediator.Send(new GetPulloutDetailQuery(TransactionId));
+    }
+
     private async Task DownloadExcelAsync()
     {
         if (_detail is null) return;
@@ -228,8 +286,14 @@
             .SelectMany(l => l.Picks.Select(p => new PulloutDownloadRowDto(
                 l.MaterialNumber, l.MaterialDescription, p.QuantityBoxes, p.MfgMonthLabel, p.LocationCode, l.PlantName)))
             .ToList();
+        var loadingSheetHeader = new PulloutLoadingSheetHeaderDto(
+            _detail.ReferenceNumber, _detail.CreatedAt, _detail.Lines.Select(l => l.PlantName).FirstOrDefault(p => p is not null),
+            _detail.HeaderFields, _detail.WarehouseAddress);
+        var loadingSheetRows = _detail.Lines
+            .Select(l => new PulloutLoadingSheetRowDto(l.MaterialNumber, l.MaterialDescription, l.RequestedQuantityBoxes, l.Status, l.Priority))
+            .ToList();
 
-        var bytes = ExcelService.WritePulloutDownload(rows);
+        var bytes = ExcelService.WritePulloutDownload(rows, loadingSheetHeader, loadingSheetRows);
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"pullout-{_detail.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }

@@ -1,0 +1,408 @@
+@* Reusable "change pick location/quantity" slide-over for an unconfirmed, unrejected Pullout -
+   shared by the entry/review screen (Pullout/Index.razor) and the History detail screen
+   (Pullout/Detail.razor) for a still-pending saved pullout. Takes only primitives from its
+   caller (never either page's own line/result DTO shape), so it stays decoupled from both. *@
+@using GodrejWMS.Application.Features.Pullout.Commands
+@using GodrejWMS.Application.Features.Pullout.Dtos
+@using GodrejWMS.Application.Features.Pullout.Queries
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+@inject ILogger<PulloutPickSourcePanel> Logger
+
+@if (IsOpen)
+{
+    <div class="slide-over-backdrop pick-location-backdrop" role="presentation" @onclick="CloseAsync">
+        <div class="slide-over-panel pick-location-panel" role="dialog" aria-modal="true" aria-labelledby="change-pick-location-title" @onclick:stopPropagation="true">
+            <div class="slide-over-header pick-location-header">
+                <div class="pick-location-heading">
+                    <span class="pick-location-heading-icon" aria-hidden="true">
+                        <i class="bi bi-signpost-split"></i>
+                    </span>
+                    <div>
+                        <div class="eyebrow">Pick Allocation Override</div>
+                        <h2 id="change-pick-location-title" class="slide-over-title">Change Pick Location</h2>
+                        <p class="slide-over-subtitle">
+                            Current source
+                            <span class="pick-location-context">@CurrentLocationCode</span>
+                            <span aria-hidden="true">·</span>
+                            <span class="pick-location-context">@MfgMonthLabel</span>
+                        </p>
+                    </div>
+                </div>
+                <button type="button" class="slide-over-close" aria-label="Close change pick location" @onclick="CloseAsync">
+                    <i class="bi bi-x-lg" aria-hidden="true"></i>
+                </button>
+            </div>
+
+            <div class="slide-over-body pick-location-body">
+                @if (!string.IsNullOrWhiteSpace(_changeLocationError))
+                {
+                    <div class="alert alert-danger mb-3">@_changeLocationError</div>
+                }
+
+                <div class="pick-location-reason-card">
+                    <div class="pick-location-section-heading">
+                        <span class="pick-location-section-icon" aria-hidden="true"><i class="bi bi-chat-left-text"></i></span>
+                        <div>
+                            <label class="form-label" for="pick-location-reason">Reason for change <span class="text-danger">*</span></label>
+                        </div>
+                    </div>
+                    <input id="pick-location-reason" class="form-control pick-location-reason-input" maxlength="250"
+                           placeholder="e.g. Pallet is inaccessible during picking"
+                           @bind="_changeLocationReason" @bind:event="oninput" />
+                </div>
+
+                @if (_pickChangeOptions is null)
+                {
+                    <div class="loading-panel">
+                        <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                        Loading available pick locations...
+                    </div>
+                }
+                else
+                {
+                    <div class="position-metric-grid pick-location-metrics">
+                        <div class="position-metric required">
+                            <span class="position-metric-icon" aria-hidden="true"><i class="bi bi-box-seam"></i></span>
+                            <div>
+                                <span>Required</span>
+                                <strong>@_changeRequiredQuantity.ToString("0.###")</strong>
+                                <small>box(es)</small>
+                            </div>
+                        </div>
+                        <div class="position-metric selected">
+                            <span class="position-metric-icon" aria-hidden="true"><i class="bi bi-check2-circle"></i></span>
+                            <div>
+                                <span>Selected</span>
+                                <strong>@SelectedPickQuantity.ToString("0.###")</strong>
+                                <small>box(es)</small>
+                            </div>
+                        </div>
+                        <div class="position-metric remaining">
+                            <span class="position-metric-icon" aria-hidden="true"><i class="bi bi-hourglass-split"></i></span>
+                            <div>
+                                <span>Remaining</span>
+                                <strong>@RemainingPickQuantity.ToString("0.###")</strong>
+                                <small>box(es)</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <section class="pick-source-card" aria-labelledby="pick-source-heading">
+                        <div class="pick-source-card-header">
+                            <div>
+                                <h3 id="pick-source-heading">Choose pick sources</h3>
+                                <p>Search a location or PKM, pick it, then adjust quantities below.</p>
+                            </div>
+                            <span class="sync-chip">@_selectedPickSources.Count.ToString("N0") selected</span>
+                        </div>
+
+                        <div class="change-location-toolbar">
+                            <div class="input-group search-control" @onfocusout="OnPickSourceSearchBlur">
+                                <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                                <input class="form-control" placeholder="Search by location or PKM" autocomplete="off"
+                                       aria-label="Search available pick locations"
+                                       @bind="_changeLocationSearch" @bind:event="oninput"
+                                       @onfocus="() => _showPickSourceSuggestions = true" />
+                                @if (_showPickSourceSuggestions)
+                                {
+                                    var suggestions = DisplayPickChangeOptions.ToList();
+                                    <div class="location-suggestions">
+                                        @if (suggestions.Count == 0)
+                                        {
+                                            <div class="location-suggestion-meta px-2 py-1">No matching location.</div>
+                                        }
+                                        @foreach (var option in suggestions)
+                                        {
+                                            var selection = FindPickSourceSelection(option);
+                                            <button type="button" class="location-suggestion-item" disabled="@(selection is not null)"
+                                                    @onclick="() => SelectPickSourceSuggestion(option)"
+                                                    @onclick:stopPropagation="true">
+                                                <span class="record-code">@option.LocationCode</span>
+                                                <span class="location-suggestion-meta">
+                                                    @option.MfgMonthLabel &middot; @option.AvailableBoxes.ToString("0.###") available
+                                                    @if (option.IsCurrent) { <span class="status-pill info">Current</span> }
+                                                    @if (selection is not null) { <span class="status-pill success">Added</span> }
+                                                </span>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        @if (_selectedPickSources.Count == 0)
+                        {
+                            <div class="empty-state">No pick sources selected yet - search above to add one.</div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive pick-source-table-wrap">
+                            <table class="table table-hover align-middle mb-0 pick-source-table">
+                                <thead>
+                                    <tr>
+                                        <th>Location</th>
+                                        <th>PKM</th>
+                                        <th class="text-end">Available Stock</th>
+                                        <th class="table-actions">Pick Quantity</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var option in (_pickChangeOptions ?? []).Where(o => FindPickSourceSelection(o) is not null))
+                                    {
+                                        var selection = FindPickSourceSelection(option)!;
+                                        <tr class="@(option.IsCurrent ? "table-active" : null)">
+                                            <td><span class="record-code">@option.LocationCode</span></td>
+                                            <td><span class="status-pill neutral">@option.MfgMonthLabel</span></td>
+                                            <td class="text-end">@option.AvailableBoxes.ToString("0.###") box(es)</td>
+                                            <td class="table-actions">
+                                                <div class="pick-source-actions">
+                                                @if (option.IsCurrent)
+                                                {
+                                                    <span class="status-pill info">Current</span>
+                                                }
+                                                <div class="pick-source-selection">
+                                                    <input type="number" class="form-control form-control-sm"
+                                                           min="0" step="0.001"
+                                                           value="@selection.QuantityBoxes"
+                                                           disabled="@_changingPickLocation"
+                                                           aria-label="@($"Quantity to pick from {option.LocationCode}")"
+                                                           @oninput="e => UpdatePickSourceQuantity(option, e.Value?.ToString())" />
+                                                    <button type="button" class="btn btn-sm btn-outline-danger"
+                                                        disabled="@_changingPickLocation"
+                                                        @onclick="() => RemovePickSource(option)">
+                                                        <i class="bi bi-trash3" aria-hidden="true"></i>
+                                                        <span>Remove</span>
+                                                    </button>
+                                                </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            </div>
+                        }
+                    </section>
+                }
+            </div>
+
+            <div class="slide-over-footer pick-location-footer">
+                <div class="pick-location-footer-note">
+                    <i class="bi bi-info-circle" aria-hidden="true"></i>
+                    <span>The pullout remains unchanged until you apply the selected sources.</span>
+                </div>
+                <div class="pick-location-footer-actions">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseAsync">Cancel</button>
+                    <button type="button" class="btn btn-primary"
+                            disabled="@(_changingPickLocation || SelectedPickQuantity <= 0 || _selectedPickSources.Count == 0 || string.IsNullOrWhiteSpace(_changeLocationReason))"
+                            @onclick="ApplyAsync">
+                        <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                        @(_changingPickLocation ? "Saving…" : "Apply pick sources")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public string ReferenceNumber { get; set; } = string.Empty;
+    [Parameter] public long MaterialNumber { get; set; }
+    [Parameter] public string CurrentLocationCode { get; set; } = string.Empty;
+    [Parameter] public string MfgMonthLabel { get; set; } = string.Empty;
+    [Parameter] public decimal CurrentPickQuantity { get; set; }
+    [Parameter] public decimal LineRequestedQuantity { get; set; }
+
+    /// <summary>Every other pick currently on the same line (excluding this one) - used to cap how
+    /// much this replacement can total: LineRequestedQuantity minus the sum of these.</summary>
+    [Parameter] public IReadOnlyList<PulloutPickDto> OtherLinePicks { get; set; } = [];
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Raised after a successful save, before the panel closes itself, with the
+    /// command's own updated result - the caller should resync its own pullout data from it (or
+    /// re-fetch its own way; the payload is the one shape every caller already understands,
+    /// since it's what the shared ChangePulloutPickLocationCommand itself returns).</summary>
+    [Parameter] public EventCallback<PulloutResultDto> OnChanged { get; set; }
+
+    private IReadOnlyList<PulloutPickChangeOptionDto>? _pickChangeOptions;
+    private string _changeLocationReason = string.Empty;
+    private string _changeLocationSearch = string.Empty;
+    private string? _changeLocationError;
+    private bool _changingPickLocation;
+    private bool _showPickSourceSuggestions;
+    private decimal _changeRequiredQuantity;
+    private readonly List<PickSourceSelection> _selectedPickSources = [];
+    private (long Material, string Location, string Mfg)? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!IsOpen)
+        {
+            _loadedFor = null;
+            return;
+        }
+
+        var key = (MaterialNumber, CurrentLocationCode, MfgMonthLabel);
+        if (_loadedFor == key)
+        {
+            return;
+        }
+        _loadedFor = key;
+
+        // The cap for this replacement is whatever's left of the line's own requested quantity
+        // once every OTHER pick on the line is accounted for - not just this pick's own amount -
+        // so increasing it (more stock turned out to be available) is possible too, not just
+        // decreasing or redistributing the same total.
+        var otherPicksTotal = OtherLinePicks.Sum(p => p.QuantityBoxes);
+        _changeRequiredQuantity = LineRequestedQuantity - otherPicksTotal;
+        _changeLocationReason = string.Empty;
+        _changeLocationSearch = string.Empty;
+        _changeLocationError = null;
+        _selectedPickSources.Clear();
+        _pickChangeOptions = null;
+
+        try
+        {
+            _pickChangeOptions = await Mediator.Send(new GetPulloutPickChangeOptionsQuery(
+                ReferenceNumber, MaterialNumber, CurrentLocationCode, MfgMonthLabel));
+
+            // Pre-select the current source at its current quantity, so by default nothing
+            // changes unless the operator actually edits something.
+            var current = _pickChangeOptions.FirstOrDefault(o => o.IsCurrent);
+            if (current is not null)
+            {
+                _selectedPickSources.Add(new(current.PalletPositionId, current.LocationCode, current.MfgMonthLabel, CurrentPickQuantity));
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load alternate pick locations");
+            _changeLocationError = ex.Message;
+            _pickChangeOptions = [];
+        }
+    }
+
+    private async Task CloseAsync() => await OnClose.InvokeAsync();
+
+    private void SelectPickSourceSuggestion(PulloutPickChangeOptionDto option)
+    {
+        AddPickSource(option);
+        _changeLocationSearch = string.Empty;
+        _showPickSourceSuggestions = false;
+    }
+
+    private async Task OnPickSourceSearchBlur()
+    {
+        // Keep the menu available long enough for a suggestion's click event to complete.
+        await Task.Delay(150);
+        _showPickSourceSuggestions = false;
+    }
+
+    private void AddPickSource(PulloutPickChangeOptionDto option)
+    {
+        if (FindPickSourceSelection(option) is not null)
+            return;
+
+        // A fully allocated pick has no remaining quantity, but operators still need to add an
+        // alternate row before reducing the current source and redistributing the quantity.
+        // Keep that alternate at zero until they adjust the selected rows.
+        var quantity = Math.Min(option.AvailableBoxes, RemainingPickQuantity);
+        if (option.AvailableBoxes <= 0)
+            return;
+
+        _selectedPickSources.Add(new(
+            option.PalletPositionId,
+            option.LocationCode,
+            option.MfgMonthLabel,
+            quantity));
+        _changeLocationError = null;
+    }
+
+    private void RemovePickSource(PulloutPickChangeOptionDto option)
+    {
+        var selection = FindPickSourceSelection(option);
+        if (selection is not null)
+            _selectedPickSources.Remove(selection);
+    }
+
+    private void UpdatePickSourceQuantity(PulloutPickChangeOptionDto option, string? rawValue)
+    {
+        var selection = FindPickSourceSelection(option);
+        if (selection is null || !decimal.TryParse(rawValue, out var requested))
+            return;
+
+        // Clamp to what's actually available at that location and to what's left of the line's
+        // own cap (this selection's own current amount still counts toward "remaining").
+        var maxForThis = Math.Min(option.AvailableBoxes, selection.QuantityBoxes + RemainingPickQuantity);
+        var clamped = Math.Clamp(requested, 0, maxForThis);
+        var index = _selectedPickSources.IndexOf(selection);
+        if (clamped <= 0)
+        {
+            _selectedPickSources.RemoveAt(index);
+        }
+        else
+        {
+            _selectedPickSources[index] = selection with { QuantityBoxes = clamped };
+        }
+        _changeLocationError = null;
+    }
+
+    private PickSourceSelection? FindPickSourceSelection(PulloutPickChangeOptionDto option) =>
+        _selectedPickSources.FirstOrDefault(selection =>
+            selection.PalletPositionId == option.PalletPositionId
+            && selection.MfgMonthLabel.Equals(option.MfgMonthLabel, StringComparison.OrdinalIgnoreCase));
+
+    private decimal SelectedPickQuantity => _selectedPickSources.Sum(source => source.QuantityBoxes);
+
+    private decimal RemainingPickQuantity => Math.Max(0, _changeRequiredQuantity - SelectedPickQuantity);
+
+    private async Task ApplyAsync()
+    {
+        if (_changingPickLocation || string.IsNullOrWhiteSpace(_changeLocationReason)
+            || _selectedPickSources.Count == 0 || SelectedPickQuantity <= 0)
+            return;
+
+        _changingPickLocation = true;
+        _changeLocationError = null;
+        try
+        {
+            var updated = await Mediator.Send(new ChangePulloutPickLocationCommand(
+                ReferenceNumber,
+                MaterialNumber,
+                CurrentLocationCode,
+                MfgMonthLabel,
+                _selectedPickSources.Where(source => source.QuantityBoxes > 0).Select(source => new PulloutPickSource(
+                    source.PalletPositionId,
+                    source.MfgMonthLabel,
+                    source.QuantityBoxes)).ToList(),
+                _changeLocationReason));
+            await OnChanged.InvokeAsync(updated);
+            await OnClose.InvokeAsync();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Pick sources updated. Review the allocation before confirming.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to change pick location");
+            _changeLocationError = ex.Message;
+        }
+        finally
+        {
+            _changingPickLocation = false;
+        }
+    }
+
+    private IEnumerable<PulloutPickChangeOptionDto> DisplayPickChangeOptions =>
+        (_pickChangeOptions ?? [])
+            .Where(option => string.IsNullOrWhiteSpace(_changeLocationSearch)
+                || option.LocationCode.Contains(_changeLocationSearch.Trim(), StringComparison.OrdinalIgnoreCase)
+                || option.MfgMonthLabel.Contains(_changeLocationSearch.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private sealed record PickSourceSelection(
+        int PalletPositionId,
+        string LocationCode,
+        string MfgMonthLabel,
+        decimal QuantityBoxes);
+}

@@ -27,7 +27,7 @@
             <h1>Location Master</h1>
             <p class="page-kicker">Review rack, pallet, floor, and yard locations with zone, subtype, distance, and occupancy controls.</p>
         </div>
-        <AuthorizeView Roles="Admin,Supervisor,Operator" Context="headerActionsContext">
+        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.ManageLocations">
             <div class="header-actions">
                 <button class="btn btn-outline-secondary" @onclick="DownloadSampleFormatAsync">
                     <i class="bi bi-download" aria-hidden="true"></i>
@@ -51,7 +51,7 @@
                 </label>
                 <InputFile id="location-excel-upload" OnChange="OnImportFileSelected" class="visually-hidden" />
             </div>
-        </AuthorizeView>
+        </PermissionAuthorize>
     </div>
 
     @if (_importResult is not null)
@@ -70,7 +70,7 @@
         </div>
     }
 
-    <div class="toolbar-panel">
+    <div class="toolbar-panel location-filter-toolbar">
         <div class="toolbar-group">
             <div class="input-group search-control">
                 <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
@@ -103,6 +103,8 @@
                 <option value="true">Active</option>
                 <option value="false">Inactive</option>
             </select>
+            <WarehouseSelect WarehouseId="_warehouseFilter" WarehouseIdChanged="OnWarehouseFilterChangedAsync"
+                              AllowClear="true" Placeholder="Filter by warehouse..." />
         </div>
         @if (_page is not null)
         {
@@ -155,11 +157,11 @@
                             <td class="text-end">@location.OccupiedBoxes.ToString("N0") boxes</td>
                             <td><span class="status-pill @(location.IsActive ? "success" : "inactive")">@(location.IsActive ? "Active" : "Inactive")</span></td>
                             <td class="table-actions">
-                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="rowEditContext">
+                                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.ManageLocations">
                                     <button class="btn btn-sm btn-outline-secondary" title="@($"Edit {location.LocationCode}")" aria-label="@($"Edit {location.LocationCode}")" @onclick="() => ShowEdit(location)">
                                         <i class="bi bi-pencil-square" aria-hidden="true"></i>
                                     </button>
-                                </AuthorizeView>
+                                </PermissionAuthorize>
                             </td>
                         </tr>
                     }
@@ -277,6 +279,7 @@
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private int _loadSequence;
     private string _search = string.Empty;
+    private int? _warehouseFilter;
     private int? _locationTypeFilter;
     private int? _locationSubtypeFilter;
     private int? _zoneTypeFilter;
@@ -338,6 +341,7 @@
                 LocationSubtypeId: _locationSubtypeFilter,
                 ZoneTypeId: _zoneTypeFilter,
                 IsActive: bool.TryParse(_activeFilterText, out var isActive) ? isActive : null,
+                WarehouseId: _warehouseFilter,
                 SortBy: _sortBy,
                 SortDescending: _sortDescending,
                 PageNumber: page,
@@ -354,6 +358,12 @@
     }
 
     private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadPage(1);
+
+    private async Task OnWarehouseFilterChangedAsync(int? warehouseId)
+    {
+        _warehouseFilter = warehouseId;
+        await LoadPage(1);
+    }
 
     private async Task OnLocationTypeChanged(ChangeEventArgs e)
     {
@@ -454,6 +464,7 @@
             LocationSubtypeId: _locationSubtypeFilter,
             ZoneTypeId: _zoneTypeFilter,
             IsActive: bool.TryParse(_activeFilterText, out var isActive) ? isActive : null,
+            WarehouseId: _warehouseFilter,
             SortBy: _sortBy,
             SortDescending: _sortDescending,
             PageNumber: 1,

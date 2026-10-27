@@ -1,0 +1,213 @@
+@* Searchable warehouse picker for every warehouse-dependent page (Location Master, Inventory
+   Master, Inward, Outward, Inventory Adjustments, Racks & Pallets, Audit Trail, Inventory
+   Movement). A user with exactly one accessible warehouse never sees a control at all - it's
+   auto-selected and rendered as a plain label, so "all operations happen to the specific
+   warehouse only" holds with zero UI footprint. A user with more than one gets a type-to-filter
+   dropdown (client-side filtered - the accessible list is always small). This is a UI convenience
+   only: every write path this feeds still validates the chosen WarehouseId server-side via
+   IWarehouseAccessService.HasAccessAsync, the same as every other "never trust the frontend"
+   permission check in this app. *@
+@using GodrejWMS.Application.Common.Interfaces
+@inject IWarehouseAccessService WarehouseAccess
+@inject IJSRuntime JsRuntime
+
+@if (_warehouses.Count == 1)
+{
+    <span class="status-pill" title="@_warehouses[0].Name">
+        <i class="bi bi-building" aria-hidden="true"></i> @_warehouses[0].Code
+    </span>
+}
+else if (_warehouses.Count > 1)
+{
+    <div class="input-group search-control warehouse-select" @onfocusout="OnBlur">
+        <span class="input-group-text"><i class="bi bi-building" aria-hidden="true"></i></span>
+        <input class="form-control" placeholder="@Placeholder" autocomplete="off"
+               value="@_searchText" @oninput="OnInput" @onfocus="OnFocus" />
+        @if (_showSuggestions)
+        {
+            <div class="location-suggestions">
+                @if (AllowClear)
+                {
+                    <button type="button" class="location-suggestion-item" @onmousedown="Clear" @onmousedown:preventDefault="true">
+                        <span class="record-code">@ClearLabel</span>
+                    </button>
+                }
+                @foreach (var w in FilteredWarehouses)
+                {
+                    <button type="button" class="location-suggestion-item" @onmousedown="() => SelectAsync(w)" @onmousedown:preventDefault="true">
+                        <span class="record-code">@w.Code</span>
+                        <span class="location-suggestion-meta">@w.Name</span>
+                    </button>
+                }
+                @if (!AllowClear && FilteredWarehouses.Count == 0)
+                {
+                    <div class="location-suggestion-meta px-2 py-1">No matching warehouse.</div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int? WarehouseId { get; set; }
+    [Parameter] public EventCallback<int?> WarehouseIdChanged { get; set; }
+
+    /// <summary>Shows a "clear filter" option at the top of the suggestion list, for read-side
+    /// filters where "no selection" legitimately means "every warehouse I can see" - never set
+    /// this true for a write-target picker, where a selection is required.</summary>
+    [Parameter] public bool AllowClear { get; set; }
+    [Parameter] public string ClearLabel { get; set; } = "All my warehouses";
+    [Parameter] public string Placeholder { get; set; } = "Search warehouse...";
+
+    /// <summary>Remembers the last pick in localStorage and pre-selects it next time. Off by
+    /// default: the only users who ever see this control at all are multi-warehouse ones
+    /// (Superadmin, Logistic Manager), who switch deliberately rather than always meaning the
+    /// same warehouse - and for a write target, requiring an explicit pick every time is safer
+    /// than silently reusing whatever was last selected (possibly for a different operation).</summary>
+    [Parameter] public bool RememberLastSelection { get; set; }
+
+    private IReadOnlyList<WarehouseOption> _warehouses = [];
+    private string _searchText = string.Empty;
+    private bool _showSuggestions;
+
+    // The resolved id (auto-selected single warehouse, or a remembered last pick) is only
+    // reported to the parent - via WarehouseIdChanged, which for a filter usage triggers the
+    // parent's own Mediator query on its shared DbContext - from OnAfterRenderAsync, never from
+    // OnInitializedAsync. Firing it there would race whatever else the parent's own
+    // OnInitializedAsync is doing on that same shared context during the same initial render
+    // pass (EF Core forbids two concurrent operations on one DbContext) - the same class of bug
+    // already fixed for PermissionService/WarehouseScopeBadge this session, just one layer
+    // further out: this component's own data fetch is already safe (goes through
+    // IWarehouseAccessService's isolated context), it's the *callback into the parent* that
+    // needed deferring.
+    private int? _pendingNotifyId;
+    private bool _hasPendingNotify;
+
+    private List<WarehouseOption> FilteredWarehouses =>
+        (string.IsNullOrWhiteSpace(_searchText)
+            ? _warehouses
+            : _warehouses.Where(w =>
+                w.Code.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                w.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase)))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _warehouses = await WarehouseAccess.GetAccessibleWarehousesAsync();
+
+        if (_warehouses.Count == 1)
+        {
+            WarehouseId = _warehouses[0].Id;
+
+            // For a filter usage (AllowClear), every entity this app scopes by warehouse already
+            // carries the same EF query filter this service's own access check is built from - so
+            // a single-warehouse user's *unfiltered* query already returns only their warehouse's
+            // rows. Notifying the parent here would be a redundant reload, and it's exactly that
+            // reload racing the parent page's own still-in-flight OnInitializedAsync on the same
+            // shared DbContext that caused the "Loading..." + circuit-crash reports - so for this
+            // case specifically, skip the notify entirely rather than just deferring its timing.
+            // A write-target usage (AllowClear false) still needs it - there the parent is just
+            // assigning a local field (@bind-WarehouseId), never doing I/O, so it's always safe.
+            if (!AllowClear)
+            {
+                _pendingNotifyId = _warehouses[0].Id;
+                _hasPendingNotify = true;
+            }
+
+            return;
+        }
+
+        if (WarehouseId is { } preselected && _warehouses.FirstOrDefault(w => w.Id == preselected) is { } match)
+        {
+            _searchText = match.Code;
+            return;
+        }
+
+        if (RememberLastSelection)
+        {
+            var lastId = await TryGetLastWarehouseIdAsync();
+            if (lastId is { } id && _warehouses.FirstOrDefault(w => w.Id == id) is { } remembered)
+            {
+                _searchText = remembered.Code;
+                WarehouseId = remembered.Id;
+                _pendingNotifyId = remembered.Id;
+                _hasPendingNotify = true;
+            }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _hasPendingNotify)
+        {
+            _hasPendingNotify = false;
+            await WarehouseIdChanged.InvokeAsync(_pendingNotifyId);
+        }
+    }
+
+    private async Task<int?> TryGetLastWarehouseIdAsync()
+    {
+        try
+        {
+            return await JsRuntime.InvokeAsync<int?>("godrejWms.getActiveWarehouseId");
+        }
+        catch (InvalidOperationException)
+        {
+            // JS interop isn't available during static prerendering - same reasoning as the
+            // sidebar-collapsed preference in MainLayout.razor.
+            return null;
+        }
+    }
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        _searchText = e.Value?.ToString() ?? string.Empty;
+        _showSuggestions = true;
+
+        // Typing invalidates whatever was previously picked: without this, selecting a warehouse
+        // and then editing/backspacing the text leaves the box looking empty while the stale
+        // WarehouseId is still bound underneath, so a "required" field silently submits with a
+        // warehouse no longer shown as selected. Any edit clears the bound value until a fresh
+        // pick is made, same as a standard combobox.
+        if (WarehouseId is not null)
+        {
+            await SetSelectedAsync(null, persist: false);
+        }
+    }
+
+    private void OnFocus() => _showSuggestions = true;
+
+    private void OnBlur() => _showSuggestions = false;
+
+    private Task Clear()
+    {
+        _searchText = string.Empty;
+        _showSuggestions = false;
+        return SetSelectedAsync(null, persist: false);
+    }
+
+    private async Task SelectAsync(WarehouseOption warehouse)
+    {
+        _searchText = warehouse.Code;
+        _showSuggestions = false;
+        await SetSelectedAsync(warehouse.Id, persist: true);
+    }
+
+    private async Task SetSelectedAsync(int? id, bool persist)
+    {
+        WarehouseId = id;
+        await WarehouseIdChanged.InvokeAsync(id);
+
+        if (persist && RememberLastSelection && id is not null)
+        {
+            try
+            {
+                await JsRuntime.InvokeVoidAsync("godrejWms.setActiveWarehouseId", id.Value);
+            }
+            catch (InvalidOperationException)
+            {
+                // Not fatal - the selection still applies for this page/session.
+            }
+        }
+    }
+}

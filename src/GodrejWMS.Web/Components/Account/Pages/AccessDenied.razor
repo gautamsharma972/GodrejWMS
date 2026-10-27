@@ -1,8 +1,50 @@
 ﻿@page "/Account/AccessDenied"
 
-<PageTitle>Access denied</PageTitle>
+<PageTitle>Access denied - Godrej WMS</PageTitle>
 
-<header>
-    <h1 class="text-danger">Access denied</h1>
-    <p class="text-danger">You do not have access to this resource.</p>
-</header>
+<HeadContent>
+    <meta http-equiv="refresh" content="8;url=/" />
+</HeadContent>
+
+<div class="status-page">
+    <div class="status-card">
+        <span class="status-icon status-icon-danger">
+            <i class="bi bi-shield-lock" aria-hidden="true"></i>
+        </span>
+        <div class="eyebrow">Access denied</div>
+        <h1>This page isn't available to your account</h1>
+        <p>
+            Your current sign-in doesn't have permission to view this page. If you recently switched
+            accounts, that may be why - otherwise, check with your administrator if you believe this
+            is a mistake.
+        </p>
+        <div class="status-actions">
+            <a class="btn btn-primary" href="/">
+                <i class="bi bi-house-door" aria-hidden="true"></i>
+                Back to Home
+            </a>
+            <form action="Account/Logout" method="post" class="status-logout-form">
+                <AntiforgeryToken />
+                <input type="hidden" name="ReturnUrl" value="/" />
+                <button type="submit" class="btn btn-outline-secondary">
+                    <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+                    Sign in as a different user
+                </button>
+            </form>
+        </div>
+        <p class="status-redirect-note">Taking you back to the dashboard in a few seconds&hellip;</p>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        // Same reasoning as Login.razor: this page embeds an antiforgery token for the sign-out
+        // form, which goes stale if the browser serves a cached copy instead of re-fetching.
+        HttpContext.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+        HttpContext.Response.Headers.Pragma = "no-cache";
+    }
+}

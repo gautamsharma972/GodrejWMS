@@ -26,22 +26,23 @@ public static class AppSearchCatalog
         new("Zone Types", "zone-types", "Master Data", "bi-bullseye", ["zone", "fast", "reserve", "seasonal", "dispatch"]),
         new("Location Types", "location-types", "Master Data", "bi-diagram-3", ["rack", "floor", "yard"]),
         new("Seasons", "seasons", "Master Data", "bi-cloud-sun", ["rainy", "summer", "winter"]),
-        new("Audit Trail", "audit-trail", "Master Data", "bi-clipboard-data", ["log", "activity", "history"], ["Admin", "Supervisor", "Operator"]),
+        new("Audit Trail", "audit-trail", "Master Data", "bi-clipboard-data", ["log", "activity", "history"], ["Superadmin", "Supervisor", "Office Staff"]),
 
-        new("Inward Entry", "inward", "Transactions", "bi-pencil-square", ["grn", "goods receipt", "receive", "receiving"], ["Admin", "Operator", "Supervisor"]),
-        new("Inward History", "inward/history", "Transactions", "bi-clock-history", ["grn history"], ["Admin", "Operator", "Supervisor"]),
-        new("Pullout Entry", "pullout", "Transactions", "bi-pencil-square", ["outward", "pick", "picking", "dispatch"], ["Admin", "Operator", "Supervisor"]),
-        new("Pullout History", "pullout/history", "Transactions", "bi-clock-history", ["outward history"], ["Admin", "Operator", "Supervisor"]),
-        new("Move by Location", "inventory-movement/by-location", "Transactions", "bi-geo-alt", ["relocate", "transfer", "movement"], ["Admin", "Supervisor", "Operator"]),
-        new("Move by SKU", "inventory-movement/by-sku", "Transactions", "bi-upc-scan", ["relocate", "transfer", "movement"], ["Admin", "Supervisor", "Operator"]),
-        new("Movement History", "inventory-movement/history", "Transactions", "bi-clock-history", ["relocation history"], ["Admin", "Supervisor", "Operator"]),
+        new("Inward Entry", "inward", "Transactions", "bi-pencil-square", ["grn", "goods receipt", "receive", "receiving"], ["Superadmin", "Office Staff", "Supervisor"]),
+        new("Inward History", "inward/history", "Transactions", "bi-clock-history", ["grn history"], ["Superadmin", "Office Staff", "Supervisor"]),
+        new("Pullout Entry", "pullout", "Transactions", "bi-pencil-square", ["outward", "pick", "picking", "dispatch"], ["Superadmin", "Office Staff", "Supervisor"]),
+        new("Pullout History", "pullout/history", "Transactions", "bi-clock-history", ["outward history"], ["Superadmin", "Office Staff", "Supervisor"]),
+        new("Move by Location", "inventory-movement/by-location", "Transactions", "bi-geo-alt", ["relocate", "transfer", "movement"], ["Superadmin", "Supervisor", "Office Staff"]),
+        new("Move by SKU", "inventory-movement/by-sku", "Transactions", "bi-upc-scan", ["relocate", "transfer", "movement"], ["Superadmin", "Supervisor", "Office Staff"]),
+        new("Movement History", "inventory-movement/history", "Transactions", "bi-clock-history", ["relocation history"], ["Superadmin", "Supervisor", "Office Staff"]),
 
-        new("Operational Reports", "reports/operations", "Reports", "bi-table", ["report"], ["Admin", "Supervisor", "Operator"]),
-        new("Inward Reports", "reports/inward", "Reports", "bi-box-arrow-in-down", ["grn report", "putaway", "rejection", "turnaround"], ["Admin", "Supervisor", "Operator"]),
-        new("Pullout Reports", "reports/pullout", "Reports", "bi-box-arrow-up", ["shortage", "fifo", "picking report"], ["Admin", "Supervisor", "Operator"]),
-        new("Inventory Reports", "reports/inventory", "Reports", "bi-bar-chart", ["aging", "valuation", "capacity", "slow moving"], ["Admin", "Supervisor", "Operator"]),
-        new("Movement Reports", "reports/movement", "Reports", "bi-arrow-left-right", ["churn", "reasons"], ["Admin", "Supervisor", "Operator"]),
-        new("AI Assistant", "reports/ai-assistant", "Reports", "bi-stars", ["ask", "chat", "question", "assistant"], ["Admin", "Supervisor", "Operator"])
+        new("Operational Reports", "reports/operations", "Reports", "bi-table", ["report"], ["Superadmin", "Supervisor", "Office Staff"]),
+        new("Inward Reports", "reports/inward", "Reports", "bi-box-arrow-in-down", ["grn report", "putaway", "rejection", "turnaround"], ["Superadmin", "Supervisor", "Office Staff"]),
+        new("Pullout Reports", "reports/pullout", "Reports", "bi-box-arrow-up", ["shortage", "fifo", "picking report"], ["Superadmin", "Supervisor", "Office Staff"]),
+        new("Inventory Reports", "reports/inventory", "Reports", "bi-bar-chart", ["aging", "valuation", "capacity", "slow moving"], ["Superadmin", "Supervisor", "Office Staff"]),
+        new("Material Stock Report", "reports/material-stock", "Reports", "bi-box-seam", ["material code", "material description", "pkm", "mrp", "box quantity", "stock report"], ["Superadmin", "Supervisor", "Office Staff"]),
+        new("Movement Reports", "reports/movement", "Reports", "bi-arrow-left-right", ["churn", "reasons"], ["Superadmin", "Supervisor", "Office Staff"]),
+        new("AI Assistant", "reports/ai-assistant", "Reports", "bi-stars", ["ask", "chat", "question", "assistant"], ["Superadmin", "Supervisor", "Office Staff"])
     ];
 
     public static bool IsVisibleTo(SearchCatalogEntry entry, IReadOnlyCollection<string> roles) =>

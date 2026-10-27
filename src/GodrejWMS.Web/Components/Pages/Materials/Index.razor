@@ -28,8 +28,20 @@
             <h1>Material Master</h1>
             <p class="page-kicker">Maintain SKU dimensions, pack sizes, pallet capacity, velocity, and seasonal classification.</p>
         </div>
-        <AuthorizeView Roles="Admin,Supervisor,Operator" Context="headerActionsContext">
-            <div class="header-actions">
+        <div class="header-actions">
+            <button class="btn btn-outline-secondary" @onclick="ExportMaterialMasterAsync" disabled="@_exporting">
+                @if (_exporting)
+                {
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    <span>Exporting</span>
+                }
+                else
+                {
+                    <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                    <span>Export Excel</span>
+                }
+            </button>
+            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Create">
                 <button class="btn btn-outline-secondary" @onclick="DownloadSampleFormatAsync">
                     <i class="bi bi-download" aria-hidden="true"></i>
                     Sample Format
@@ -51,8 +63,8 @@
                     <i class="bi bi-plus-lg" aria-hidden="true"></i>
                     New Material
                 </button>
-            </div>
-        </AuthorizeView>
+            </PermissionAuthorize>
+        </div>
     </div>
 
     <div class="toolbar-panel">
@@ -94,6 +106,11 @@
             <span class="sync-chip">@_page.TotalCount.ToString("N0") materials</span>
         }
     </div>
+
+    @if (_importError is not null)
+    {
+        <div class="alert alert-danger mb-0">@_importError</div>
+    }
 
     @if (_importResult is not null)
     {
@@ -302,11 +319,11 @@
                             <td><span class="status-pill @SeasonClass(m.SeasonCode)">@m.SeasonName</span></td>
                             <td><span class="status-pill @(m.IsActive ? "success" : "inactive")">@(m.IsActive ? "Active" : "Inactive")</span></td>
                             <td class="table-actions">
-                                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="rowEditContext">
+                                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Edit">
                                     <button class="btn btn-sm btn-outline-secondary" title="@($"Edit {m.MaterialNumber}")" aria-label="@($"Edit {m.MaterialNumber}")" @onclick="() => ShowForm(m)">
                                         <i class="bi bi-pencil-square" aria-hidden="true"></i>
                                     </button>
-                                </AuthorizeView>
+                                </PermissionAuthorize>
                             </td>
                         </tr>
                     }
@@ -348,7 +365,9 @@
     private MaterialFormModel _form = new();
     private string? _formError;
     private bool _importing;
+    private bool _exporting;
     private ImportMaterialsResult? _importResult;
+    private string? _importError;
 
     // Search/filter/sort/paging all funnel through LoadPage, and the page shares a single
     // DbContext, so overlapping calls (e.g. fast typing in the search box) would otherwise
@@ -543,6 +562,7 @@ protected override async Task OnInitializedAsync()
     {
         _importing = true;
         _importResult = null;
+        _importError = null;
         try
         {
             await using var stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
@@ -557,6 +577,8 @@ protected override async Task OnInitializedAsync()
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Failed to import materials");
+            _importError = ex.Message;
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Material import failed: {ex.Message}", "danger");
         }
         finally
         {
@@ -570,6 +592,39 @@ protected override async Task OnInitializedAsync()
         var base64 = Convert.ToBase64String(bytes);
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "material-master-sample-format.xlsx", base64,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task ExportMaterialMasterAsync()
+    {
+        _exporting = true;
+        try
+        {
+            var result = await Mediator.Send(new GetMaterialsQuery(
+                Search: _search,
+                DesignType: string.IsNullOrWhiteSpace(_designTypeFilter) ? null : _designTypeFilter.Trim(),
+                MovementTypeId: _movementFilter,
+                SeasonId: _seasonFilter,
+                IsActive: bool.TryParse(_activeFilterText, out var isActive) ? isActive : null,
+                SortBy: _sortBy,
+                SortDescending: _sortDescending,
+                PageNumber: 1,
+                PageSize: Math.Max(1, _page?.TotalCount ?? 1)));
+
+            var bytes = ExcelService.WriteMaterialMaster(result.Items);
+            var base64 = Convert.ToBase64String(bytes);
+            await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"material-master-{DateTime.Today:yyyyMMdd}.xlsx", base64,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Exported {result.Items.Count:N0} material(s).");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to export Material Master");
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Material export failed: {ex.Message}", "danger");
+        }
+        finally
+        {
+            _exporting = false;
+        }
     }
 
     private string SortIcon(string column) =>

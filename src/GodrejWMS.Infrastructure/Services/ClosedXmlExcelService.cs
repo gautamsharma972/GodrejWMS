@@ -8,6 +8,7 @@ using GodrejWMS.Application.Features.Racks.Dtos;
 using GodrejWMS.Application.Features.Reports.Core;
 using GodrejWMS.Application.Features.StockMaster.Dtos;
 using GodrejWMS.Domain.Entities;
+using GodrejWMS.Domain.Enums;
 
 namespace GodrejWMS.Infrastructure.Services;
 
@@ -68,14 +69,14 @@ public class ClosedXmlExcelService : IExcelService
                 Description: ws.Cell(row, 2).GetString().Trim(),
                 DesignType: ws.Cell(row, 3).GetString().Trim(),
                 CharacteristicValue: NullIfEmpty(ws.Cell(row, 6).GetString()),
-                PackSize: (int)ws.Cell(row, 4).GetValue<double>(),
-                MrpPrice: (decimal)ws.Cell(row, 5).GetValue<double>(),
-                LengthMm: (decimal)ws.Cell(row, 7).GetValue<double>(),
-                WidthMm: (decimal)ws.Cell(row, 8).GetValue<double>(),
-                HeightMm: (decimal)ws.Cell(row, 9).GetValue<double>(),
-                NetWeightKg: (decimal)ws.Cell(row, 11).GetValue<double>(),
-                GrossWeightKg: (decimal)ws.Cell(row, 12).GetValue<double>(),
-                PalletCapacityBoxes: (int)ws.Cell(row, 13).GetValue<double>(),
+                PackSize: (int)ReadDecimal(ws.Cell(row, 4)),
+                MrpPrice: ReadDecimal(ws.Cell(row, 5)),
+                LengthMm: ReadDecimal(ws.Cell(row, 7)),
+                WidthMm: ReadDecimal(ws.Cell(row, 8)),
+                HeightMm: ReadDecimal(ws.Cell(row, 9)),
+                NetWeightKg: ReadDecimal(ws.Cell(row, 11)),
+                GrossWeightKg: ReadDecimal(ws.Cell(row, 12)),
+                PalletCapacityBoxes: (int)ReadDecimal(ws.Cell(row, 13)),
                 MovementTypeCode: movementTypeCode,
                 SeasonCode: seasonCode,
                 RowNumber: row));
@@ -136,6 +137,60 @@ public class ClosedXmlExcelService : IExcelService
         }
 
         ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] WriteMaterialMaster(IReadOnlyList<MaterialDto> rows)
+    {
+        string[] headers =
+        [
+            "Material Code", "Description", "Design Type", "Characteristic Value", "Pack Size",
+            "MRP", "Velocity", "Length (mm)", "Width (mm)", "Height (mm)", "Volume (mm3)",
+            "Net Weight (kg)", "Gross Weight (kg)", "Box Weight (kg)", "Pallet Size",
+            "Pallet Weight (kg)", "Preferred Zone", "Season", "Status"
+        ];
+
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Material Master");
+        WriteHeader(ws, headers);
+
+        var rowNumber = 2;
+        foreach (var item in rows)
+        {
+            ws.Cell(rowNumber, 1).Value = item.MaterialNumber;
+            ws.Cell(rowNumber, 2).Value = item.Description;
+            ws.Cell(rowNumber, 3).Value = item.DesignType;
+            ws.Cell(rowNumber, 4).Value = item.CharacteristicValue ?? string.Empty;
+            ws.Cell(rowNumber, 5).Value = item.PackSize;
+            ws.Cell(rowNumber, 6).Value = item.MrpPrice;
+            ws.Cell(rowNumber, 7).Value = item.MovementTypeName;
+            ws.Cell(rowNumber, 8).Value = item.LengthMm;
+            ws.Cell(rowNumber, 9).Value = item.WidthMm;
+            ws.Cell(rowNumber, 10).Value = item.HeightMm;
+            ws.Cell(rowNumber, 11).Value = item.VolumeMm3;
+            ws.Cell(rowNumber, 12).Value = item.NetWeightKg;
+            ws.Cell(rowNumber, 13).Value = item.GrossWeightKg;
+            ws.Cell(rowNumber, 14).Value = item.BoxWeightKg;
+            ws.Cell(rowNumber, 15).Value = item.PalletCapacityBoxes;
+            ws.Cell(rowNumber, 16).Value = item.PalletWeightKg;
+            ws.Cell(rowNumber, 17).Value = item.PreferredZoneTypeName is null
+                ? "No preference"
+                : item.PreferredZoneTypeName + (item.RequirePreferredZone ? " (required)" : string.Empty);
+            ws.Cell(rowNumber, 18).Value = item.SeasonName;
+            ws.Cell(rowNumber, 19).Value = item.IsActive ? "Active" : "Inactive";
+            rowNumber++;
+        }
+
+        ws.Column(1).Style.NumberFormat.Format = "0";
+        ws.Column(6).Style.NumberFormat.Format = "0.00";
+        ws.Columns(8, 14).Style.NumberFormat.Format = "0.000";
+        ws.Column(16).Style.NumberFormat.Format = "0.000";
+        ws.SheetView.FreezeRows(1);
+        ws.RangeUsed()?.SetAutoFilter();
+        ws.Columns().AdjustToContents(8, 45);
 
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
@@ -346,31 +401,24 @@ public class ClosedXmlExcelService : IExcelService
 
     public byte[] WritePulloutUploadTemplate(IReadOnlyList<string> plantNames)
     {
-        string[] headers = ["Material Code", "Total Stock in CFB", "Plant Name"];
-
         using var workbook = new XLWorkbook();
-        var ws = workbook.Worksheets.Add("Pullout Upload");
-        WriteHeader(ws, headers);
+        var ws = workbook.Worksheets.Add("Loading Sheet");
 
-        var samples = new object[][]
+        var samples = new (long Code, string Description, decimal DelQty)[]
         {
-            [40034354, 40],
-            [40058047, 20],
-            [50010001, 10]
+            (40034354, "Sample material A", 40),
+            (40058047, "Sample material B", 20),
+            (50010001, "Sample material C", 10)
         };
 
-        for (var r = 0; r < samples.Length; r++)
+        BuildLoadingSheetLayout(ws, indent: null, date: null, destination: null, fields: null, dataRowCount: samples.Length);
+
+        for (var i = 0; i < samples.Length; i++)
         {
-            for (var c = 0; c < samples[r].Length; c++)
-            {
-                ws.Cell(r + 2, c + 1).Value = XLCellValue.FromObject(samples[r][c]);
-            }
+            WriteLoadingSheetDataRow(ws, LoadingSheetFirstDataRow + i, samples[i].Code, samples[i].Description, samples[i].DelQty, priority: null, remarks: null);
         }
 
-        ws.Column(1).Style.NumberFormat.Format = "0";
-        ws.Column(2).Style.NumberFormat.Format = "0.###";
-
-        // Plant Name is a convenience dropdown only - never validated on import (see
+        // Destination is a convenience dropdown only - never validated on import (see
         // ReadPulloutUpload/SubmitPullout). An inline list formula is capped at 255 characters by
         // Excel, which a few dozen plant names can exceed, so the list lives on a hidden helper
         // sheet instead and the validation references that range.
@@ -383,24 +431,33 @@ public class ClosedXmlExcelService : IExcelService
             }
             lookupSheet.Visibility = XLWorksheetVisibility.VeryHidden;
 
-            const int lastPlantDropdownRow = 500;
-            ws.Range(2, 3, lastPlantDropdownRow, 3)
-                .CreateDataValidation()
-                .List(lookupSheet.Range(1, 1, plantNames.Count, 1), true);
+            ws.Cell(7, 2).CreateDataValidation().List(lookupSheet.Range(1, 1, plantNames.Count, 1), true);
         }
-
-        ws.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
         return stream.ToArray();
     }
-    public IReadOnlyList<PulloutImportRow> ReadPulloutUpload(Stream fileStream)
+
+    public (IReadOnlyList<PulloutImportRow> Rows, PulloutLoadingSheetFieldsDto HeaderFields) ReadPulloutUpload(Stream fileStream)
     {
         using var workbook = LoadWorkbook(fileStream);
         var ws = workbook.Worksheets.First();
 
-        var headerRow = FindHeaderRow(ws, "Material Code");
+        var headerRow = FindHeaderRow(ws, "Code", maxRow: 20);
+        var plantName = FindLabeledValue(ws, headerRow, "Destination");
+        var headerFields = new PulloutLoadingSheetFieldsDto(
+            TransportName: FindLabeledValue(ws, headerRow, "Transport"),
+            VehicleNumber: FindLabeledValue(ws, headerRow, "Vehicle no"),
+            GateNumber: FindLabeledValueBelow(ws, headerRow, "GATE NO"),
+            DriverNumber: FindLabeledValue(ws, headerRow, "Driver No"),
+            PlanTime: FindLabeledValue(ws, headerRow, "Plan Time:"),
+            DateText: FindLabeledValue(ws, headerRow, "Date"),
+            StartTime: FindLabeledValue(ws, headerRow, "Start Time"),
+            EndTime: FindLabeledValue(ws, headerRow, "End Time"),
+            WeightText: FindTextStartingWith(ws, headerRow, "Weight"),
+            VolumeText: FindTextStartingWith(ws, headerRow, "Volume"));
+
         var rows = new List<PulloutImportRow>();
 
         var row = headerRow + 1;
@@ -412,17 +469,308 @@ public class ClosedXmlExcelService : IExcelService
                 break;
             }
 
-            var plantName = ws.Cell(row, 3).GetString().Trim();
             rows.Add(new PulloutImportRow(
                 MaterialCode: materialCode,
-                QuantityBoxes: (decimal)ws.Cell(row, 2).GetValue<double>(),
+                QuantityBoxes: (decimal)ws.Cell(row, 3).GetValue<double>(),
                 RowNumber: row,
-                PlantName: string.IsNullOrWhiteSpace(plantName) ? null : plantName));
+                PlantName: plantName,
+                Priority: NullIfEmpty(ws.Cell(row, 4).GetString()),
+                MaterialDescription: NullIfEmpty(ws.Cell(row, 2).GetString())));
 
             row++;
         }
 
-        return rows;
+        return (rows, headerFields);
+    }
+
+    public byte[] WritePulloutDownload(
+        IReadOnlyList<PulloutDownloadRowDto> rows,
+        PulloutLoadingSheetHeaderDto loadingSheetHeader,
+        IReadOnlyList<PulloutLoadingSheetRowDto> loadingSheetRows)
+    {
+        using var workbook = new XLWorkbook();
+
+        // Sheet 1: unchanged - same column layout the pick-list download has always used.
+        string[] headers = ["Material Code", "Material Desc.", "Total Stock in CFB", "Mfg Month", "Pallet Position", "Plant Name"];
+        var downloadSheet = workbook.Worksheets.Add("Pullout Download");
+        WriteHeader(downloadSheet, headers);
+        var rowNum = 2;
+        foreach (var i in rows)
+        {
+            downloadSheet.Cell(rowNum, 1).Value = i.MaterialNumber;
+            downloadSheet.Cell(rowNum, 2).Value = i.MaterialDescription;
+            downloadSheet.Cell(rowNum, 3).Value = i.QuantityBoxes;
+            downloadSheet.Cell(rowNum, 4).Value = i.MfgMonthLabel;
+            downloadSheet.Cell(rowNum, 5).Value = i.PalletPositionCode;
+            downloadSheet.Cell(rowNum, 6).Value = i.PlantName;
+            rowNum++;
+        }
+        downloadSheet.Columns().AdjustToContents();
+
+        // Sheet 2: the GCPL Loading Sheet layout, Code/Description/Del Qty as requested and
+        // Remarks set from each line's allocation outcome - every other data column (Priority,
+        // MRP, PKD, Load Qty) stays blank, same as the original uploaded sheet.
+        var loadingSheet = workbook.Worksheets.Add("Loading Sheet");
+        BuildLoadingSheetLayout(loadingSheet,
+            indent: loadingSheetHeader.ReferenceNumber,
+            date: loadingSheetHeader.CreatedAt,
+            destination: loadingSheetHeader.PlantName,
+            fields: loadingSheetHeader.Fields,
+            address: loadingSheetHeader.WarehouseAddress,
+            dataRowCount: loadingSheetRows.Count);
+
+        for (var i = 0; i < loadingSheetRows.Count; i++)
+        {
+            var line = loadingSheetRows[i];
+            WriteLoadingSheetDataRow(loadingSheet, LoadingSheetFirstDataRow + i,
+                line.MaterialNumber, line.MaterialDescription, line.DelQtyBoxes, line.Priority, DescribeAvailability(line.Status));
+        }
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    private static string DescribeAvailability(AllocationStatus status) => status switch
+    {
+        AllocationStatus.Fulfilled => "Available",
+        AllocationStatus.Partial => "Partial Available",
+        _ => "Not available"
+    };
+
+    private const int LoadingSheetFirstDataRow = 12;
+
+    /// <summary>Reproduces the GCPL Loading Sheet's exact static design (merges, borders, fonts,
+    /// column widths, section labels) - everything except the data table rows, which the caller
+    /// fills in separately via <see cref="WriteLoadingSheetDataRow"/> since the row count varies
+    /// per pullout. <paramref name="fields"/> carries through whatever was captured from the
+    /// original upload (Transport, Vehicle no, Driver No, Gate No, Plan/Start/End Time, Weight,
+    /// Volume); when null (no upload, e.g. the blank sample template), those labels are reproduced
+    /// but left blank for manual fill-in. <paramref name="address"/> comes from the pullout's
+    /// Warehouse master Address field - "NA" when that warehouse has none set.</summary>
+    private static void BuildLoadingSheetLayout(IXLWorksheet ws, string? indent, DateTimeOffset? date, string? destination, PulloutLoadingSheetFieldsDto? fields, string? address = null, int dataRowCount = 0)
+    {
+        ws.Column(1).Width = 15;
+        ws.Column(2).Width = 65;
+        ws.Column(3).Width = 11;
+        ws.Column(4).Width = 11;
+        ws.Column(5).Width = 11;
+        ws.Column(6).Width = 11;
+        ws.Column(7).Width = 12;
+        ws.Column(8).Width = 21;
+
+        // The footer (Driver Sign / Loading Total / Sr.No table / Total) always sat at fixed rows
+        // 35-43, which only left room for 23 data rows (12-34) before it started overwriting the
+        // footer's own cells - this pushes the footer below however many data rows this pullout
+        // actually has, while keeping the original 35-43 layout/spacing for the common case.
+        var footerStartRow = Math.Max(35, LoadingSheetFirstDataRow + dataRowCount + 1);
+        var lastRow = footerStartRow + 8;
+
+        var whole = ws.Range(1, 1, lastRow, 8);
+        whole.Style.Font.FontName = "Arial";
+        whole.Style.Font.FontSize = 10;
+        whole.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+        whole.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+        whole.Style.Border.OutsideBorderColor = XLColor.FromHtml("#222222");
+        whole.Style.Border.InsideBorderColor = XLColor.FromHtml("#222222");
+        whole.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+
+        ws.Row(1).Height = 21;
+        ws.Row(2).Height = 23;
+        ws.Row(3).Height = 23;
+        ws.Row(4).Height = 30;
+        for (var r = 5; r <= 11; r++) ws.Row(r).Height = 21;
+
+        ws.Range("A1:H1").Merge();
+
+        ws.Range("A2:H2").Merge();
+        ws.Cell(2, 1).Value = "GODREJ CONSUMER PRODUCTS LTD";
+        ws.Cell(2, 1).Style.Font.Bold = true;
+        ws.Cell(2, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        ws.Range("A3:H3").Merge();
+        ws.Cell(3, 1).Value = string.IsNullOrWhiteSpace(address) ? "NA" : address;
+        ws.Cell(3, 1).Style.Font.Bold = true;
+        ws.Cell(3, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        ws.Range("A4:H4").Merge();
+        ws.Cell(4, 1).Value = "Loading Sheet";
+        ws.Cell(4, 1).Style.Font.Bold = true;
+        ws.Cell(4, 1).Style.Font.FontSize = 15;
+        ws.Cell(4, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        void Label(int row, int col, string text)
+        {
+            ws.Cell(row, col).Value = text;
+            ws.Cell(row, col).Style.Font.Bold = true;
+        }
+
+        Label(5, 1, "Transport");
+        ws.Range("B5:C5").Merge();
+        if (fields?.TransportName is not null) ws.Cell(5, 2).Value = fields.TransportName;
+        Label(5, 4, "GATE NO:");
+        Label(5, 6, "Plan Time:");
+        if (fields?.PlanTime is not null) ws.Cell(5, 7).Value = fields.PlanTime;
+        if (fields?.WeightText is not null) ws.Cell(5, 8).Value = fields.WeightText;
+
+        Label(6, 1, "Vehicle no");
+        ws.Range("B6:C6").Merge();
+        if (fields?.VehicleNumber is not null) ws.Cell(6, 2).Value = fields.VehicleNumber;
+        if (fields?.GateNumber is not null) ws.Cell(6, 4).Value = fields.GateNumber;
+        Label(6, 6, "Date");
+        if (fields?.DateText is not null)
+        {
+            ws.Cell(6, 7).Value = fields.DateText;
+        }
+        else if (date is not null)
+        {
+            ws.Cell(6, 7).Value = date.Value.ToString("dd.MM.yyyy");
+        }
+        if (fields?.VolumeText is not null) ws.Cell(6, 8).Value = fields.VolumeText;
+
+        Label(7, 1, "Destination");
+        ws.Range("B7:C7").Merge();
+        if (destination is not null)
+        {
+            ws.Cell(7, 2).Value = destination;
+        }
+        Label(7, 6, "Start Time");
+        if (fields?.StartTime is not null) ws.Cell(7, 7).Value = fields.StartTime;
+
+        Label(8, 1, "Driver No");
+        ws.Range("B8:C8").Merge();
+        if (fields?.DriverNumber is not null) ws.Cell(8, 2).Value = fields.DriverNumber;
+        Label(8, 6, "End Time");
+        if (fields?.EndTime is not null) ws.Cell(8, 7).Value = fields.EndTime;
+
+        ws.Range("B9:C9").Merge();
+
+        ws.Range("G10:H10").Merge();
+        ws.Cell(10, 6).Value = "Indent";
+        if (indent is not null)
+        {
+            ws.Cell(10, 7).Value = indent;
+        }
+
+        string[] columnHeaders = ["Code", "Description", "Del Qty", "Priority", "MRP", "PKD", "Load Qty", "Remarks"];
+        for (var c = 0; c < columnHeaders.Length; c++)
+        {
+            Label(11, c + 1, columnHeaders[c]);
+        }
+
+        ws.Row(footerStartRow).Height = 21;
+
+        var driverSignRow = footerStartRow + 1;
+        ws.Range(driverSignRow, 1, driverSignRow, 2).Merge();
+        ws.Cell(driverSignRow, 1).Value = "Driver Sign";
+        ws.Cell(driverSignRow, 3).Value = "Loading Total";
+        ws.Row(driverSignRow).Height = 21;
+
+        var supervisorSignRow = footerStartRow + 2;
+        ws.Range(supervisorSignRow, 1, supervisorSignRow, 2).Merge();
+        ws.Cell(supervisorSignRow, 1).Value = "Supervisor Sign";
+        ws.Cell(supervisorSignRow, 3).Value = "Checked By";
+        ws.Row(supervisorSignRow).Height = 21;
+
+        ws.Row(footerStartRow + 3).Height = 21;
+
+        var deliveryHeaderRow = footerStartRow + 4;
+        Label(deliveryHeaderRow, 1, "Sr.No.");
+        Label(deliveryHeaderRow, 2, "Delivery No");
+        Label(deliveryHeaderRow, 3, "Del Qty");
+        Label(deliveryHeaderRow, 4, "Total Spending");
+        ws.Row(deliveryHeaderRow).Height = 21;
+
+        for (var i = 0; i < 3; i++)
+        {
+            var row = deliveryHeaderRow + 1 + i;
+            ws.Cell(row, 1).Value = i + 1;
+            ws.Row(row).Height = 21;
+        }
+
+        var totalRow = deliveryHeaderRow + 4;
+        ws.Range(totalRow, 1, totalRow, 2).Merge();
+        ws.Cell(totalRow, 1).Value = "Total";
+        ws.Row(totalRow).Height = 21;
+    }
+
+    private static void WriteLoadingSheetDataRow(IXLWorksheet ws, int row, long code, string description, decimal delQty, string? priority, string? remarks)
+    {
+        ws.Row(row).Height = 20;
+        ws.Cell(row, 1).Value = code.ToString();
+        ws.Cell(row, 1).Style.NumberFormat.Format = "@";
+        ws.Cell(row, 2).Value = description;
+        ws.Cell(row, 3).Value = delQty;
+        ws.Cell(row, 3).Style.NumberFormat.Format = "0";
+        if (priority is not null)
+        {
+            ws.Cell(row, 4).Value = priority;
+        }
+        if (remarks is not null)
+        {
+            ws.Cell(row, 8).Value = remarks;
+        }
+    }
+
+    /// <summary>Scans rows 1..maxRow, every column, for a cell whose text equals <paramref name="label"/>
+    /// exactly, and returns the next column's text on that same row (trimmed), or null if not
+    /// found/blank. Covers both the left label column (Transport, Vehicle no, ...) and the right
+    /// one (Plan Time:, Date, Start Time, End Time), since both sit one column left of their value.</summary>
+    private static string? FindLabeledValue(IXLWorksheet ws, int maxRow, string label)
+    {
+        for (var row = 1; row <= maxRow; row++)
+        {
+            for (var col = 1; col <= 7; col++)
+            {
+                if (ws.Cell(row, col).GetString().Trim().Equals(label, StringComparison.OrdinalIgnoreCase))
+                {
+                    return NullIfEmpty(ws.Cell(row, col + 1).GetString());
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Scans rows 1..maxRow, every column, for a cell whose text contains
+    /// <paramref name="labelContains"/>, and returns the text one row below in that same column
+    /// (trimmed), or null if not found/blank. The Loading Sheet's "GATE NO:" label sits one row
+    /// above its value, unlike every other header label.</summary>
+    private static string? FindLabeledValueBelow(IXLWorksheet ws, int maxRow, string labelContains)
+    {
+        for (var row = 1; row <= maxRow; row++)
+        {
+            for (var col = 1; col <= 8; col++)
+            {
+                if (ws.Cell(row, col).GetString().Contains(labelContains, StringComparison.OrdinalIgnoreCase))
+                {
+                    return NullIfEmpty(ws.Cell(row + 1, col).GetString());
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Scans rows 1..maxRow, every column, for a cell whose text starts with
+    /// <paramref name="prefix"/> and returns that whole cell's text verbatim - Weight/Volume are a
+    /// single combined label+value cell on the Loading Sheet (e.g. "Weight 35MT"), not a separate
+    /// label/value pair.</summary>
+    private static string? FindTextStartingWith(IXLWorksheet ws, int maxRow, string prefix)
+    {
+        for (var row = 1; row <= maxRow; row++)
+        {
+            for (var col = 1; col <= 8; col++)
+            {
+                var text = ws.Cell(row, col).GetString().Trim();
+                if (text.Length > 0 && text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return text;
+                }
+            }
+        }
+
+        return null;
     }
 
     public byte[] WriteStockMaster(IReadOnlyList<StockMasterRowDto> rows)
@@ -502,21 +850,6 @@ public class ClosedXmlExcelService : IExcelService
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
         return stream.ToArray();
-    }
-
-    public byte[] WritePulloutDownload(IReadOnlyList<PulloutDownloadRowDto> rows)
-    {
-        string[] headers = ["Material Code", "Material Desc.", "Total Stock in CFB", "Mfg Month", "Pallet Position", "Plant Name"];
-
-        return WriteRows("Pullout Download", headers, rows, (ws, r, i) =>
-        {
-            ws.Cell(r, 1).Value = i.MaterialNumber;
-            ws.Cell(r, 2).Value = i.MaterialDescription;
-            ws.Cell(r, 3).Value = i.QuantityBoxes;
-            ws.Cell(r, 4).Value = i.MfgMonthLabel;
-            ws.Cell(r, 5).Value = i.PalletPositionCode;
-            ws.Cell(r, 6).Value = i.PlantName;
-        });
     }
 
     public byte[] WriteInwardDownload(IReadOnlyList<InwardDownloadRow> rows)
@@ -672,9 +1005,9 @@ public class ClosedXmlExcelService : IExcelService
         }
     }
 
-    private static int FindHeaderRow(IXLWorksheet ws, string firstColumnLabelContains)
+    private static int FindHeaderRow(IXLWorksheet ws, string firstColumnLabelContains, int maxRow = 10)
     {
-        for (var row = 1; row <= 10; row++)
+        for (var row = 1; row <= maxRow; row++)
         {
             var text = ws.Cell(row, 1).GetString();
             if (text.Contains(firstColumnLabelContains, StringComparison.OrdinalIgnoreCase))
@@ -687,7 +1020,7 @@ public class ClosedXmlExcelService : IExcelService
         return 1;
     }
 
-    private static string? NullIfEmpty(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static string ParseSeasonCode(string text)
     {
@@ -702,6 +1035,14 @@ public class ClosedXmlExcelService : IExcelService
 
     private static int ReadInt(IXLCell cell, int fallback) =>
         cell.TryGetValue(out int value) ? value : fallback;
+
+    // A blank/non-numeric cell's .GetValue<double>() throws InvalidCastException, which used to
+    // propagate all the way out of the reader before any row could be validated or reported as an
+    // error - crashing the whole import with a cryptic "Cannot convert ...'s value to
+    // System.Double" message instead of a clean per-row validation error. TryGetValue instead
+    // degrades to 0, which the importer's own required-field checks then catch and report normally.
+    private static decimal ReadDecimal(IXLCell cell) =>
+        cell.TryGetValue(out double value) ? (decimal)value : 0m;
 
     private static bool ParseActive(string text)
     {

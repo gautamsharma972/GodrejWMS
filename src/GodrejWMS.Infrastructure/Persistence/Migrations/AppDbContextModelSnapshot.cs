@@ -66,6 +66,9 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("varchar(256)");
 
+                    b.Property<int?>("WarehouseId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Action");
@@ -76,7 +79,57 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("UserName");
 
+                    b.HasIndex("WarehouseId");
+
                     b.ToTable("ActivityLogs", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.City", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<int>("StateId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("StateId");
+
+                    b.ToTable("Cities", (string)null);
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.DesignType", b =>
@@ -701,6 +754,22 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.ToTable("MovementReasons", (string)null);
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.OrganizationSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MaxUsers")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MaxWarehouses")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("OrganizationSettings", (string)null);
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.PalletPosition", b =>
                 {
                     b.Property<int>("Id")
@@ -943,11 +1012,31 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("varchar(450)");
 
+                    b.Property<string>("DateText")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("DriverNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("EndTime")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("GateNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
                     b.Property<bool>("IsConfirmed")
                         .HasColumnType("tinyint(1)");
 
                     b.Property<bool>("IsRejected")
                         .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("PlanTime")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
 
                     b.Property<string>("PreviewJson")
                         .HasColumnType("longtext");
@@ -976,6 +1065,14 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("int");
 
+                    b.Property<string>("StartTime")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("TransportName")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -983,8 +1080,20 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("varchar(450)");
 
+                    b.Property<string>("VehicleNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("VolumeText")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
                     b.Property<int>("WarehouseId")
                         .HasColumnType("int");
+
+                    b.Property<string>("WeightText")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
 
                     b.HasKey("Id");
 
@@ -1013,6 +1122,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("PlantName")
                         .HasColumnType("longtext");
+
+                    b.Property<string>("Priority")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
 
                     b.Property<int>("PulloutTransactionId")
                         .HasColumnType("int");
@@ -1111,6 +1224,71 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Racks", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.Region", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Regions", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.RolePermission", b =>
+                {
+                    b.Property<string>("RoleName")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("PermissionKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<bool>("IsGranted")
+                        .HasColumnType("tinyint(1)");
+
+                    b.HasKey("RoleName", "PermissionKey");
+
+                    b.ToTable("RolePermissions", (string)null);
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.Season", b =>
@@ -1247,6 +1425,54 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("SkuMovementTypes", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.State", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<int>("RegionId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("RegionId");
+
+                    b.ToTable("States", (string)null);
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.StockBatch", b =>
@@ -1391,6 +1617,22 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.ToTable("StockMovements", (string)null);
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.UserRegion", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<int>("RegionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("UserId", "RegionId");
+
+                    b.HasIndex("RegionId");
+
+                    b.ToTable("UserRegions", (string)null);
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.UserWarehouse", b =>
                 {
                     b.Property<string>("UserId")
@@ -1415,6 +1657,13 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<int?>("CityId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -1428,21 +1677,66 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(160)
                         .HasColumnType("varchar(160)");
 
+                    b.Property<int?>("WarehouseCategoryId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CityId");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("WarehouseCategoryId");
+
+                    b.ToTable("Warehouses", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.WarehouseCategory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.ToTable("Warehouses", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            Code = "GCPL",
-                            IsActive = true,
-                            Name = "GCPL"
-                        });
+                    b.ToTable("WarehouseCategories", (string)null);
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.ZoneType", b =>
@@ -1698,6 +1992,17 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.City", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.State", "State")
+                        .WithMany("Cities")
+                        .HasForeignKey("StateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("State");
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.InventoryAdjustment", b =>
                 {
                     b.HasOne("GodrejWMS.Domain.Entities.Warehouse", "Warehouse")
@@ -1942,6 +2247,17 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Navigation("Season");
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.State", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.Region", "Region")
+                        .WithMany("States")
+                        .HasForeignKey("RegionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Region");
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.StockBatch", b =>
                 {
                     b.HasOne("GodrejWMS.Domain.Entities.Material", "Material")
@@ -2012,6 +2328,17 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Navigation("StockSubtype");
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.UserRegion", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.Region", "Region")
+                        .WithMany()
+                        .HasForeignKey("RegionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Region");
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.UserWarehouse", b =>
                 {
                     b.HasOne("GodrejWMS.Infrastructure.Identity.ApplicationUser", null)
@@ -2027,6 +2354,23 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.Warehouse", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.City", "City")
+                        .WithMany()
+                        .HasForeignKey("CityId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GodrejWMS.Domain.Entities.WarehouseCategory", "WarehouseCategory")
+                        .WithMany()
+                        .HasForeignKey("WarehouseCategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("City");
+
+                    b.Navigation("WarehouseCategory");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -2118,6 +2462,16 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("GodrejWMS.Domain.Entities.Rack", b =>
                 {
                     b.Navigation("PalletPositions");
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.Region", b =>
+                {
+                    b.Navigation("States");
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.State", b =>
+                {
+                    b.Navigation("Cities");
                 });
 #pragma warning restore 612, 618
         }

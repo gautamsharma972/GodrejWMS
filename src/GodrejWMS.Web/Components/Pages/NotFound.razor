@@ -1,5 +1,21 @@
 ﻿@page "/not-found"
-@layout MainLayout
+@layout GodrejWMS.Web.Components.Layout.AuthLayout
 
-<h3>Not Found</h3>
-<p>Sorry, the content you are looking for does not exist.</p>
+<PageTitle>Page not found - Godrej WMS</PageTitle>
+
+<div class="status-page">
+    <div class="status-card">
+        <span class="status-icon status-icon-muted">
+            <i class="bi bi-signpost-split" aria-hidden="true"></i>
+        </span>
+        <div class="eyebrow">Page not found</div>
+        <h1>We couldn't find that page</h1>
+        <p>The page you're looking for may have moved or no longer exists.</p>
+        <div class="status-actions">
+            <a class="btn btn-primary" href="/">
+                <i class="bi bi-house-door" aria-hidden="true"></i>
+                Back to Home
+            </a>
+        </div>
+    </div>
+</div>

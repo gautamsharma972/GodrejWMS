@@ -54,6 +54,9 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db) : IRequestH
             .Where(t => t.Lines.SelectMany(l => l.Putaways).Any(p => !p.IsConfirmed))
             .CountAsync(cancellationToken);
 
+        var pendingPulloutTransactions = await db.PulloutTransactions
+            .CountAsync(t => !t.IsConfirmed && !t.IsRejected, cancellationToken);
+
         var reservedLocationCount = await db.InwardPutaways
             .Where(p => !p.IsConfirmed)
             .Select(p => p.PalletPositionId)
@@ -67,7 +70,11 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db) : IRequestH
             .Where(l => l.PulloutTransaction.IsConfirmed)
             .CountAsync(l => l.Status != AllocationStatus.Fulfilled, cancellationToken);
 
+        var todayInwardTransactions = await db.InwardTransactions
+            .CountAsync(t => !t.IsRejected && t.CreatedAt >= today && t.CreatedAt < tomorrow, cancellationToken);
+
         var todayInwardBoxes = await db.InwardTransactionLines
+            .Where(l => !l.InwardTransaction.IsRejected)
             .Where(l => l.InwardTransaction.CreatedAt >= today && l.InwardTransaction.CreatedAt < tomorrow)
             .SumAsync(l => (decimal?)l.RequestedQuantityBoxes, cancellationToken) ?? 0m;
 
@@ -75,8 +82,16 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db) : IRequestH
             .Where(p => p.ConfirmedAt >= today && p.ConfirmedAt < tomorrow)
             .SumAsync(p => (decimal?)p.QuantityBoxes, cancellationToken) ?? 0m;
 
+        var todayPulloutTransactions = await db.PulloutTransactions
+            .CountAsync(t => !t.IsRejected && t.CreatedAt >= today && t.CreatedAt < tomorrow, cancellationToken);
+
+        var todayPickedBoxes = await db.PulloutTransactionLines
+            .Where(l => !l.PulloutTransaction.IsRejected)
+            .Where(l => l.PulloutTransaction.CreatedAt >= today && l.PulloutTransaction.CreatedAt < tomorrow)
+            .SumAsync(l => (decimal?)l.PickedQuantityBoxes, cancellationToken) ?? 0m;
+
         var todayPulloutBoxes = await db.PulloutTransactionLines
-            .Where(l => l.PulloutTransaction.IsConfirmed)
+            .Where(l => l.PulloutTransaction.IsConfirmed && !l.PulloutTransaction.IsRejected)
             .Where(l => l.PulloutTransaction.CreatedAt >= today && l.PulloutTransaction.CreatedAt < tomorrow)
             .SumAsync(l => (decimal?)l.PickedQuantityBoxes, cancellationToken) ?? 0m;
 
@@ -102,11 +117,15 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db) : IRequestH
             totalStockBoxes,
             totalActiveMaterials,
             pendingPutawayTransactions,
+            pendingPulloutTransactions,
             pendingPutawayBoxes,
             reservedLocationCount,
             inwardExceptionLines + pulloutExceptionLines,
+            todayInwardTransactions,
             todayInwardBoxes,
             todayConfirmedBoxes,
+            todayPulloutTransactions,
+            todayPickedBoxes,
             todayPulloutBoxes,
             fullLocationCount,
             freeCapacityBoxes,

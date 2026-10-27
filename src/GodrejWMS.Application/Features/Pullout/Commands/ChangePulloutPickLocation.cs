@@ -72,16 +72,31 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db)
         if (transaction.IsConfirmed)
             throw new InvalidOperationException("This pullout has already been confirmed and its pick locations can no longer be changed.");
 
-        var line = transaction.Lines.SingleOrDefault(l => l.Material.MaterialNumber == request.MaterialNumber)
+        var line = transaction.Lines.FirstOrDefault(l =>
+                l.Material.MaterialNumber == request.MaterialNumber &&
+                l.Picks.Any(p => p.MfgMonth == mfgMonth
+                    && p.PalletPosition.LocationCode == request.CurrentLocationCode))
             ?? throw new InvalidOperationException("The selected pullout line could not be found.");
-        var pick = line.Picks.SingleOrDefault(p => p.MfgMonth == mfgMonth
+        var picksToReplace = line.Picks
+            .Where(p => p.MfgMonth == mfgMonth
                 && p.PalletPosition.LocationCode == request.CurrentLocationCode)
-            ?? throw new InvalidOperationException("The selected saved pick could not be found.");
+            .ToList();
+        if (picksToReplace.Count == 0)
+            throw new InvalidOperationException("The selected saved pick could not be found.");
+        var replacedPickIds = picksToReplace.Select(p => p.Id).ToHashSet();
 
+        // The replacement total no longer has to exactly match the pick being replaced - real-time
+        // picking means the actual available/picked quantity at a location often differs from the
+        // original FIFO suggestion. It only has to still fit within what the line as a whole was
+        // requested: the sum of every OTHER pick already on this line, plus this replacement,
+        // can't exceed RequestedQuantityBoxes.
         var selectedQuantity = parsedSources.Sum(source => source.QuantityBoxes);
-        if (selectedQuantity != pick.QuantityBoxes)
+        var otherPicksTotal = line.Picks.Where(p => !replacedPickIds.Contains(p.Id)).Sum(p => p.QuantityBoxes);
+        var newLineTotal = otherPicksTotal + selectedQuantity;
+        if (newLineTotal > line.RequestedQuantityBoxes)
             throw new InvalidOperationException(
-                $"Selected sources total {selectedQuantity:0.###} box(es); exactly {pick.QuantityBoxes:0.###} are required.");
+                $"Selected sources total {selectedQuantity:0.###} box(es), which would bring this line to "
+                + $"{newLineTotal:0.###} - more than the {line.RequestedQuantityBoxes:0.###} requested.");
 
         var positionIds = parsedSources.Select(source => source.PalletPositionId).Distinct().ToList();
         var positions = await db.PalletPositions.AsNoTracking()
@@ -100,7 +115,7 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db)
 
         var allocatedByOtherPicks = transaction.Lines
             .SelectMany(transactionLine => transactionLine.Picks)
-            .Where(otherPick => otherPick.Id != pick.Id && otherPick.PulloutTransactionLine.MaterialId == line.MaterialId)
+            .Where(otherPick => !replacedPickIds.Contains(otherPick.Id) && otherPick.PulloutTransactionLine.MaterialId == line.MaterialId)
             .GroupBy(otherPick => (otherPick.PalletPositionId, otherPick.MfgMonth))
             .ToDictionary(group => group.Key, group => group.Sum(otherPick => otherPick.QuantityBoxes));
 
@@ -129,22 +144,34 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db)
             source.QuantityBoxes,
             reason)).ToList();
 
+        // The line's own picked-quantity/status/remarks need to reflect the new total too - the
+        // same classification SubmitPulloutHandler uses when it first allocates a line.
+        var newStatus = newLineTotal == line.RequestedQuantityBoxes
+            ? AllocationStatus.Fulfilled
+            : newLineTotal > 0 ? AllocationStatus.Partial : AllocationStatus.Failed;
+        var newRemarks = newStatus == AllocationStatus.Fulfilled
+            ? null
+            : $"Insufficient good stock - {line.RequestedQuantityBoxes - newLineTotal:0.###} box(es) short across all pickable locations.";
+
         var preview = DeserializePreview(transaction);
         var changed = false;
         var updatedLines = preview.Lines.Select(previewLine =>
         {
-            if (previewLine.MaterialNumber != request.MaterialNumber)
+            if (changed || previewLine.MaterialNumber != request.MaterialNumber)
                 return previewLine;
 
             var updatedPicks = new List<PulloutPickDto>();
+            var replacementAdded = false;
             foreach (var previewPick in previewLine.Picks)
             {
-                if (!changed
-                    && previewPick.LocationCode.Equals(request.CurrentLocationCode, StringComparison.OrdinalIgnoreCase)
+                if (previewPick.LocationCode.Equals(request.CurrentLocationCode, StringComparison.OrdinalIgnoreCase)
                     && previewPick.MfgMonthLabel.Equals(request.MfgMonthLabel, StringComparison.OrdinalIgnoreCase))
                 {
-                    updatedPicks.AddRange(replacementPreviewPicks);
-                    changed = true;
+                    if (!replacementAdded)
+                    {
+                        updatedPicks.AddRange(replacementPreviewPicks);
+                        replacementAdded = true;
+                    }
                 }
                 else
                 {
@@ -152,14 +179,19 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db)
                 }
             }
 
-            return previewLine with { Picks = updatedPicks };
+            changed = replacementAdded;
+            if (!replacementAdded)
+                return previewLine;
+
+            return previewLine with { Picks = updatedPicks, PickedQuantityBoxes = newLineTotal, Status = newStatus, Remarks = newRemarks };
         }).ToList();
 
         if (!changed)
             throw new InvalidOperationException("The selected pick is no longer present in the saved allocation.");
 
-        line.Picks.Remove(pick);
-        db.PulloutPicks.Remove(pick);
+        foreach (var pick in picksToReplace)
+            line.Picks.Remove(pick);
+        db.PulloutPicks.RemoveRange(picksToReplace);
         foreach (var source in parsedSources)
         {
             line.Picks.Add(new PulloutPick
@@ -170,6 +202,9 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db)
                 OverrideReason = reason
             });
         }
+        line.PickedQuantityBoxes = newLineTotal;
+        line.Status = newStatus;
+        line.Remarks = newRemarks;
 
         var updated = preview with { Lines = updatedLines };
         transaction.PreviewJson = JsonSerializer.Serialize(updated);

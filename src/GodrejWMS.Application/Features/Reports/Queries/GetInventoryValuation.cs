@@ -1,4 +1,5 @@
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.Reports.Dtos;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -11,15 +12,13 @@ namespace GodrejWMS.Application.Features.Reports.Queries;
 /// here server-side as well as in the UI.</summary>
 public sealed record GetInventoryValuationQuery(string? Search = null) : IRequest<IReadOnlyList<InventoryValuationRowDto>>;
 
-public sealed class GetInventoryValuationHandler(IApplicationDbContext db, ICurrentUserService currentUser)
+public sealed class GetInventoryValuationHandler(IApplicationDbContext db, IPermissionService permissions)
     : IRequestHandler<GetInventoryValuationQuery, IReadOnlyList<InventoryValuationRowDto>>
 {
     public async Task<IReadOnlyList<InventoryValuationRowDto>> Handle(
         GetInventoryValuationQuery request, CancellationToken cancellationToken)
     {
-        if (!currentUser.IsInRole("Admin") &&
-            !currentUser.IsInRole("Supervisor") &&
-            !currentUser.IsInRole("Operator"))
+        if (!await permissions.HasPermissionAsync(PermissionKeys.Reports.View, cancellationToken))
         {
             throw new UnauthorizedAccessException("Inventory valuation requires an authorized warehouse role.");
         }

@@ -35,17 +35,26 @@ public sealed class GetPulloutPickChangeOptionsHandler(IApplicationDbContext db)
         if (transaction.IsConfirmed || transaction.IsRejected)
             return [];
 
-        var pick = transaction.Lines
-            .Where(l => l.Material.MaterialNumber == request.MaterialNumber)
-            .SelectMany(l => l.Picks)
-            .SingleOrDefault(p => p.MfgMonth == mfgMonth
-                && p.PalletPosition.LocationCode == request.CurrentLocationCode)
+        var line = transaction.Lines.FirstOrDefault(l =>
+                l.Material.MaterialNumber == request.MaterialNumber &&
+                l.Picks.Any(p => p.MfgMonth == mfgMonth
+                    && p.PalletPosition.LocationCode == request.CurrentLocationCode))
             ?? throw new InvalidOperationException("The selected saved pick could not be found.");
+        var matchingPicks = line.Picks
+            .Where(p => p.MfgMonth == mfgMonth
+                && p.PalletPosition.LocationCode == request.CurrentLocationCode)
+            .ToList();
+        if (matchingPicks.Count == 0)
+            throw new InvalidOperationException("The selected saved pick could not be found.");
 
-        var materialId = pick.PulloutTransactionLine.MaterialId;
+        // Multiple persisted pick rows can legitimately represent the same logical source after
+        // successive reallocations. Treat them as one source instead of requiring uniqueness.
+        var pick = matchingPicks[0];
+        var matchingPickIds = matchingPicks.Select(p => p.Id).ToHashSet();
+        var materialId = line.MaterialId;
         var otherQuantities = transaction.Lines
             .SelectMany(l => l.Picks)
-            .Where(p => p.Id != pick.Id && p.PulloutTransactionLine.MaterialId == materialId)
+            .Where(p => !matchingPickIds.Contains(p.Id) && p.PulloutTransactionLine.MaterialId == materialId)
             .GroupBy(p => (p.PalletPositionId, p.MfgMonth))
             .ToDictionary(g => g.Key, g => g.Sum(p => p.QuantityBoxes));
 

@@ -16,6 +16,7 @@ public sealed record GetInventoryMovementHistoryQuery(
     string? PerformedByUserName = null,
     DateOnly? FromDate = null,
     DateOnly? ToDate = null,
+    int? WarehouseId = null,
     int PageNumber = 1,
     int PageSize = 50) : IRequest<PaginatedList<InventoryMovementDto>>;
 
@@ -66,6 +67,13 @@ public sealed class GetInventoryMovementHistoryHandler(IApplicationDbContext db)
         {
             var to = request.ToDate.Value.ToDateTime(TimeOnly.MaxValue);
             query = query.Where(m => m.CreatedAt <= to);
+        }
+
+        if (request.WarehouseId.HasValue)
+        {
+            // Moves are within one warehouse today, so source and destination always agree -
+            // filtering on source alone is sufficient and avoids an unnecessary extra join.
+            query = query.Where(m => m.SourcePalletPosition.Rack.WarehouseId == request.WarehouseId.Value);
         }
 
         var ordered = query.OrderByDescending(m => m.CreatedAt);

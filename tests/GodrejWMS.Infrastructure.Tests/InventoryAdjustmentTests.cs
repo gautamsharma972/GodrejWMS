@@ -1,4 +1,5 @@
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.InventoryAdjustments.Commands;
 using GodrejWMS.Application.Features.InventoryAdjustments.Queries;
 using GodrejWMS.Application.Common.Exceptions;
@@ -16,10 +17,11 @@ public class InventoryAdjustmentTests
     public async Task Submit_DoesNotChangeStock_AndSupervisorApprovalPostsCount()
     {
         var databaseName = Guid.NewGuid().ToString();
-        await using var operatorDb = CreateDb(databaseName, new AdjustmentUser("operator", "operator@test", "Operator"));
+        await using var operatorDb = CreateDb(databaseName, new AdjustmentUser("operator", "operator@test", "Office Staff"));
         var batchId = await SeedAsync(operatorDb, 60);
         var submitNotifications = new AdjustmentNotifications();
-        var submitted = await new SubmitInventoryAdjustmentHandler(operatorDb, new AdjustmentClock(), new AdjustmentUser("operator", "operator@test", "Operator"), submitNotifications)
+        var operatorUser = new AdjustmentUser("operator", "operator@test", "Office Staff");
+        var submitted = await new SubmitInventoryAdjustmentHandler(operatorDb, new AdjustmentClock(), operatorUser, submitNotifications, new FakeAdjustmentPermissions(operatorUser))
             .Handle(new SubmitInventoryAdjustmentCommand(batchId, 50, InventoryAdjustmentReasonCodes.PhysicalCountVariance, "Counted twice"), CancellationToken.None);
 
         Assert.Equal(60, operatorDb.StockBatches.Single(b => b.Id == batchId).QuantityBoxes);
@@ -30,7 +32,8 @@ public class InventoryAdjustmentTests
 
         await using var supervisorDb = CreateDb(databaseName, new AdjustmentUser("supervisor", "supervisor@test", "Supervisor"));
         var approvalNotifications = new AdjustmentNotifications();
-        var approved = await new ApproveInventoryAdjustmentHandler(supervisorDb, new AdjustmentClock(), new AdjustmentUser("supervisor", "supervisor@test", "Supervisor"), approvalNotifications)
+        var supervisorUser = new AdjustmentUser("supervisor", "supervisor@test", "Supervisor");
+        var approved = await new ApproveInventoryAdjustmentHandler(supervisorDb, new AdjustmentClock(), supervisorUser, approvalNotifications, new FakeAdjustmentPermissions(supervisorUser))
             .Handle(new ApproveInventoryAdjustmentCommand(submitted.Id, "Verified"), CancellationToken.None);
 
         Assert.Equal(InventoryAdjustmentStatus.Approved, approved.Status);
@@ -46,9 +49,10 @@ public class InventoryAdjustmentTests
     public async Task Approval_MarksConflict_WhenStockChangedAfterCount()
     {
         var databaseName = Guid.NewGuid().ToString();
-        await using var operatorDb = CreateDb(databaseName, new AdjustmentUser("operator", "operator@test", "Operator"));
+        await using var operatorDb = CreateDb(databaseName, new AdjustmentUser("operator", "operator@test", "Office Staff"));
         var batchId = await SeedAsync(operatorDb, 60);
-        var submitted = await new SubmitInventoryAdjustmentHandler(operatorDb, new AdjustmentClock(), new AdjustmentUser("operator", "operator@test", "Operator"), new AdjustmentNotifications())
+        var operatorUser = new AdjustmentUser("operator", "operator@test", "Office Staff");
+        var submitted = await new SubmitInventoryAdjustmentHandler(operatorDb, new AdjustmentClock(), operatorUser, new AdjustmentNotifications(), new FakeAdjustmentPermissions(operatorUser))
             .Handle(new SubmitInventoryAdjustmentCommand(batchId, 50, InventoryAdjustmentReasonCodes.PhysicalCountVariance, null), CancellationToken.None);
 
         var batch = operatorDb.StockBatches.Single(b => b.Id == batchId);
@@ -57,7 +61,8 @@ public class InventoryAdjustmentTests
         await operatorDb.SaveChangesAsync();
 
         await using var supervisorDb = CreateDb(databaseName, new AdjustmentUser("supervisor", "supervisor@test", "Supervisor"));
-        var result = await new ApproveInventoryAdjustmentHandler(supervisorDb, new AdjustmentClock(), new AdjustmentUser("supervisor", "supervisor@test", "Supervisor"), new AdjustmentNotifications())
+        var supervisorUser = new AdjustmentUser("supervisor", "supervisor@test", "Supervisor");
+        var result = await new ApproveInventoryAdjustmentHandler(supervisorDb, new AdjustmentClock(), supervisorUser, new AdjustmentNotifications(), new FakeAdjustmentPermissions(supervisorUser))
             .Handle(new ApproveInventoryAdjustmentCommand(submitted.Id), CancellationToken.None);
 
         Assert.Equal(InventoryAdjustmentStatus.Conflict, result.Status);
@@ -68,24 +73,24 @@ public class InventoryAdjustmentTests
     public async Task Operator_CannotApproveAdjustment()
     {
         var databaseName = Guid.NewGuid().ToString();
-        var user = new AdjustmentUser("operator", "operator@test", "Operator");
+        var user = new AdjustmentUser("operator", "operator@test", "Office Staff");
         await using var db = CreateDb(databaseName, user);
         var batchId = await SeedAsync(db, 60);
-        var submitted = await new SubmitInventoryAdjustmentHandler(db, new AdjustmentClock(), user, new AdjustmentNotifications())
+        var submitted = await new SubmitInventoryAdjustmentHandler(db, new AdjustmentClock(), user, new AdjustmentNotifications(), new FakeAdjustmentPermissions(user))
             .Handle(new SubmitInventoryAdjustmentCommand(batchId, 50, InventoryAdjustmentReasonCodes.PhysicalCountVariance, null), CancellationToken.None);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            new ApproveInventoryAdjustmentHandler(db, new AdjustmentClock(), user, new AdjustmentNotifications())
+            new ApproveInventoryAdjustmentHandler(db, new AdjustmentClock(), user, new AdjustmentNotifications(), new FakeAdjustmentPermissions(user))
                 .Handle(new ApproveInventoryAdjustmentCommand(submitted.Id), CancellationToken.None));
     }
 
     [Fact]
     public async Task DuplicatePendingRequest_ForSameBatch_IsRejected()
     {
-        var user = new AdjustmentUser("operator", "operator@test", "Operator");
+        var user = new AdjustmentUser("operator", "operator@test", "Office Staff");
         await using var db = CreateDb(Guid.NewGuid().ToString(), user);
         var batchId = await SeedAsync(db, 60);
-        var handler = new SubmitInventoryAdjustmentHandler(db, new AdjustmentClock(), user, new AdjustmentNotifications());
+        var handler = new SubmitInventoryAdjustmentHandler(db, new AdjustmentClock(), user, new AdjustmentNotifications(), new FakeAdjustmentPermissions(user));
 
         await handler.Handle(new SubmitInventoryAdjustmentCommand(batchId, 50, InventoryAdjustmentReasonCodes.PhysicalCountVariance, null), CancellationToken.None);
 
@@ -99,17 +104,17 @@ public class InventoryAdjustmentTests
     public async Task Operator_CannotViewAnotherOperatorsAdjustmentDetail()
     {
         var databaseName = Guid.NewGuid().ToString();
-        var requester = new AdjustmentUser("operator-1", "operator1@test", "Operator");
+        var requester = new AdjustmentUser("operator-1", "operator1@test", "Office Staff");
         await using var requesterDb = CreateDb(databaseName, requester);
         var batchId = await SeedAsync(requesterDb, 60);
-        var submitted = await new SubmitInventoryAdjustmentHandler(requesterDb, new AdjustmentClock(), requester, new AdjustmentNotifications())
+        var submitted = await new SubmitInventoryAdjustmentHandler(requesterDb, new AdjustmentClock(), requester, new AdjustmentNotifications(), new FakeAdjustmentPermissions(requester))
             .Handle(new SubmitInventoryAdjustmentCommand(batchId, 50, InventoryAdjustmentReasonCodes.PhysicalCountVariance, null), CancellationToken.None);
 
-        var otherOperator = new AdjustmentUser("operator-2", "operator2@test", "Operator");
+        var otherOperator = new AdjustmentUser("operator-2", "operator2@test", "Office Staff");
         await using var otherDb = CreateDb(databaseName, otherOperator);
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            new GetInventoryAdjustmentDetailHandler(otherDb, otherOperator)
+            new GetInventoryAdjustmentDetailHandler(otherDb, otherOperator, new FakeAdjustmentPermissions(otherOperator))
                 .Handle(new GetInventoryAdjustmentDetailQuery(submitted.Id), CancellationToken.None));
     }
 
@@ -117,15 +122,15 @@ public class InventoryAdjustmentTests
     public async Task SupervisorApproval_OfZeroCount_RemovesEmptyBatchAndKeepsAuditSnapshot()
     {
         var databaseName = Guid.NewGuid().ToString();
-        var requester = new AdjustmentUser("operator", "operator@test", "Operator");
+        var requester = new AdjustmentUser("operator", "operator@test", "Office Staff");
         await using var operatorDb = CreateDb(databaseName, requester);
         var batchId = await SeedAsync(operatorDb, 12);
-        var submitted = await new SubmitInventoryAdjustmentHandler(operatorDb, new AdjustmentClock(), requester, new AdjustmentNotifications())
+        var submitted = await new SubmitInventoryAdjustmentHandler(operatorDb, new AdjustmentClock(), requester, new AdjustmentNotifications(), new FakeAdjustmentPermissions(requester))
             .Handle(new SubmitInventoryAdjustmentCommand(batchId, 0, InventoryAdjustmentReasonCodes.DamagedStock, "All boxes damaged"), CancellationToken.None);
 
         var supervisor = new AdjustmentUser("supervisor", "supervisor@test", "Supervisor");
         await using var supervisorDb = CreateDb(databaseName, supervisor);
-        var approved = await new ApproveInventoryAdjustmentHandler(supervisorDb, new AdjustmentClock(), supervisor, new AdjustmentNotifications())
+        var approved = await new ApproveInventoryAdjustmentHandler(supervisorDb, new AdjustmentClock(), supervisor, new AdjustmentNotifications(), new FakeAdjustmentPermissions(supervisor))
             .Handle(new ApproveInventoryAdjustmentCommand(submitted.Id, "Damage verified"), CancellationToken.None);
 
         Assert.Equal(InventoryAdjustmentStatus.Approved, approved.Status);
@@ -162,6 +167,13 @@ public class InventoryAdjustmentTests
         db.LocationSubtypes.Add(subtype);
         db.Racks.Add(rack);
         db.Materials.Add(material);
+        // Every fake persona these tests use is assumed to be assigned to warehouse 1 - matching
+        // the real app's Phase 3 backfill for pre-existing accounts, now that only Superadmin
+        // bypasses the UserWarehouse/UserRegion query filter.
+        foreach (var userId in new[] { "operator", "operator-1", "operator-2", "supervisor" })
+        {
+            db.UserWarehouses.Add(new UserWarehouse { UserId = userId, WarehouseId = 1 });
+        }
         await db.SaveChangesAsync();
         var batch = new StockBatch
         {
@@ -183,6 +195,19 @@ file sealed class AdjustmentUser(string id, string name, string role) : ICurrent
     public string? UserId => id;
     public string? UserName => name;
     public bool IsInRole(string requestedRole) => requestedRole == role;
+    public IReadOnlyList<string> Roles => [role];
+}
+
+/// <summary>Mirrors the real RolePermission seed grants for the keys these tests exercise:
+/// Supervisor (and Superadmin) can approve/reject, Office Staff can only submit/view its own.</summary>
+file sealed class FakeAdjustmentPermissions(ICurrentUserService user) : IPermissionService
+{
+    public Task<bool> HasPermissionAsync(string permissionKey, CancellationToken cancellationToken = default)
+    {
+        var isReviewer = user.Roles.Contains("Supervisor") || user.Roles.Contains("Superadmin");
+        var granted = permissionKey == PermissionKeys.Inventory.ApproveAdjustment ? isReviewer : true;
+        return Task.FromResult(granted);
+    }
 }
 
 file sealed class AdjustmentClock : IDateTimeProvider

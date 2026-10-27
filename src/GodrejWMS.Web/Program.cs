@@ -2,11 +2,12 @@ using GodrejWMS.Application;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Infrastructure;
 using GodrejWMS.Infrastructure.Identity;
-using GodrejWMS.Infrastructure.Persistence.Seed;
+using GodrejWMS.Infrastructure.Persistence;
 using GodrejWMS.Web.Components;
 using GodrejWMS.Web.Components.Account;
 using GodrejWMS.Web.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -56,10 +57,16 @@ builder.Services.ConfigureApplicationCookie(options =>
 
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("RequireAdmin", policy => policy.RequireRole(RoleNames.Admin, RoleNames.Supervisor, RoleNames.Operator));
-    options.AddPolicy("RequireSupervisorOrAdmin", policy => policy.RequireRole(RoleNames.Admin, RoleNames.Supervisor, RoleNames.Operator));
-    options.AddPolicy("RequireOperatorOrAdmin", policy => policy.RequireRole(RoleNames.Admin, RoleNames.Supervisor, RoleNames.Operator));
+    options.AddPolicy("RequireAdmin", policy => policy.RequireRole(RoleNames.All));
+    options.AddPolicy("RequireSupervisorOrAdmin", policy => policy.RequireRole(RoleNames.All));
+    options.AddPolicy("RequireOperatorOrAdmin", policy => policy.RequireRole(RoleNames.All));
 });
+
+// Lets page-level [Authorize(Policy = "Permission:<key>")] attributes be driven by the same
+// Role & Permission Management matrix the nav menu already uses, instead of a hardcoded role list
+// - see GodrejWMS.Web/Authorization/PermissionPolicyProvider.cs.
+builder.Services.AddSingleton<IAuthorizationPolicyProvider, GodrejWMS.Web.Authorization.PermissionPolicyProvider>();
+builder.Services.AddScoped<IAuthorizationHandler, GodrejWMS.Web.Authorization.PermissionAuthorizationHandler>();
 
 var app = builder.Build();
 
@@ -90,6 +97,27 @@ else
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
+// A long-lived page (a tab left open while the session changed underneath it - signed in as a
+// different user elsewhere, an idle-timeout sign-out, an admin resetting the password/role) can
+// submit a form whose antiforgery token is still bound to a different user's claims than the one
+// now authenticated. UseAntiforgery() below throws for that before the endpoint ever runs (so for
+// Logout specifically, nothing partially happened), and the safe, simple response is the same as
+// any other stale-session case: send them back to sign in, not a crash page in Development or the
+// generic /Error page in Production.
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex) when (
+        ex is Microsoft.AspNetCore.Antiforgery.AntiforgeryValidationException ||
+        (ex is Microsoft.AspNetCore.Http.BadHttpRequestException && ex.Message.Contains("anti-forgery", StringComparison.OrdinalIgnoreCase)))
+    {
+        context.Response.Redirect("/Account/Login");
+    }
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -101,7 +129,8 @@ app.MapRazorComponents<App>()
 
 app.MapAdditionalIdentityEndpoints();
 
-// Initial database migrations and seed data are intentionally disabled at startup.
-// await DbInitializer.MigrateAsync(app.Services);
+// Apply pending database schema/table migrations. No application, demo-data, reference-data,
+// role, or user seeders run during startup.
+await DatabaseMigrationRunner.ApplyPendingAsync(app.Services);
 
 app.Run();

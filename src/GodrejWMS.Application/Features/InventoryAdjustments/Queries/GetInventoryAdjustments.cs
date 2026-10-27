@@ -1,6 +1,7 @@
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Common.Models;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.InventoryAdjustments.Dtos;
 using GodrejWMS.Domain.Enums;
 using MediatR;
@@ -12,15 +13,16 @@ public sealed record GetInventoryAdjustmentsQuery(
     string? Search = null,
     InventoryAdjustmentStatus? Status = null,
     bool MineOnly = false,
+    int? WarehouseId = null,
     int PageNumber = 1,
     int PageSize = 25) : IRequest<PaginatedList<InventoryAdjustmentListDto>>;
 
-public sealed class GetInventoryAdjustmentsHandler(IApplicationDbContext db, ICurrentUserService currentUser)
+public sealed class GetInventoryAdjustmentsHandler(IApplicationDbContext db, ICurrentUserService currentUser, IPermissionService permissions)
     : IRequestHandler<GetInventoryAdjustmentsQuery, PaginatedList<InventoryAdjustmentListDto>>
 {
     public async Task<PaginatedList<InventoryAdjustmentListDto>> Handle(GetInventoryAdjustmentsQuery request, CancellationToken cancellationToken)
     {
-        if (!currentUser.IsInRole("Operator") && !currentUser.IsInRole("Supervisor") && !currentUser.IsInRole("Admin"))
+        if (!await permissions.HasPermissionAsync(PermissionKeys.Menu.ViewInventoryAdjustments, cancellationToken))
         {
             throw new UnauthorizedAccessException("You are not permitted to view inventory adjustments.");
         }
@@ -39,7 +41,12 @@ public sealed class GetInventoryAdjustmentsHandler(IApplicationDbContext db, ICu
             query = query.Where(x => x.Adjustment.Status == request.Status.Value);
         }
 
-        if (request.MineOnly || (!currentUser.IsInRole("Supervisor") && !currentUser.IsInRole("Admin")))
+        if (request.WarehouseId.HasValue)
+        {
+            query = query.Where(x => x.Adjustment.WarehouseId == request.WarehouseId.Value);
+        }
+
+        if (request.MineOnly || !await permissions.HasPermissionAsync(PermissionKeys.Inventory.ApproveAdjustment, cancellationToken))
         {
             query = query.Where(x => x.Adjustment.RequestedByUserId == currentUser.UserId);
         }

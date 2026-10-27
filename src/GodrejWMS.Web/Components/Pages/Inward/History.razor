@@ -1,5 +1,5 @@
 @page "/inward/history"
-@attribute [Authorize(Roles = "Admin,Operator,Supervisor")]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward)]
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Features.Inward.Dtos
 @using GodrejWMS.Application.Features.Inward.Queries
@@ -31,7 +31,9 @@
                 <h2 class="panel-title">Inward Transaction Register</h2>
                 <p class="panel-subtitle">Latest goods receipt transactions with allocation status and put-away totals.</p>
             </div>
-            <div class="toolbar-group">
+            <div class="toolbar-group inward-history-header-actions">
+                <WarehouseSelect WarehouseId="_warehouseFilter" WarehouseIdChanged="OnWarehouseFilterChangedAsync"
+                                  AllowClear="true" Placeholder="Filter by warehouse..." />
                 <button class="btn btn-sm btn-outline-primary" @onclick="ExportHistoryAsync" disabled="@(_history is null || _history.TotalCount == 0)">
                     <i class="bi bi-download" aria-hidden="true"></i>
                     Export CSV
@@ -158,6 +160,7 @@
     private int _historyPageNumber = 1;
     private string _historySearch = string.Empty;
     private string _historyStatusFilter = string.Empty;
+    private int? _warehouseFilter;
     private string _historyFrom = string.Empty;
     private string _historyTo = string.Empty;
     private string _historySortBy = "created";
@@ -182,6 +185,7 @@
             From: ParseDate(_historyFrom),
             To: ParseDate(_historyTo)?.AddDays(1),
             Status: Enum.TryParse<AllocationStatus>(_historyStatusFilter, out var status) ? status : null,
+            WarehouseId: _warehouseFilter,
             SortBy: _historySortBy,
             SortDescending: _historySortDescending,
             PageNumber: page,
@@ -204,6 +208,12 @@
     private async Task OnHistoryStatusChanged(ChangeEventArgs e)
     {
         _historyStatusFilter = e.Value?.ToString() ?? string.Empty;
+        await LoadHistoryPage(1);
+    }
+
+    private async Task OnWarehouseFilterChangedAsync(int? warehouseId)
+    {
+        _warehouseFilter = warehouseId;
         await LoadHistoryPage(1);
     }
 

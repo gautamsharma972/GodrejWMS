@@ -1,5 +1,5 @@
 @page "/inventory-adjustments"
-@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInventoryAdjustments)]
 @using GodrejWMS.Application.Common.Interfaces
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Features.InventoryAdjustments.Commands
@@ -51,6 +51,8 @@
                 <input class="form-check-input" type="checkbox" checked="@_mineOnly" @onchange="OnMineChanged" />
                 My requests
             </label>
+            <WarehouseSelect WarehouseId="_warehouseFilter" WarehouseIdChanged="OnWarehouseFilterChangedAsync"
+                              AllowClear="true" Placeholder="Filter by warehouse..." />
         </div>
         @if (_page is not null)
         {
@@ -104,7 +106,7 @@
                     }
                     else
                     {
-                        <AuthorizeView Roles="Admin,Supervisor">
+                        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.ApproveAdjustment">
                             @if (SelectedReviewableIds.Count > 0)
                             {
                                 <button type="button" class="btn btn-outline-danger" disabled="@_bulkProcessing" @onclick="OpenBulkReject">
@@ -116,7 +118,7 @@
                                     Approve (@SelectedReviewableIds.Count)
                                 </button>
                             }
-                        </AuthorizeView>
+                        </PermissionAuthorize>
                         @if (SelectedCancelableIds.Count > 0)
                         {
                             <button type="button" class="btn btn-outline-danger" disabled="@_bulkProcessing" @onclick="CancelSelectedAsync">
@@ -252,7 +254,7 @@
                     {
                         <button type="button" class="btn btn-outline-danger" disabled="@_processing" @onclick="CancelAsync">Cancel Request</button>
                     }
-                    <AuthorizeView Roles="Admin,Supervisor" Context="reviewerContext">
+                    <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.ApproveAdjustment">
                         @if (_selected.Status == InventoryAdjustmentStatus.PendingApproval && _selected.RequestedByUserId != CurrentUser.UserId)
                         {
                             <button type="button" class="btn btn-outline-danger" disabled="@(_processing || (_rejectMode && string.IsNullOrWhiteSpace(_reviewComment)))" @onclick="RejectAsync">Reject</button>
@@ -261,7 +263,7 @@
                                 @(_processing ? "Processing..." : "Approve Adjustment")
                             </button>
                         }
-                    </AuthorizeView>
+                    </PermissionAuthorize>
                 </div>
             </div>
         </div>
@@ -273,6 +275,7 @@
     private InventoryAdjustmentDetailDto? _selected;
     private string _search = string.Empty;
     private string _statusText = InventoryAdjustmentStatus.PendingApproval.ToString();
+    private int? _warehouseFilter;
     private bool _mineOnly;
     private int _pageNumber = 1;
 
@@ -330,6 +333,7 @@
                 _search,
                 Enum.TryParse<InventoryAdjustmentStatus>(_statusText, out var status) ? status : null,
                 _mineOnly,
+                _warehouseFilter,
                 page,
                 25));
 
@@ -352,6 +356,12 @@
 
     private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs _) => await LoadPageAsync(1);
     private async Task OnStatusChanged(ChangeEventArgs e) { _statusText = e.Value?.ToString() ?? string.Empty; await LoadPageAsync(1); }
+
+    private async Task OnWarehouseFilterChangedAsync(int? warehouseId)
+    {
+        _warehouseFilter = warehouseId;
+        await LoadPageAsync(1);
+    }
     private async Task OnMineChanged(ChangeEventArgs e) { _mineOnly = e.Value is true; await LoadPageAsync(1); }
 
     private void ToggleRow(int id, ChangeEventArgs args)

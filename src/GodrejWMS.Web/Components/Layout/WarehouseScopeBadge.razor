@@ -1,0 +1,62 @@
+@using GodrejWMS.Application.Common
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Features.UserScope.Queries
+@inject ICurrentUserService CurrentUser
+@inject IMediator Mediator
+
+@if (_label is not null)
+{
+    <span class="live-chip" title="@_tooltip" data-bs-toggle="tooltip" data-bs-placement="bottom" @attributes="AdditionalAttributes">
+        <i class="bi bi-geo-alt-fill" aria-hidden="true"></i>
+        @_label
+    </span>
+}
+
+@code {
+    [Parameter(CaptureUnmatchedValues = true)]
+    public Dictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private string? _label;
+    private string? _tooltip;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (CurrentUser.IsPlatformLevel())
+        {
+            _label = "All Warehouses";
+            _tooltip = "Organization-wide access";
+            return;
+        }
+
+        if (CurrentUser.UserId is not { } userId)
+        {
+            return;
+        }
+
+        var scope = await Mediator.Send(new GetUserScopeQuery(userId));
+
+        if (scope.WarehouseCode is not null)
+        {
+            _label = scope.WarehouseCode;
+            _tooltip = scope.WarehouseName ?? scope.WarehouseCode;
+            return;
+        }
+
+        if (scope.Regions.Count == 1)
+        {
+            _label = scope.Regions[0].RegionCode;
+            _tooltip = $"{scope.Regions[0].RegionName} region";
+            return;
+        }
+
+        if (scope.Regions.Count > 1)
+        {
+            _label = $"{scope.Regions.Count} Regions";
+            _tooltip = string.Join(", ", scope.Regions.Select(r => r.RegionName));
+            return;
+        }
+
+        _label = "No Warehouse Assigned";
+        _tooltip = "Contact your administrator to get a warehouse or region assigned.";
+    }
+}

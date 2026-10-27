@@ -1,0 +1,243 @@
+@page "/platform-admin"
+@attribute [Authorize(Roles = "Platform Admin")]
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Features.OrganizationSettings.Commands
+@using GodrejWMS.Application.Features.OrganizationSettings.Dtos
+@using GodrejWMS.Application.Features.OrganizationSettings.Queries
+@using GodrejWMS.Application.Features.PlatformAdmin.Commands
+@using GodrejWMS.Application.Features.PlatformAdmin.Queries
+@inject IMediator Mediator
+@inject ILogger<Index> Logger
+
+<PageTitle>Platform Admin</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Vendor Console</div>
+            <h1>Platform Admin</h1>
+            <p class="page-kicker">Organization-wide settings and oversight - not visible to the client.</p>
+        </div>
+    </div>
+
+    @if (_lastTemporaryPassword is not null)
+    {
+        <div class="alert alert-success">
+            <strong>@_lastTemporaryPasswordLabel</strong> One-time temporary password (shown once, not stored - copy it now):
+            <code class="ms-2">@_lastTemporaryPassword</code>
+            <button type="button" class="btn-close float-end" aria-label="Dismiss" @onclick="() => _lastTemporaryPassword = null"></button>
+        </div>
+    }
+
+    <div class="panel mb-3">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Organization Limits</h2>
+                <p class="panel-subtitle">Null means unlimited. Changes apply immediately.</p>
+            </div>
+        </div>
+        <div class="panel-body">
+            @if (_settings is null)
+            {
+                <div class="loading-panel">
+                    <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                    Loading...
+                </div>
+            }
+            else
+            {
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Max Users</label>
+                        <input type="number" min="1" class="form-control" value="@_maxUsersInput"
+                               @onchange="e => _maxUsersInput = e.Value?.ToString() ?? string.Empty" />
+                        <div class="form-text">Currently @_settings.CurrentUserCount active user(s). Leave blank for unlimited.</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Max Warehouses</label>
+                        <input type="number" min="1" class="form-control" value="@_maxWarehousesInput"
+                               @onchange="e => _maxWarehousesInput = e.Value?.ToString() ?? string.Empty" />
+                        <div class="form-text">Currently @_settings.CurrentWarehouseCount warehouse(s). Leave blank for unlimited.</div>
+                    </div>
+                </div>
+                @if (_settingsError is not null)
+                {
+                    <div class="alert alert-danger mt-3 mb-0">@_settingsError</div>
+                }
+                @if (_settingsSaved)
+                {
+                    <div class="alert alert-success mt-3 mb-0">Saved.</div>
+                }
+                <div class="mt-3">
+                    <button type="button" class="btn btn-primary" @onclick="SaveSettingsAsync" disabled="@_savingSettings">
+                        <i class="bi bi-check2" aria-hidden="true"></i>
+                        Save Limits
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="panel mb-3">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Create Platform Admin Account</h2>
+                <p class="panel-subtitle">Break-glass only - this is not the client's Users page.</p>
+            </div>
+        </div>
+        <div class="panel-body">
+            <EditForm Model="_createForm" FormName="vendor-admin-create-form" OnValidSubmit="CreateVendorAdminAsync">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">Email</label>
+                        <InputText class="form-control" type="email" @bind-Value="_createForm.Email" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Full Name</label>
+                        <InputText class="form-control" @bind-Value="_createForm.FullName" />
+                    </div>
+                    <div class="col-md-4">
+                        <button type="submit" class="btn btn-outline-primary" disabled="@_creatingVendorAdmin">
+                            <i class="bi bi-person-plus" aria-hidden="true"></i>
+                            Create
+                        </button>
+                    </div>
+                </div>
+                @if (_createError is not null)
+                {
+                    <div class="alert alert-danger mt-3 mb-0">@_createError</div>
+                }
+            </EditForm>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">All Accounts</h2>
+                <p class="panel-subtitle">Every account in the system, including Platform Admin accounts.</p>
+            </div>
+        </div>
+        @if (_users is null)
+        {
+            <div class="loading-panel">
+                <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                Loading...
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive panel-table">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>Full Name</th>
+                            <th>Role</th>
+                            <th>Active</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var user in _users)
+                        {
+                            <tr>
+                                <td><span class="record-code">@user.Email</span></td>
+                                <td>@user.FullName</td>
+                                <td>@string.Join(", ", user.Roles)</td>
+                                <td><span class="status-pill @(user.IsActive ? "success" : "inactive")">@(user.IsActive ? "Active" : "Inactive")</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private OrganizationSettingsDto? _settings;
+    private string _maxUsersInput = string.Empty;
+    private string _maxWarehousesInput = string.Empty;
+    private bool _savingSettings;
+    private bool _settingsSaved;
+    private string? _settingsError;
+
+    private IReadOnlyList<UserAccountDto>? _users;
+
+    private CreateFormModel _createForm = new();
+    private bool _creatingVendorAdmin;
+    private string? _createError;
+    private string? _lastTemporaryPassword;
+    private string? _lastTemporaryPasswordLabel;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSettingsAsync();
+        await LoadUsersAsync();
+    }
+
+    private async Task LoadSettingsAsync()
+    {
+        _settings = await Mediator.Send(new GetOrganizationSettingsQuery());
+        _maxUsersInput = _settings.MaxUsers?.ToString() ?? string.Empty;
+        _maxWarehousesInput = _settings.MaxWarehouses?.ToString() ?? string.Empty;
+    }
+
+    private async Task LoadUsersAsync()
+    {
+        _users = await Mediator.Send(new GetAllUsersForPlatformAdminQuery());
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        _savingSettings = true;
+        _settingsError = null;
+        _settingsSaved = false;
+        try
+        {
+            int? maxUsers = int.TryParse(_maxUsersInput, out var mu) ? mu : null;
+            int? maxWarehouses = int.TryParse(_maxWarehousesInput, out var mw) ? mw : null;
+            await Mediator.Send(new UpdateOrganizationSettingsCommand(maxUsers, maxWarehouses));
+            await LoadSettingsAsync();
+            _settingsSaved = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save organization settings");
+            _settingsError = ex.Message;
+        }
+        finally
+        {
+            _savingSettings = false;
+        }
+    }
+
+    private async Task CreateVendorAdminAsync()
+    {
+        _creatingVendorAdmin = true;
+        _createError = null;
+        try
+        {
+            var result = await Mediator.Send(new CreateVendorAdminCommand(_createForm.Email.Trim(), _createForm.FullName.Trim()));
+            _lastTemporaryPassword = result.TemporaryPassword;
+            _lastTemporaryPasswordLabel = $"{_createForm.Email} created.";
+            _createForm = new CreateFormModel();
+            await LoadUsersAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to create Platform Admin account");
+            _createError = ex.Message;
+        }
+        finally
+        {
+            _creatingVendorAdmin = false;
+        }
+    }
+
+    private sealed class CreateFormModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+    }
+}

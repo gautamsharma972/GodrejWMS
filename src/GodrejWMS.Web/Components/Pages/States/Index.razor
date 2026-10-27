@@ -1,0 +1,377 @@
+@page "/states"
+@attribute [Authorize]
+@using GodrejWMS.Application.Features.States.Commands
+@using GodrejWMS.Application.Features.States.Dtos
+@using GodrejWMS.Application.Features.States.Queries
+@using GodrejWMS.Application.Features.Regions.Dtos
+@using GodrejWMS.Application.Features.Regions.Queries
+@inject IMediator Mediator
+@inject ILogger<Index> Logger
+
+<PageTitle>States - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Organization</div>
+            <h1>States</h1>
+            <p class="page-kicker">Each state belongs to a region - code, name, region, and active status.</p>
+        </div>
+        <div class="header-actions">
+            <AuthorizeView Roles="Superadmin" Context="createContext">
+                <button class="btn btn-outline-primary" @onclick="ShowCreateForm">
+                    <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                    New State
+                </button>
+            </AuthorizeView>
+            <AuthorizeView Roles="Superadmin" Context="editContext">
+                <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                    @if (_saving)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-check2" aria-hidden="true"></i>
+                    }
+                    Save States
+                </button>
+            </AuthorizeView>
+        </div>
+    </div>
+
+    @if (_saveError is not null)
+    {
+        <div class="alert alert-danger mb-0">@_saveError</div>
+    }
+    @if (_savedMessage is not null)
+    {
+        <div class="alert alert-success mb-0">@_savedMessage</div>
+    }
+
+    @if (_showCreateForm)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseCreateForm">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="state-create-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">New code</div>
+                        <h2 class="slide-over-title" id="state-create-title">Create State</h2>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Close create form" @onclick="CloseCreateForm">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <EditForm Model="_createForm" FormName="state-create-form" OnValidSubmit="CreateAsync" class="slide-over-form">
+                    <div class="slide-over-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Code</label>
+                                <InputText class="form-control" @bind-Value="_createForm.Code" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Name</label>
+                                <InputText class="form-control" @bind-Value="_createForm.Name" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Region</label>
+                                <InputSelect class="form-select" @bind-Value="_createForm.RegionId">
+                                    @foreach (var region in _regions.Where(r => r.IsActive))
+                                    {
+                                        <option value="@region.Id">@region.Name</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(_createError))
+                        {
+                            <div class="alert alert-danger mt-3 mb-0">@_createError</div>
+                        }
+                    </div>
+                    <div class="slide-over-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseCreateForm">Cancel</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check2" aria-hidden="true"></i>
+                            Create State
+                        </button>
+                    </div>
+                </EditForm>
+            </section>
+        </div>
+    }
+
+    @if (_deleteTarget is not null)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CancelDelete">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="state-delete-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Delete state</div>
+                        <h2 class="slide-over-title" id="state-delete-title">Delete "@_deleteTarget.Name"?</h2>
+                        <p class="slide-over-subtitle">This cannot be undone. If any city still belongs to this state, the delete will be blocked below.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" title="Close" aria-label="Cancel delete" @onclick="CancelDelete">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    @if (_deleteError is not null)
+                    {
+                        <div class="alert alert-danger mb-0">@_deleteError</div>
+                    }
+                </div>
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelDelete">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmDeleteAsync" disabled="@_deleting">
+                        @if (_deleting)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-trash" aria-hidden="true"></i>
+                        }
+                        Delete
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
+
+    @if (_rows is null)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading states...
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive panel-table">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Region</th>
+                        <th>Active</th>
+                        <th class="table-actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        <tr>
+                            <td>
+                                <AuthorizeView Roles="Superadmin" Context="codeEditContext">
+                                    <Authorized>
+                                        <input class="form-control" value="@row.Code" style="max-width: 120px"
+                                               @onchange="e => OnCodeChanged(row.Id, e)" />
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        <span class="record-code">@row.Code</span>
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            </td>
+                            <td style="max-width: 220px">
+                                <AuthorizeView Roles="Superadmin" Context="nameEditContext">
+                                    <Authorized>
+                                        <input class="form-control" value="@row.Name"
+                                               @onchange="e => OnNameChanged(row.Id, e)" />
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        @row.Name
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            </td>
+                            <td style="max-width: 180px">
+                                <AuthorizeView Roles="Superadmin" Context="regionEditContext">
+                                    <Authorized>
+                                        <select class="form-select" value="@row.RegionId" @onchange="e => OnRegionChanged(row.Id, e)">
+                                            @foreach (var region in _regions.Where(r => r.IsActive || r.Id == row.RegionId))
+                                            {
+                                                <option value="@region.Id">@region.Name</option>
+                                            }
+                                        </select>
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        @row.RegionName
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            </td>
+                            <td>
+                                <AuthorizeView Roles="Superadmin" Context="activeEditContext">
+                                    <Authorized>
+                                        <div class="form-check">
+                                            <input type="checkbox" class="form-check-input" checked="@row.IsActive"
+                                                   @onchange="e => OnActiveChanged(row.Id, e)" />
+                                        </div>
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        <span class="status-pill @(row.IsActive ? "success" : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span>
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            </td>
+                            <td class="table-actions">
+                                <AuthorizeView Roles="Superadmin" Context="rowDeleteContext">
+                                    <button class="btn btn-sm btn-outline-danger" title="@($"Delete {row.Name}")" aria-label="@($"Delete {row.Name}")" @onclick="() => ShowDeleteConfirm(row)">
+                                        <i class="bi bi-trash" aria-hidden="true"></i>
+                                    </button>
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<StateDto>? _rows;
+    private IReadOnlyList<RegionDto> _regions = [];
+    private bool _saving;
+    private string? _saveError;
+    private string? _savedMessage;
+
+    private bool _showCreateForm;
+    private CreateFormModel _createForm = new();
+    private string? _createError;
+
+    private StateDto? _deleteTarget;
+    private string? _deleteError;
+    private bool _deleting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _regions = await Mediator.Send(new GetRegionsQuery());
+        if (_createForm.RegionId == 0 && _regions.Count > 0) _createForm.RegionId = _regions.First().Id;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var result = await Mediator.Send(new GetStatesQuery());
+        _rows = result.OrderBy(r => r.Name).ToList();
+    }
+
+    private void OnCodeChanged(int id, ChangeEventArgs e) => Update(id, r => r with { Code = e.Value?.ToString() ?? r.Code });
+    private void OnNameChanged(int id, ChangeEventArgs e) => Update(id, r => r with { Name = e.Value?.ToString() ?? r.Name });
+
+    private void OnRegionChanged(int id, ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        if (!int.TryParse(raw, out var regionId)) return;
+        var region = _regions.FirstOrDefault(r => r.Id == regionId);
+        Update(id, r => r with { RegionId = regionId, RegionCode = region?.Code ?? r.RegionCode, RegionName = region?.Name ?? r.RegionName });
+    }
+
+    private void OnActiveChanged(int id, ChangeEventArgs e)
+    {
+        var isActive = e.Value is bool b && b;
+        Update(id, r => r with { IsActive = isActive });
+    }
+
+    private void Update(int id, Func<StateDto, StateDto> apply)
+    {
+        if (_rows is null) return;
+        var index = _rows.FindIndex(r => r.Id == id);
+        if (index >= 0) _rows[index] = apply(_rows[index]);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_rows is null) return;
+        _saving = true;
+        _saveError = null;
+        _savedMessage = null;
+        try
+        {
+            var assignments = _rows
+                .Select(r => new StateAssignment(r.Id, r.Code, r.Name, r.RegionId, r.IsActive))
+                .ToList();
+            await Mediator.Send(new UpdateStatesCommand(assignments));
+            _savedMessage = "States saved.";
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save states");
+            _saveError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void ShowCreateForm()
+    {
+        _createError = null;
+        _createForm = new CreateFormModel { RegionId = _regions.FirstOrDefault()?.Id ?? 0 };
+        _showCreateForm = true;
+    }
+
+    private void CloseCreateForm()
+    {
+        _showCreateForm = false;
+        _createError = null;
+    }
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            await Mediator.Send(new CreateStateCommand(_createForm.Code, _createForm.Name, _createForm.RegionId));
+            _showCreateForm = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to create state");
+            _createError = ex.Message;
+        }
+    }
+
+    private void ShowDeleteConfirm(StateDto row)
+    {
+        _deleteTarget = row;
+        _deleteError = null;
+    }
+
+    private void CancelDelete()
+    {
+        _deleteTarget = null;
+        _deleteError = null;
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_deleteTarget is null) return;
+        _deleting = true;
+        _deleteError = null;
+        try
+        {
+            await Mediator.Send(new DeleteStateCommand(_deleteTarget.Id));
+            _deleteTarget = null;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to delete state");
+            _deleteError = ex.Message;
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
+
+    private class CreateFormModel
+    {
+        public string Code { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public int RegionId { get; set; }
+    }
+}

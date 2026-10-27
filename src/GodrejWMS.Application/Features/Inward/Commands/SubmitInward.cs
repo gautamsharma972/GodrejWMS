@@ -12,14 +12,17 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// Submits one or more inward (goods-receipt) lines and reserves suggested put-away
 /// locations. Physical stock is written only after operator confirmation.
 /// </summary>
-public sealed record SubmitInwardCommand(IReadOnlyList<SubmitInwardLine> Lines) : IRequest<InwardResultDto>;
+public sealed record SubmitInwardCommand(IReadOnlyList<SubmitInwardLine> Lines, int WarehouseId) : IRequest<InwardResultDto>;
 
 public sealed record SubmitInwardLine(long MaterialCode, decimal QuantityBoxes, string MfgMonthText);
 
 public sealed class SubmitInwardValidator : AbstractValidator<SubmitInwardCommand>
 {
-    public SubmitInwardValidator()
+    public SubmitInwardValidator(IWarehouseAccessService warehouseAccess)
     {
+        RuleFor(x => x.WarehouseId)
+            .MustAsync((id, ct) => warehouseAccess.HasAccessAsync(id, ct))
+            .WithMessage("Warehouse is not assigned to you.");
         RuleFor(x => x.Lines).NotEmpty();
         RuleForEach(x => x.Lines).ChildRules(line =>
         {
@@ -48,6 +51,7 @@ public sealed class SubmitInwardHandler(
 
         var transaction = new InwardTransaction
         {
+            WarehouseId = request.WarehouseId,
             ReferenceNumber = $"GRN-{clock.UtcNow:yyyyMMdd-HHmmss}",
             CreatedAt = clock.UtcNow,
             CreatedByUserId = currentUser.UserId
@@ -83,7 +87,7 @@ public sealed class SubmitInwardHandler(
             MfgMonthParser.TryParse(line.MfgMonthText, out var mfgMonth);
 
             var (transactionLine, reservedRows, allocation) =
-                await AllocateAndReserveLineAsync(transaction, material, line.QuantityBoxes, mfgMonth, cancellationToken);
+                await AllocateAndReserveLineAsync(transaction, material, line.QuantityBoxes, mfgMonth, request.WarehouseId, cancellationToken);
 
             resultLines.Add(new InwardLineResultDto(
                 material.MaterialNumber,
@@ -129,11 +133,11 @@ public sealed class SubmitInwardHandler(
     /// documentation rather than by an InMemory-backed test - see SubmitInwardConcurrencyTests.)
     /// </summary>
     private async Task<(InwardTransactionLine Line, List<(InwardPutaway Putaway, string LocationCode, string? Reason)> Reserved, InwardAllocationResult Allocation)>
-        AllocateAndReserveLineAsync(InwardTransaction transaction, Material material, decimal quantityBoxes, int mfgMonth, CancellationToken cancellationToken)
+        AllocateAndReserveLineAsync(InwardTransaction transaction, Material material, decimal quantityBoxes, int mfgMonth, int warehouseId, CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= MaxAllocationAttempts; attempt++)
         {
-            var allocation = await allocator.AllocateAsync(material.Id, quantityBoxes, mfgMonth, cancellationToken: cancellationToken);
+            var allocation = await allocator.AllocateAsync(material.Id, quantityBoxes, mfgMonth, warehouseId, cancellationToken: cancellationToken);
 
             var transactionLine = new InwardTransactionLine
             {

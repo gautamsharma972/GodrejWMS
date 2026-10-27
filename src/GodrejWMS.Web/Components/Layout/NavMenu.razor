@@ -51,6 +51,33 @@
                     </NavLink>
                 </div>
 
+                <div class="nav-section-label">Organization</div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="warehouses" aria-label="Warehouse Master" data-bs-title="Warehouse Master" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-building" aria-hidden="true"></i> <span class="nav-link-text">Warehouse Master</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="warehouse-categories" aria-label="Warehouse Categories" data-bs-title="Warehouse Categories" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-diagram-2" aria-hidden="true"></i> <span class="nav-link-text">Warehouse Categories</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="regions" aria-label="Regions" data-bs-title="Regions" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-globe-asia-australia" aria-hidden="true"></i> <span class="nav-link-text">Regions</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="states" aria-label="States" data-bs-title="States" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-map" aria-hidden="true"></i> <span class="nav-link-text">States</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="cities" aria-label="Cities" data-bs-title="Cities" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-pin-map" aria-hidden="true"></i> <span class="nav-link-text">Cities</span>
+                    </NavLink>
+                </div>
+
                 <div class="nav-section-label">Master Data</div>
                 <div class="nav-item">
                     <NavLink class="nav-link" href="design-types" aria-label="Design Types" data-tour="nav-master-data"data-bs-title="Design Types" data-bs-toggle="tooltip" data-bs-placement="right">
@@ -97,19 +124,35 @@
                         <i class="bi bi-cloud-sun" aria-hidden="true"></i> <span class="nav-link-text">Seasons</span>
                     </NavLink>
                 </div>
-                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="auditTrailContext">
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewAuditTrail">
                     <div class="nav-item">
                         <NavLink class="nav-link" href="audit-trail" aria-label="Audit Trail" data-bs-title="Audit Trail" data-bs-toggle="tooltip" data-bs-placement="right">
                             <i class="bi bi-clipboard-data" aria-hidden="true"></i> <span class="nav-link-text">Audit Trail</span>
                         </NavLink>
                     </div>
-                </AuthorizeView>
+                </PermissionAuthorize>
 
-                <AuthorizeView Roles="Admin,Operator,Supervisor" Context="transactionsLabelContext">
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewUserManagement">
+                    <div class="nav-section-label">Access Control</div>
+                    <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Users.ConfigurePermissions">
+                        <div class="nav-item">
+                            <NavLink class="nav-link" href="role-permissions" aria-label="Role &amp; Permission Management" data-bs-title="Role &amp; Permission Management" data-bs-toggle="tooltip" data-bs-placement="right">
+                                <i class="bi bi-shield-lock" aria-hidden="true"></i> <span class="nav-link-text">Role &amp; Permissions</span>
+                            </NavLink>
+                        </div>
+                    </PermissionAuthorize>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="users" aria-label="User Management" data-bs-title="User Management" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-people" aria-hidden="true"></i> <span class="nav-link-text">Users</span>
+                        </NavLink>
+                    </div>
+                </PermissionAuthorize>
+
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward">
                     <div class="nav-section-label">Transactions</div>
-                </AuthorizeView>
+                </PermissionAuthorize>
 
-                <AuthorizeView Roles="Admin,Operator,Supervisor" Context="inwardContext">
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward">
                     <div class="nav-item nav-group">
                         <button type="button"
                                 @ref="_inwardButton"
@@ -144,9 +187,9 @@
                             <NavLink class="collapsed-nav-flyout-link" href="inward/history" @onclick="CloseCollapsedFlyout"><i class="bi bi-clock-history"></i><span>History</span></NavLink>
                         </div>
                     }
-                </AuthorizeView>
+                </PermissionAuthorize>
 
-                <AuthorizeView Roles="Admin,Operator,Supervisor" Context="pulloutContext">
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewPullout">
                     <div class="nav-item nav-group">
                         <button type="button"
                                 @ref="_pulloutButton"
@@ -183,9 +226,9 @@
                             <NavLink class="collapsed-nav-flyout-link" href="pullout/history" @onclick="CloseCollapsedFlyout"><i class="bi bi-clock-history"></i><span>History</span></NavLink>
                         </div>
                     }
-                </AuthorizeView>
+                </PermissionAuthorize>
 
-                <AuthorizeView Roles="Admin,Operator,Supervisor" Context="movementContext">
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInventoryMovement">
                     <div class="nav-item nav-group">
                         <button type="button"
                                 @ref="_movementButton"
@@ -226,12 +269,12 @@
                             <NavLink class="collapsed-nav-flyout-link" href="inventory-movement/history" @onclick="CloseCollapsedFlyout"><i class="bi bi-clock-history"></i><span>History</span></NavLink>
                         </div>
                     }
-                </AuthorizeView>
+                </PermissionAuthorize>
 
-                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="reportsLabelContext">
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewReports">
                     <div class="nav-section-label">Reports</div>
-                </AuthorizeView>
-                <AuthorizeView Roles="Admin,Supervisor,Operator" Context="reportsContext">
+                </PermissionAuthorize>
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewReports">
                     <div class="nav-item">
                         <NavLink class="nav-link" href="reports/operations" aria-label="Operational Reports" data-tour="nav-reports"data-bs-title="Operational Reports" data-bs-toggle="tooltip" data-bs-placement="right">
                             <i class="bi bi-table" aria-hidden="true"></i> <span class="nav-link-text">Operational Reports</span>
@@ -253,11 +296,16 @@
                         </NavLink>
                     </div>
                     <div class="nav-item">
+                        <NavLink class="nav-link" href="reports/material-stock" aria-label="Material Stock Report" data-bs-title="Material Stock Report" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-box-seam" aria-hidden="true"></i> <span class="nav-link-text">Material Stock Report</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
                         <NavLink class="nav-link" href="reports/movement" aria-label="Movement Reports" data-bs-title="Movement Reports" data-bs-toggle="tooltip" data-bs-placement="right">
                             <i class="bi bi-arrow-left-right" aria-hidden="true"></i> <span class="nav-link-text">Movement Reports</span>
                         </NavLink>
                     </div>
-                </AuthorizeView>
+                </PermissionAuthorize>
 
                 <div class="nav-spacer"></div>
             </Authorized>

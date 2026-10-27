@@ -27,6 +27,8 @@ internal static class TestDbContextFactory
         public string? UserName => "test@godrejwms.local";
 
         public bool IsInRole(string role) => true;
+
+        public IReadOnlyList<string> Roles => ["Superadmin"];
     }
 
     private sealed class TestClock : IDateTimeProvider

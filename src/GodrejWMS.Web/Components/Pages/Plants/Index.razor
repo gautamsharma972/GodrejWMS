@@ -18,13 +18,13 @@
             <p class="page-kicker">Destination/source plants used by Picking requests (Plant Name) - code, name, type, and description.</p>
         </div>
         <div class="header-actions">
-            <AuthorizeView Roles="Admin" Context="createContext">
+            <AuthorizeView Roles="Superadmin" Context="createContext">
                 <button class="btn btn-outline-primary" @onclick="ShowCreateForm">
                     <i class="bi bi-plus-lg" aria-hidden="true"></i>
                     New Plant
                 </button>
             </AuthorizeView>
-            <AuthorizeView Roles="Admin" Context="editContext">
+            <AuthorizeView Roles="Superadmin" Context="editContext">
                 <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
                     @if (_saving)
                     {
@@ -171,7 +171,7 @@
                     {
                         <tr>
                             <td>
-                                <AuthorizeView Roles="Admin" Context="codeEditContext">
+                                <AuthorizeView Roles="Superadmin" Context="codeEditContext">
                                     <Authorized>
                                         <input class="form-control" value="@row.Code" style="max-width: 120px"
                                                @onchange="e => OnCodeChanged(row.Id, e)" />
@@ -182,7 +182,7 @@
                                 </AuthorizeView>
                             </td>
                             <td style="max-width: 220px">
-                                <AuthorizeView Roles="Admin" Context="nameEditContext">
+                                <AuthorizeView Roles="Superadmin" Context="nameEditContext">
                                     <Authorized>
                                         <input class="form-control" value="@row.Name"
                                                @onchange="e => OnNameChanged(row.Id, e)" />
@@ -193,7 +193,7 @@
                                 </AuthorizeView>
                             </td>
                             <td style="max-width: 160px">
-                                <AuthorizeView Roles="Admin" Context="typeEditContext">
+                                <AuthorizeView Roles="Superadmin" Context="typeEditContext">
                                     <Authorized>
                                         <select class="form-select" value="@row.PlantTypeId" @onchange="e => OnPlantTypeChanged(row.Id, e)">
                                             <option value="">-- None --</option>
@@ -209,7 +209,7 @@
                                 </AuthorizeView>
                             </td>
                             <td style="max-width: 260px">
-                                <AuthorizeView Roles="Admin" Context="descEditContext">
+                                <AuthorizeView Roles="Superadmin" Context="descEditContext">
                                     <Authorized>
                                         <input class="form-control" value="@row.Description"
                                                @onchange="e => OnDescriptionChanged(row.Id, e)" />
@@ -220,7 +220,7 @@
                                 </AuthorizeView>
                             </td>
                             <td>
-                                <AuthorizeView Roles="Admin" Context="activeEditContext">
+                                <AuthorizeView Roles="Superadmin" Context="activeEditContext">
                                     <Authorized>
                                         <div class="form-check">
                                             <input type="checkbox" class="form-check-input" checked="@row.IsActive"
@@ -233,7 +233,7 @@
                                 </AuthorizeView>
                             </td>
                             <td class="table-actions">
-                                <AuthorizeView Roles="Admin" Context="rowDeleteContext">
+                                <AuthorizeView Roles="Superadmin" Context="rowDeleteContext">
                                     <button class="btn btn-sm btn-outline-danger" title="@($"Delete {row.Name}")" aria-label="@($"Delete {row.Name}")" @onclick="() => ShowDeleteConfirm(row)">
                                         <i class="bi bi-trash" aria-hidden="true"></i>
                                     </button>

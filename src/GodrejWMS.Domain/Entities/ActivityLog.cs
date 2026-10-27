@@ -13,6 +13,12 @@ public class ActivityLog
 
     public string? UserName { get; set; }
 
+    /// <summary>Resolved from the changed entity where it has a direct or navigable warehouse,
+    /// so scoped users can see the rows that touch their own warehouses/regions. Null for
+    /// entities with no warehouse (e.g. shared master data) or where it couldn't be resolved -
+    /// those rows stay Superadmin-only, the same safe default as before this column existed.</summary>
+    public int? WarehouseId { get; set; }
+
     public string Action { get; set; } = string.Empty;
 
     public string EntityName { get; set; } = string.Empty;

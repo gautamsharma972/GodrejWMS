@@ -12,6 +12,7 @@ public sealed record GetActivityLogsQuery(
     string? EntityName = null,
     DateTimeOffset? From = null,
     DateTimeOffset? To = null,
+    int? WarehouseId = null,
     string SortBy = "occurred",
     bool SortDescending = true,
     int PageNumber = 1,
@@ -54,6 +55,11 @@ public sealed class GetActivityLogsHandler(IApplicationDbContext db)
             query = query.Where(a => a.OccurredAt < request.To.Value);
         }
 
+        if (request.WarehouseId.HasValue)
+        {
+            query = query.Where(a => a.WarehouseId == request.WarehouseId.Value);
+        }
+
         query = (request.SortBy, request.SortDescending) switch
         {
             ("user", false) => query.OrderBy(a => a.UserName).ThenByDescending(a => a.OccurredAt),
@@ -73,6 +79,7 @@ public sealed class GetActivityLogsHandler(IApplicationDbContext db)
             a.Action,
             a.EntityName,
             a.EntityId,
+            a.WarehouseId == null ? null : db.Warehouses.Where(w => w.Id == a.WarehouseId).Select(w => w.Name).FirstOrDefault(),
             a.Summary,
             a.OldValuesJson,
             a.NewValuesJson));

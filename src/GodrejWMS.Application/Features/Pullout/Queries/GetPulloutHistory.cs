@@ -12,6 +12,7 @@ public sealed record GetPulloutHistoryQuery(
     DateTimeOffset? From = null,
     DateTimeOffset? To = null,
     AllocationStatus? Status = null,
+    int? WarehouseId = null,
     string SortBy = "created",
     bool SortDescending = true,
     int PageNumber = 1,
@@ -33,11 +34,18 @@ public sealed class GetPulloutHistoryHandler(IApplicationDbContext db)
         if (request.IsRejected == true)
             transactions = transactions.Where(t => t.IsRejected);
 
+        if (request.WarehouseId.HasValue)
+        {
+            transactions = transactions.Where(t => t.WarehouseId == request.WarehouseId.Value);
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
             var term = request.Search.Trim();
             transactions = transactions.Where(t =>
                 t.ReferenceNumber.Contains(term) ||
+                (t.VehicleNumber != null && t.VehicleNumber.Contains(term)) ||
+                t.Lines.Any(l => l.PlantName != null && l.PlantName.Contains(term)) ||
                 t.Lines.Any(l =>
                     l.Material.MaterialNumber.ToString().Contains(term) ||
                     l.Material.Description.Contains(term)));
@@ -57,7 +65,11 @@ public sealed class GetPulloutHistoryHandler(IApplicationDbContext db)
         {
             var status = (int)request.Status.Value;
             transactions = transactions.Where(t =>
-                (t.Lines.Max(l => (int?)l.Status) ?? (int)AllocationStatus.Failed) == status);
+                (!t.Lines.Any() || t.Lines.All(l => l.Status == AllocationStatus.Failed)
+                    ? (int)AllocationStatus.Failed
+                    : t.Lines.Any(l => l.Status != AllocationStatus.Fulfilled)
+                        ? (int)AllocationStatus.Partial
+                        : (int)AllocationStatus.Fulfilled) == status);
         }
 
         transactions = (request.SortBy, request.SortDescending) switch
@@ -68,8 +80,18 @@ public sealed class GetPulloutHistoryHandler(IApplicationDbContext db)
             ("lines", true) => transactions.OrderByDescending(t => t.Lines.Count()).ThenByDescending(t => t.CreatedAt),
             ("quantity", false) => transactions.OrderBy(t => t.Lines.Sum(l => (decimal?)l.PickedQuantityBoxes) ?? 0m).ThenByDescending(t => t.CreatedAt),
             ("quantity", true) => transactions.OrderByDescending(t => t.Lines.Sum(l => (decimal?)l.PickedQuantityBoxes) ?? 0m).ThenByDescending(t => t.CreatedAt),
-            ("status", false) => transactions.OrderBy(t => t.Lines.Max(l => (int?)l.Status) ?? (int)AllocationStatus.Failed).ThenByDescending(t => t.CreatedAt),
-            ("status", true) => transactions.OrderByDescending(t => t.Lines.Max(l => (int?)l.Status) ?? (int)AllocationStatus.Failed).ThenByDescending(t => t.CreatedAt),
+            ("status", false) => transactions.OrderBy(t =>
+                !t.Lines.Any() || t.Lines.All(l => l.Status == AllocationStatus.Failed)
+                    ? (int)AllocationStatus.Failed
+                    : t.Lines.Any(l => l.Status != AllocationStatus.Fulfilled)
+                        ? (int)AllocationStatus.Partial
+                        : (int)AllocationStatus.Fulfilled).ThenByDescending(t => t.CreatedAt),
+            ("status", true) => transactions.OrderByDescending(t =>
+                !t.Lines.Any() || t.Lines.All(l => l.Status == AllocationStatus.Failed)
+                    ? (int)AllocationStatus.Failed
+                    : t.Lines.Any(l => l.Status != AllocationStatus.Fulfilled)
+                        ? (int)AllocationStatus.Partial
+                        : (int)AllocationStatus.Fulfilled).ThenByDescending(t => t.CreatedAt),
             ("created", false) => transactions.OrderBy(t => t.CreatedAt),
             _ => transactions.OrderByDescending(t => t.CreatedAt)
         };
@@ -80,9 +102,16 @@ public sealed class GetPulloutHistoryHandler(IApplicationDbContext db)
                 t.CreatedAt,
                 t.Lines.Count,
                 t.Lines.Sum(l => (decimal?)l.PickedQuantityBoxes) ?? 0m,
-                (AllocationStatus)(t.Lines.Max(l => (int?)l.Status) ?? (int)AllocationStatus.Failed),
+                !t.Lines.Any() || t.Lines.All(l => l.Status == AllocationStatus.Failed)
+                    ? AllocationStatus.Failed
+                    : t.Lines.Any(l => l.Status != AllocationStatus.Fulfilled)
+                        ? AllocationStatus.Partial
+                        : AllocationStatus.Fulfilled,
                 t.IsConfirmed,
-                t.IsRejected));
+                t.IsRejected,
+                t.Lines.Where(l => l.PlantName != null && l.PlantName != "")
+                    .Select(l => l.PlantName).FirstOrDefault(),
+                t.VehicleNumber));
 
         return PaginatedList<PulloutHistoryDto>.CreateAsync(query, request.PageNumber, request.PageSize);
     }

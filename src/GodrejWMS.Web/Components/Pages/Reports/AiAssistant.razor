@@ -1,5 +1,5 @@
 @page "/reports/ai-assistant"
-@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewReports)]
 @using GodrejWMS.Application.Features.Reports.Queries
 @using GodrejWMS.Application.Common.Exceptions
 @inject IMediator Mediator

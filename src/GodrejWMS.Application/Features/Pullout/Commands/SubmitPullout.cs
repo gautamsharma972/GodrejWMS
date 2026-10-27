@@ -9,16 +9,30 @@ using System.Text.Json;
 
 namespace GodrejWMS.Application.Features.Pullout.Commands;
 
-/// <summary>Saves a pending preview, refreshes an existing draft, or confirms reviewed picks.</summary>
+/// <summary>Saves a pending preview, refreshes an existing draft, or confirms reviewed picks.
+/// <paramref name="HeaderFields"/> and <paramref name="WarehouseId"/> are only applied on the very
+/// first call for a new pullout (when both <paramref name="ConfirmedPreview"/> and
+/// <paramref name="RefreshReference"/> are null) - they're persisted on the transaction then, and
+/// every later confirm/refresh call reads them back from there, so they don't need to be (and
+/// aren't) re-sent.</summary>
 public sealed record SubmitPulloutCommand(IReadOnlyList<SubmitPulloutLine> Lines,
-    PulloutResultDto? ConfirmedPreview = null, string? RefreshReference = null) : IRequest<PulloutResultDto>;
+    PulloutResultDto? ConfirmedPreview = null, string? RefreshReference = null,
+    PulloutLoadingSheetFieldsDto? HeaderFields = null, int? WarehouseId = null) : IRequest<PulloutResultDto>;
 
-public sealed record SubmitPulloutLine(long MaterialCode, decimal QuantityBoxes, string? PlantName = null);
+public sealed record SubmitPulloutLine(long MaterialCode, decimal QuantityBoxes, string? PlantName = null, string? Priority = null, string? MaterialDescription = null);
 
 public sealed class SubmitPulloutValidator : AbstractValidator<SubmitPulloutCommand>
 {
-    public SubmitPulloutValidator()
+    public SubmitPulloutValidator(IWarehouseAccessService warehouseAccess)
     {
+        RuleFor(x => x.WarehouseId)
+            .NotNull()
+            .When(x => x.ConfirmedPreview is null && x.RefreshReference is null)
+            .WithMessage("Select a warehouse.");
+        RuleFor(x => x.WarehouseId!.Value)
+            .MustAsync((id, ct) => warehouseAccess.HasAccessAsync(id, ct))
+            .When(x => x.WarehouseId is not null)
+            .WithMessage("Warehouse is not assigned to you.");
         RuleFor(x => x.Lines).NotEmpty();
         RuleForEach(x => x.Lines).ChildRules(line =>
         {
@@ -53,16 +67,30 @@ public sealed class SubmitPulloutHandler(
             if (transaction.IsConfirmed)
                 throw new InvalidOperationException("This pullout has already been confirmed.");
             savedPreview = JsonSerializer.Deserialize<PulloutResultDto>(transaction.PreviewJson!)!;
-            lines = savedPreview.Lines.Select(l => new SubmitPulloutLine(l.MaterialNumber, l.RequestedQuantityBoxes, l.PlantName)).ToList();
+            lines = savedPreview.Lines.Select(l => new SubmitPulloutLine(l.MaterialNumber, l.RequestedQuantityBoxes, l.PlantName, l.Priority, l.MaterialDescription)).ToList();
         }
         else
         {
             var createdAt = clock.UtcNow;
             transaction = new PulloutTransaction
             {
+                WarehouseId = request.WarehouseId!.Value,
                 ReferenceNumber = await NextReferenceAsync(createdAt, cancellationToken), CreatedAt = createdAt,
                 CreatedByUserId = currentUser.UserId, IsConfirmed = false
             };
+            if (request.HeaderFields is { } fields)
+            {
+                transaction.TransportName = fields.TransportName;
+                transaction.VehicleNumber = fields.VehicleNumber;
+                transaction.GateNumber = fields.GateNumber;
+                transaction.DriverNumber = fields.DriverNumber;
+                transaction.PlanTime = fields.PlanTime;
+                transaction.DateText = fields.DateText;
+                transaction.StartTime = fields.StartTime;
+                transaction.EndTime = fields.EndTime;
+                transaction.WeightText = fields.WeightText;
+                transaction.VolumeText = fields.VolumeText;
+            }
         }
 
         var materials = await db.Materials.AsNoTracking()
@@ -75,7 +103,9 @@ public sealed class SubmitPulloutHandler(
             .Select(g => new SubmitPulloutLine(
                 g.Key.MaterialCode,
                 g.Sum(l => l.QuantityBoxes),
-                g.Select(l => l.PlantName?.Trim()).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n))))
+                g.Select(l => l.PlantName?.Trim()).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)),
+                g.Select(l => l.Priority?.Trim()).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)),
+                g.Select(l => l.MaterialDescription?.Trim()).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n))))
             .ToList();
 
         foreach (var materialLines in plantLines.GroupBy(l => l.MaterialCode))
@@ -84,8 +114,14 @@ public sealed class SubmitPulloutHandler(
             {
                 foreach (var line in materialLines)
                 {
-                    resultLines.Add(new(line.MaterialCode, "(unknown material)", line.QuantityBoxes, 0,
-                        Domain.Enums.AllocationStatus.Failed, "Material code not found in Material Master.", [], line.PlantName));
+                    // Material isn't in Material Master yet (see error list on import) - show the
+                    // uploaded sheet's own Description for this row instead of a generic
+                    // placeholder, so the output stays readable and matches what was actually
+                    // requested. Falls back to the placeholder only for manually-entered lines,
+                    // which have no description to carry through.
+                    var description = string.IsNullOrWhiteSpace(line.MaterialDescription) ? "(unknown material)" : line.MaterialDescription;
+                    resultLines.Add(new(line.MaterialCode, description, line.QuantityBoxes, 0,
+                        Domain.Enums.AllocationStatus.Failed, "Material code not found in Material Master.", [], line.PlantName, line.Priority));
                 }
                 continue;
             }
@@ -94,7 +130,7 @@ public sealed class SubmitPulloutHandler(
             // lines in input order. Calling the preview allocator once per plant would allow the
             // same stock batch to be proposed more than once.
             var allocation = await allocator.AllocateAsync(
-                material.Id, materialLines.Sum(l => l.QuantityBoxes), cancellationToken, preview: true);
+                material.Id, materialLines.Sum(l => l.QuantityBoxes), transaction.WarehouseId, cancellationToken, preview: true);
             var availablePicks = new Queue<RemainingPick>(allocation.Picks.Select(p => new RemainingPick(
                 p.LocationCode, p.MfgMonth, p.QuantityBoxes)));
 
@@ -114,7 +150,7 @@ public sealed class SubmitPulloutHandler(
                 {
                     MaterialId = material.Id, RequestedQuantityBoxes = line.QuantityBoxes,
                     PickedQuantityBoxes = pickedQuantity, Status = status, Remarks = remarks,
-                    PlantName = line.PlantName
+                    PlantName = line.PlantName, Priority = line.Priority
                 };
                 foreach (var pick in linePicks)
                 {
@@ -129,10 +165,18 @@ public sealed class SubmitPulloutHandler(
                 resultLines.Add(new(material.MaterialNumber, material.Description, line.QuantityBoxes,
                     pickedQuantity, status, remarks,
                     linePicks.Select(p => new PulloutPickDto(p.LocationCode, MfgMonthParser.Format(p.MfgMonth), p.QuantityBoxes)).ToList(),
-                    line.PlantName));
+                    line.PlantName, line.Priority));
             }
         }
-        var result = new PulloutResultDto(transaction.ReferenceNumber, transaction.CreatedAt, resultLines);
+        var headerFields = new PulloutLoadingSheetFieldsDto(
+            transaction.TransportName, transaction.VehicleNumber, transaction.GateNumber, transaction.DriverNumber,
+            transaction.PlanTime, transaction.DateText, transaction.StartTime, transaction.EndTime,
+            transaction.WeightText, transaction.VolumeText);
+        var warehouseAddress = await db.Warehouses.AsNoTracking()
+            .Where(w => w.Id == transaction.WarehouseId)
+            .Select(w => w.Address)
+            .FirstOrDefaultAsync(cancellationToken);
+        var result = new PulloutResultDto(transaction.ReferenceNumber, transaction.CreatedAt, resultLines, headerFields, warehouseAddress);
         if (request.ConfirmedPreview is not null)
         {
             if (!SamePicks(savedPreview!, request.ConfirmedPreview))

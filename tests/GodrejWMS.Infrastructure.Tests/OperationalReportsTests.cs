@@ -1,4 +1,5 @@
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.Reports.Core;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Infrastructure.Persistence;
@@ -11,9 +12,10 @@ public class OperationalReportsTests
     [Fact]
     public async Task CurrentStock_FiltersAndPaginates_ThenSkuReportAggregates()
     {
-        using var db = Create(new User("admin", true));
+        var dbName = Guid.NewGuid().ToString();
+        using var db = Create(new User("admin", true), dbName);
         SeedStock(db);
-        var handler = new GetOperationalReportHandler(db, new User("admin", true), new DisplayNames());
+        var handler = new GetOperationalReportHandler(db, new DisplayNames(), WarehouseAccess(new User("admin", true), dbName), new AlwaysGrantedPermissions());
 
         var page = await handler.Handle(new(ReportKind.CurrentStock,
             new ReportFilter(WarehouseId: 1, Sku: 1001), PageSize: 1, Sort: "quantity", Descending: true), default);
@@ -29,37 +31,63 @@ public class OperationalReportsTests
     }
 
     [Fact]
-    public async Task Supervisor_CanRequestAnyWarehouse()
+    public async Task Supervisor_IsScopedToTheirAssignedWarehouse()
     {
+        var dbName = Guid.NewGuid().ToString();
         var user = new User("supervisor", false);
-        using var db = Create(user);
+        using var db = Create(user, dbName);
         SeedStock(db);
         db.UserWarehouses.Add(new UserWarehouse { UserId = user.UserId!, WarehouseId = 1 });
         await db.SaveChangesAsync();
-        var handler = new GetOperationalReportHandler(db, user, new DisplayNames());
+        var handler = new GetOperationalReportHandler(db, new DisplayNames(), WarehouseAccess(user, dbName), new AlwaysGrantedPermissions());
 
         Assert.Equal(2, (await handler.Handle(new(ReportKind.CurrentStock, new(), Sort: "sku"), default)).TotalCount);
-        var otherWarehouse = await handler.Handle(
-            new(ReportKind.CurrentStock, new(WarehouseId: 2), Sort: "sku"), default);
-        Assert.Equal(0, otherWarehouse.TotalCount);
+        Assert.Equal(2, (await handler.Handle(new(ReportKind.CurrentStock, new(WarehouseId: 1), Sort: "sku"), default)).TotalCount);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            handler.Handle(new(ReportKind.CurrentStock, new(WarehouseId: 2), Sort: "sku"), default));
     }
 
     [Fact]
     public async Task Operator_CanExecuteReportQuery()
     {
+        var dbName = Guid.NewGuid().ToString();
         var user = new User("operator", false, false);
-        using var db = Create(user);
-        var result = await new GetOperationalReportHandler(db, user, new DisplayNames())
+        using var db = Create(user, dbName);
+        var result = await new GetOperationalReportHandler(db, new DisplayNames(), WarehouseAccess(user, dbName), new AlwaysGrantedPermissions())
             .Handle(new(ReportKind.CurrentStock, new()), default);
         Assert.Equal(0, result.TotalCount);
     }
 
-    private static AppDbContext Create(User user)
+    private static AppDbContext Create(User user, string dbName)
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options;
         var db = new AppDbContext(options, user, new Clock());
         db.Database.EnsureCreated();
         return db;
+    }
+
+    /// <summary>A real WarehouseAccessService, backed by a factory that opens a fresh AppDbContext
+    /// against the same named in-memory database as the test's own context - mirrors how the real
+    /// ApplicationDbContextFactory gives it an isolated context, see WarehouseAccessService's own
+    /// doc comment for why.</summary>
+    private static IWarehouseAccessService WarehouseAccess(User user, string dbName) =>
+        new WarehouseAccessService(new TestDbContextFactory(dbName), user);
+
+    private sealed class TestDbContextFactory(string dbName) : IApplicationDbContextFactory
+    {
+        public Task<IApplicationDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+        {
+            var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options;
+            return Task.FromResult<IApplicationDbContext>(new AppDbContext(options, new NoUser(), new Clock()));
+        }
+    }
+
+    private sealed class NoUser : ICurrentUserService
+    {
+        public string? UserId => null;
+        public string? UserName => null;
+        public bool IsInRole(string role) => false;
+        public IReadOnlyList<string> Roles => [];
     }
 
     private sealed class DisplayNames : IUserDisplayNameService
@@ -70,7 +98,9 @@ public class OperationalReportsTests
 
     private static void SeedStock(AppDbContext db)
     {
-        db.Warehouses.Add(new Warehouse { Id = 2, Code = "OTHER", Name = "Other" });
+        db.Warehouses.AddRange(
+            new Warehouse { Id = 1, Code = "GCPL", Name = "GCPL" },
+            new Warehouse { Id = 2, Code = "OTHER", Name = "Other" });
         db.LocationTypes.Add(new LocationType { Id = 1, Code = "Rack", DisplayName = "Rack" });
         db.LocationSubtypes.Add(new LocationSubtype { Id = 1, Code = "Good", DisplayName = "Good" });
         db.ZoneTypes.Add(new ZoneType { Id = 2, Code = "Reserve", DisplayName = "Reserve" });
@@ -91,9 +121,17 @@ public class OperationalReportsTests
     private sealed class User(string id, bool admin, bool supervisor = true) : ICurrentUserService
     {
         public string? UserId => id; public string? UserName => id;
-        public bool IsInRole(string role) => role == "Admin" ? admin :
-            role == "Supervisor" ? supervisor : role == "Operator" && !admin && !supervisor;
+        public bool IsInRole(string role) => role == "Superadmin" ? admin :
+            role == "Supervisor" ? supervisor : role == "Office Staff" && !admin && !supervisor;
+        public IReadOnlyList<string> Roles =>
+            [admin ? "Superadmin" : supervisor ? "Supervisor" : "Office Staff"];
     }
     private sealed class Clock : IDateTimeProvider
     { public DateTimeOffset UtcNow => DateTimeOffset.UtcNow; public DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow); }
+
+    private sealed class AlwaysGrantedPermissions : IPermissionService
+    {
+        public Task<bool> HasPermissionAsync(string permissionKey, CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
+    }
 }

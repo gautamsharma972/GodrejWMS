@@ -1,5 +1,6 @@
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.InventoryAdjustments.Dtos;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
@@ -35,12 +36,13 @@ public sealed class SubmitInventoryAdjustmentHandler(
     IApplicationDbContext db,
     IDateTimeProvider clock,
     ICurrentUserService currentUser,
-    IRealtimeNotificationService notifications)
+    IRealtimeNotificationService notifications,
+    IPermissionService permissions)
     : IRequestHandler<SubmitInventoryAdjustmentCommand, InventoryAdjustmentDetailDto>
 {
     public async Task<InventoryAdjustmentDetailDto> Handle(SubmitInventoryAdjustmentCommand request, CancellationToken cancellationToken)
     {
-        if (!currentUser.IsInRole("Operator") && !currentUser.IsInRole("Supervisor") && !currentUser.IsInRole("Admin"))
+        if (!await permissions.HasPermissionAsync(PermissionKeys.Inventory.Adjust, cancellationToken))
         {
             throw new UnauthorizedAccessException("You are not permitted to request inventory adjustments.");
         }
@@ -108,7 +110,7 @@ public sealed class SubmitInventoryAdjustmentHandler(
             "warning",
             "/inventory-adjustments",
             now,
-            AudienceRoles: ["Supervisor", "Admin"],
+            AudienceRoles: ["Supervisor", "Superadmin"],
             ExcludeUserId: currentUser.UserId), cancellationToken);
 
         return await LoadDetailAsync(adjustment.Id, cancellationToken);

@@ -141,7 +141,7 @@ public class PalletAllocationServiceTests
 
         var sut = new PalletAllocationService(db, new TestClock());
 
-        var result = await sut.AllocateAsync(material.Id, 10, mfgMonth);
+        var result = await sut.AllocateAsync(material.Id, 10, mfgMonth, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         Assert.Equal(10, result.AllocatedQuantityBoxes);
@@ -157,7 +157,7 @@ public class PalletAllocationServiceTests
         var (db, material, _) = SeedWarehouse(capacityBoxes: 40);
         var sut = new PalletAllocationService(db, new TestClock());
 
-        var result = await sut.AllocateAsync(material.Id, 100, 201003);
+        var result = await sut.AllocateAsync(material.Id, 100, 201003, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Partial, result.Status);
         Assert.Equal(80, result.AllocatedQuantityBoxes);
@@ -184,7 +184,7 @@ public class PalletAllocationServiceTests
 
         var sut = new PalletAllocationService(db, new TestClock());
 
-        var result = await sut.AllocateAsync(material.Id, 5, mfgMonth);
+        var result = await sut.AllocateAsync(material.Id, 5, mfgMonth, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         Assert.DoesNotContain(result.Lines, l => l.LocationCode == "A-01-01");
@@ -205,7 +205,7 @@ public class PalletAllocationServiceTests
 
         var sut = new PalletAllocationService(db, new TestClock());
 
-        var result = await sut.AllocateAsync(material.Id, 50, 201003);
+        var result = await sut.AllocateAsync(material.Id, 50, 201003, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         Assert.Contains(result.Lines, l => l.LocationCode == "A-01-01" && l.QuantityBoxes == 40);
@@ -246,7 +246,7 @@ public class PalletAllocationServiceTests
 
         var sut = new PalletAllocationService(db, new TestClock());
 
-        var result = await sut.AllocateAsync(material.Id, 80, 201003);
+        var result = await sut.AllocateAsync(material.Id, 80, 201003, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Partial, result.Status);
         Assert.Equal(40, result.AllocatedQuantityBoxes);
@@ -347,7 +347,7 @@ public class PalletAllocationServiceTests
         var sut = new SubmitInwardHandler(db, allocator, new TestClock(), new TestCurrentUser());
 
         var result = await sut.Handle(
-            new SubmitInwardCommand([new SubmitInwardLine(material.MaterialNumber, 10, "MAR|2010")]),
+            new SubmitInwardCommand([new SubmitInwardLine(material.MaterialNumber, 10, "MAR|2010")], WarehouseId: 1),
             CancellationToken.None);
 
         var putaway = db.InwardPutaways.Single();
@@ -386,7 +386,7 @@ public class PalletAllocationServiceTests
         var result = await sut.Handle(new SubmitInwardCommand([
             new SubmitInwardLine(high.MaterialNumber, 10, "JUN|2026"),
             new SubmitInwardLine(low.MaterialNumber, 10, "JUL|2026"),
-            new SubmitInwardLine(low.MaterialNumber, 10, "JUN|2026")]), CancellationToken.None);
+            new SubmitInwardLine(low.MaterialNumber, 10, "JUN|2026")], WarehouseId: 1), CancellationToken.None);
 
         // Material code first (the lower code wins even though its design sorts later), then PKM oldest first.
         Assert.Equal(
@@ -408,7 +408,7 @@ public class PalletAllocationServiceTests
         // on A-01-01) + 40 (empty A-01-02) + 40 (empty A-01-03) = 90. Requesting 100 more (a
         // different Mfg Month) should exhaust every level of Rack A first, then spill the
         // remaining 10 into Rack B.
-        var result = await sut.AllocateAsync(material.Id, 100, mfgMonth: 201002);
+        var result = await sut.AllocateAsync(material.Id, 100, mfgMonth: 201002, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         Assert.Equal(100, result.AllocatedQuantityBoxes);
@@ -431,7 +431,7 @@ public class PalletAllocationServiceTests
         // Same material, a *different* Mfg Month - not a Tier-1 exact-batch top-up, but the
         // position already holding this material (different batch) should still be a valid
         // Tier-2 consolidation target, not require an empty position.
-        var result = await sut.AllocateAsync(material.Id, 15, mfgMonth: 201002);
+        var result = await sut.AllocateAsync(material.Id, 15, mfgMonth: 201002, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         Assert.Contains(result.Lines, l => l.LocationCode == "A-01-01" && l.QuantityBoxes == 10 && l.Reason == "Same-rack consolidation");
@@ -466,7 +466,7 @@ public class PalletAllocationServiceTests
 
         var sut = new PalletAllocationService(db, new TestClock());
 
-        var result = await sut.AllocateAsync(material.Id, 10, mfgMonth: 201002);
+        var result = await sut.AllocateAsync(material.Id, 10, mfgMonth: 201002, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         Assert.DoesNotContain(result.Lines, l => l.LocationCode == "A-01-01");
@@ -487,7 +487,7 @@ public class PalletAllocationServiceTests
         // reach Level 2 and 3 within Rack A. This material has no existing footprint anywhere, so
         // Tier 2 (same-rack consolidation) must be skipped entirely - the fill instead comes from
         // Tier 3's plain empty-position scoring.
-        var result = await sut.AllocateAsync(material.Id, 90, mfgMonth: 201001);
+        var result = await sut.AllocateAsync(material.Id, 90, mfgMonth: 201001, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         Assert.Contains(result.Lines, l => l.LocationCode == "A-01-01" && l.QuantityBoxes == 40);
@@ -509,7 +509,7 @@ public class PalletAllocationServiceTests
 
         var sut = new PalletAllocationService(db, new TestClock());
 
-        var result = await sut.AllocateAsync(material.Id, 5, mfgMonth: 201005);
+        var result = await sut.AllocateAsync(material.Id, 5, mfgMonth: 201005, warehouseId: 1);
 
         // Every rack is full at Level 1 and 2, but Level 3 has room - Tier 2 (same-rack
         // consolidation) is unrestricted by level, so it reaches Level 3 directly rather than
@@ -530,7 +530,7 @@ public class PalletAllocationServiceTests
 
         // Rack B holds far more of this material (30) than Rack A (5), so despite "A" sorting
         // first alphabetically, Rack B should be visited first and fully absorb this request.
-        var result = await sut.AllocateAsync(material.Id, 8, mfgMonth: 201003);
+        var result = await sut.AllocateAsync(material.Id, 8, mfgMonth: 201003, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         Assert.Single(result.Lines);
@@ -552,7 +552,7 @@ public class PalletAllocationServiceTests
 
         var sut = new PalletAllocationService(db, new TestClock());
 
-        var result = await sut.AllocateAsync(material.Id, 5, mfgMonth: 201001);
+        var result = await sut.AllocateAsync(material.Id, 5, mfgMonth: 201001, warehouseId: 1);
 
         // For this off-season, slow-moving material, plain zone scoring ranks Fast (90) ahead of
         // Seasonal (95). The material's soft PreferredZoneTypeId nudges Seasonal to 83, flipping
@@ -590,7 +590,7 @@ public class PalletAllocationServiceTests
 
         var sut = new PalletAllocationService(db, new TestClock());
 
-        var result = await sut.AllocateAsync(material.Id, 380, mfgMonth: 201001);
+        var result = await sut.AllocateAsync(material.Id, 380, mfgMonth: 201001, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         Assert.Equal(380, result.AllocatedQuantityBoxes);
@@ -642,7 +642,7 @@ public class PalletAllocationServiceTests
 
         // 45 boxes = 4.5 locations: the whole of column 1 (A-01-01, A-01-02, A-01-03) must fill
         // bottom to top before column 2 is touched (A-02-01 then A-02-02), never A-01-01, A-02-01, A-03-01.
-        var result = await sut.AllocateAsync(material.Id, 45, mfgMonth: 201001);
+        var result = await sut.AllocateAsync(material.Id, 45, mfgMonth: 201001, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         Assert.Equal(
@@ -681,7 +681,7 @@ public class PalletAllocationServiceTests
         // Rack A sorts first alphabetically and has no footprint of anything, but Rack B already
         // holds a different SKU with the same Design Code - proximity should win, landing on Rack
         // B's empty Level 2 rather than mixing into Level 1's occupied (different-SKU) position.
-        var result = await sut.AllocateAsync(newMaterial.Id, 8, mfgMonth: 201002);
+        var result = await sut.AllocateAsync(newMaterial.Id, 8, mfgMonth: 201002, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         Assert.Single(result.Lines);
@@ -703,7 +703,7 @@ public class PalletAllocationServiceTests
 
         var sut = new PalletAllocationService(db, new TestClock());
 
-        var result = await sut.AllocateAsync(material.Id, 5, mfgMonth: 201001);
+        var result = await sut.AllocateAsync(material.Id, 5, mfgMonth: 201001, warehouseId: 1);
 
         // Fast would ordinarily win decisively (score 20 vs Seasonal's fallback 95) - the hard
         // constraint must exclude it from candidacy entirely regardless of scoring.
@@ -723,7 +723,7 @@ public class PalletAllocationServiceTests
 
         var sut = new PalletAllocationService(db, new TestClock());
 
-        var result = await sut.AllocateAsync(material.Id, 5, mfgMonth: 201001);
+        var result = await sut.AllocateAsync(material.Id, 5, mfgMonth: 201001, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Failed, result.Status);
         Assert.Empty(result.Lines);
@@ -774,4 +774,6 @@ file sealed class TestCurrentUser : ICurrentUserService
     public string? UserName => "test@godrejwms.local";
 
     public bool IsInRole(string role) => true;
+
+    public IReadOnlyList<string> Roles => ["Superadmin"];
 }

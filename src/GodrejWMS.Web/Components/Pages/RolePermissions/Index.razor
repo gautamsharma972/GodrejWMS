@@ -1,0 +1,296 @@
+@page "/role-permissions"
+@attribute [Authorize(Roles = "Superadmin")]
+@using GodrejWMS.Application.Common
+@using GodrejWMS.Application.Features.RolePermissions.Commands
+@using GodrejWMS.Application.Features.RolePermissions.Dtos
+@using GodrejWMS.Application.Features.RolePermissions.Queries
+@using GodrejWMS.Application.Features.Roles.Commands
+@inject IMediator Mediator
+@inject ILogger<Index> Logger
+
+<PageTitle>Role &amp; Permission Management - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Access Control</div>
+            <h1>Role &amp; Permission Management</h1>
+            <p class="page-kicker">Module-wise permission matrix. Superadmin always has every permission and can't be edited here. Changes take effect immediately for every user with that role.</p>
+        </div>
+        <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+            @if (_saving)
+            {
+                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            }
+            else
+            {
+                <i class="bi bi-check2" aria-hidden="true"></i>
+            }
+            Save Permissions
+        </button>
+    </div>
+
+    @if (_saveError is not null)
+    {
+        <div class="alert alert-danger mb-0">@_saveError</div>
+    }
+    @if (_savedMessage is not null)
+    {
+        <div class="alert alert-success mb-0">@_savedMessage</div>
+    }
+    @if (_roleActionError is not null)
+    {
+        <div class="alert alert-danger mb-0">@_roleActionError</div>
+    }
+
+    <div class="panel mb-3">
+        <div class="panel-body">
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label mb-1">New role name</label>
+                    <input class="form-control" placeholder="e.g. Regional QA" style="min-width:260px"
+                           @bind="_newRoleName" @bind:event="oninput" @onkeyup="OnNewRoleKeyUp" />
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-outline-primary" @onclick="AddRoleAsync" disabled="@(_addingRole || string.IsNullOrWhiteSpace(_newRoleName))">
+                        @if (_addingRole)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                        }
+                        Add Role
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (_matrix is null)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading permission matrix...
+        </div>
+    }
+    else
+    {
+        <div class="toolbar-panel">
+            <div class="toolbar-group">
+                <div class="input-group search-control">
+                    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                    <input class="form-control" placeholder="Search module or action..."
+                           @bind="_searchTerm" @bind:event="oninput" />
+                </div>
+            </div>
+        </div>
+
+        @foreach (var moduleGroup in _matrix.Rows.GroupBy(r => r.Module))
+        {
+            var matchingRows = moduleGroup.Where(r => MatchesSearch(moduleGroup.Key, r.Action)).ToList();
+            if (IsSearching && matchingRows.Count == 0)
+            {
+                continue;
+            }
+
+            var expanded = IsSearching || _expandedModules.Contains(moduleGroup.Key);
+            var displayRows = IsSearching ? matchingRows : moduleGroup.ToList();
+            <div class="panel mb-3">
+                <div class="panel-header accordion-toggle" role="button" tabindex="0" @onclick="() => ToggleModule(moduleGroup.Key)">
+                    <h2 class="panel-title">@moduleGroup.Key</h2>
+                    <i class="bi @(expanded ? "bi-chevron-up" : "bi-chevron-down") accordion-chevron" aria-hidden="true"></i>
+                </div>
+                @if (expanded)
+                {
+                    <div class="table-responsive panel-table">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Action</th>
+                                    @foreach (var role in _matrix.Roles)
+                                    {
+                                        <th class="text-center">
+                                            @role
+                                            @if (!KnownRoles.All.Contains(role))
+                                            {
+                                                <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-1"
+                                                        title="@($"Delete {role}")" aria-label="@($"Delete {role}")"
+                                                        disabled="@(_deletingRole == role)"
+                                                        @onclick="() => DeleteRoleAsync(role)">
+                                                    <i class="bi bi-trash" aria-hidden="true"></i>
+                                                </button>
+                                            }
+                                        </th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in displayRows)
+                                {
+                                    <tr>
+                                        <td>@row.Action</td>
+                                        @foreach (var role in _matrix.Roles)
+                                        {
+                                            <td class="text-center">
+                                                @if (role == "Superadmin")
+                                                {
+                                                    <i class="bi bi-check-circle-fill text-success" title="Superadmin always has every permission" aria-label="Always granted"></i>
+                                                }
+                                                else
+                                                {
+                                                    <input type="checkbox" class="form-check-input"
+                                                           checked="@IsGranted(row.PermissionKey, role)"
+                                                           @onchange="e => OnToggle(row.PermissionKey, role, e)" />
+                                                }
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private RolePermissionMatrixDto? _matrix;
+    private readonly Dictionary<(string Key, string Role), bool> _edits = new();
+    private readonly HashSet<string> _expandedModules = new();
+    private string _searchTerm = string.Empty;
+    private bool IsSearching => !string.IsNullOrWhiteSpace(_searchTerm);
+    private bool _saving;
+    private string? _saveError;
+    private string? _savedMessage;
+    private string _newRoleName = string.Empty;
+    private bool _addingRole;
+    private string? _deletingRole;
+    private string? _roleActionError;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _matrix = await Mediator.Send(new GetRolePermissionMatrixQuery());
+        _edits.Clear();
+
+        // Only the first module starts expanded; the rest stay collapsed until clicked.
+        _expandedModules.Clear();
+        var firstModule = _matrix.Rows.Select(r => r.Module).FirstOrDefault();
+        if (firstModule is not null)
+        {
+            _expandedModules.Add(firstModule);
+        }
+    }
+
+    private void ToggleModule(string module)
+    {
+        if (!_expandedModules.Add(module))
+        {
+            _expandedModules.Remove(module);
+        }
+    }
+
+    private bool MatchesSearch(string module, string action) =>
+        string.IsNullOrWhiteSpace(_searchTerm) ||
+        module.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+        action.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase);
+
+    private bool IsGranted(string key, string role)
+    {
+        if (_edits.TryGetValue((key, role), out var edited))
+        {
+            return edited;
+        }
+        var row = _matrix!.Rows.First(r => r.PermissionKey == key);
+        return row.GrantedByRole.TryGetValue(role, out var granted) && granted;
+    }
+
+    private void OnToggle(string key, string role, ChangeEventArgs e)
+    {
+        var isChecked = e.Value is bool b && b;
+        _edits[(key, role)] = isChecked;
+    }
+
+    private Task OnNewRoleKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) =>
+        e.Key == "Enter" ? AddRoleAsync() : Task.CompletedTask;
+
+    private async Task AddRoleAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newRoleName)) return;
+
+        _addingRole = true;
+        _roleActionError = null;
+        try
+        {
+            await Mediator.Send(new CreateRoleCommand(_newRoleName.Trim()));
+            _newRoleName = string.Empty;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to create role");
+            _roleActionError = ex.Message;
+        }
+        finally
+        {
+            _addingRole = false;
+        }
+    }
+
+    private async Task DeleteRoleAsync(string role)
+    {
+        _deletingRole = role;
+        _roleActionError = null;
+        try
+        {
+            await Mediator.Send(new DeleteRoleCommand(role));
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to delete role {Role}", role);
+            _roleActionError = ex.Message;
+        }
+        finally
+        {
+            _deletingRole = null;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_matrix is null) return;
+
+        _saving = true;
+        _saveError = null;
+        _savedMessage = null;
+        try
+        {
+            var assignments = _edits
+                .Select(kv => new RolePermissionAssignment(kv.Key.Role, kv.Key.Key, kv.Value))
+                .ToList();
+
+            if (assignments.Count > 0)
+            {
+                await Mediator.Send(new UpdateRolePermissionsCommand(assignments));
+            }
+
+            _savedMessage = "Permissions saved.";
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save role permissions");
+            _saveError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

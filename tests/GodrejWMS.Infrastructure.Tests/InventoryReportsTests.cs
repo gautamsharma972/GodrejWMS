@@ -44,8 +44,7 @@ public class InventoryReportsTests
         db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = position.Id, MfgMonth = 202601, QuantityBoxes = 4 });
         await db.SaveChangesAsync();
 
-        var currentUser = new FakeCurrentUser("Admin");
-        var handler = new GetInventoryValuationHandler(db, currentUser);
+        var handler = new GetInventoryValuationHandler(db, new FakePermissionService());
         var rows = await handler.Handle(new GetInventoryValuationQuery(), CancellationToken.None);
 
         var row = Assert.Single(rows);
@@ -57,11 +56,42 @@ public class InventoryReportsTests
     public async Task Valuation_AllowsOperator()
     {
         var db = SeedWarehouseMasters();
-        var currentUser = new FakeCurrentUser("Operator");
-        var handler = new GetInventoryValuationHandler(db, currentUser);
+        var handler = new GetInventoryValuationHandler(db, new FakePermissionService());
 
         var rows = await handler.Handle(new GetInventoryValuationQuery(), CancellationToken.None);
         Assert.Empty(rows);
+    }
+
+    [Fact]
+    public async Task MaterialStockReport_GroupsByMaterialAndPkm_AndAppliesQuantityFilters()
+    {
+        var db = SeedWarehouseMasters();
+        var rack = new Rack { Code = "A", Columns = 2, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
+        var firstPosition = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 1 };
+        var secondPosition = new PalletPosition { Column = 2, Level = 1, LocationCode = "A-02-01", MaxPallets = 1 };
+        rack.PalletPositions.Add(firstPosition);
+        rack.PalletPositions.Add(secondPosition);
+        db.Racks.Add(rack);
+        var material = NewMaterial(40019311, mrpPrice: 125.50m);
+        db.Materials.Add(material);
+        await db.SaveChangesAsync();
+
+        db.StockBatches.AddRange(
+            new StockBatch { MaterialId = material.Id, PalletPositionId = firstPosition.Id, MfgMonth = 202601, QuantityBoxes = 4 },
+            new StockBatch { MaterialId = material.Id, PalletPositionId = secondPosition.Id, MfgMonth = 202601, QuantityBoxes = 7 },
+            new StockBatch { MaterialId = material.Id, PalletPositionId = secondPosition.Id, MfgMonth = 202602, QuantityBoxes = 2 });
+        await db.SaveChangesAsync();
+
+        var handler = new GetMaterialStockReportHandler(db, new FakeWarehouseAccessService(), new FakePermissionService());
+        var rows = await handler.Handle(new GetMaterialStockReportQuery(new MaterialStockReportFilter(
+            Search: "40019311", PkmFrom: 202601, PkmTo: 202601, MinMrp: 100m, MaxMrp: 150m,
+            MinBoxes: 10m, MaxBoxes: 12m)), CancellationToken.None);
+
+        var row = Assert.Single(rows);
+        Assert.Equal(40019311, row.MaterialCode);
+        Assert.Equal(202601, row.Pkm);
+        Assert.Equal(125.50m, row.Mrp);
+        Assert.Equal(11, row.BoxQuantity);
     }
 
     [Fact]
@@ -117,16 +147,24 @@ public class InventoryReportsTests
         Assert.Equal(50, typeRow.OccupancyPercent);
     }
 
-    private sealed class FakeCurrentUser(string role) : ICurrentUserService
+    private sealed class FakePermissionService : GodrejWMS.Application.Common.Permissions.IPermissionService
     {
-        public string? UserId => "test-user";
-        public string? UserName => "test@godrejwms.local";
-        public bool IsInRole(string requestedRole) => requestedRole == role;
+        public Task<bool> HasPermissionAsync(string permissionKey, CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
     }
 
     private sealed class FakeClock : IDateTimeProvider
     {
         public DateTimeOffset UtcNow { get; } = new(2026, 9, 16, 0, 0, 0, TimeSpan.Zero);
         public DateOnly Today => new(2026, 9, 16);
+    }
+
+    private sealed class FakeWarehouseAccessService : IWarehouseAccessService
+    {
+        public Task<IReadOnlyList<WarehouseOption>> GetAccessibleWarehousesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<WarehouseOption>>([]);
+
+        public Task<bool> HasAccessAsync(int warehouseId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
     }
 }

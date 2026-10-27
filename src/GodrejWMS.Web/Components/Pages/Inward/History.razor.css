@@ -1,0 +1,33 @@
+.inward-history-header-actions {
+    flex-wrap: nowrap;
+}
+
+.inward-history-header-actions ::deep .warehouse-select {
+    flex: 0 1 18rem;
+    width: 18rem;
+    min-width: 15rem;
+    max-width: 18rem;
+}
+
+.inward-history-header-actions .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+    .history-register .panel-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .inward-history-header-actions {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .inward-history-header-actions ::deep .warehouse-select {
+        flex: 1 1 15rem;
+        width: auto;
+        max-width: none;
+    }
+}

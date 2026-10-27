@@ -109,4 +109,6 @@ file sealed class TestCurrentUser : GodrejWMS.Application.Common.Interfaces.ICur
     public string? UserName => "test@godrejwms.local";
 
     public bool IsInRole(string role) => true;
+
+    public IReadOnlyList<string> Roles => ["Superadmin"];
 }

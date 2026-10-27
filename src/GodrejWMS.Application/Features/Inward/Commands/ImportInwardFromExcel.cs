@@ -6,7 +6,7 @@ using MediatR;
 namespace GodrejWMS.Application.Features.Inward.Commands;
 
 /// <summary>Bulk inward upload: parses an "inward" sheet-shaped Excel file, then delegates to <see cref="SubmitInwardCommand"/>.</summary>
-public sealed record ImportInwardFromExcelCommand(Stream FileStream) : IRequest<InwardResultDto>;
+public sealed record ImportInwardFromExcelCommand(Stream FileStream, int WarehouseId) : IRequest<InwardResultDto>;
 
 public sealed class ImportInwardFromExcelValidator : AbstractValidator<ImportInwardFromExcelCommand>
 {
@@ -27,6 +27,6 @@ public sealed class ImportInwardFromExcelHandler(IExcelService excel, IMediator 
             .Select(r => new SubmitInwardLine(r.MaterialCode, r.QuantityBoxes, r.MfgMonthText))
             .ToList();
 
-        return mediator.Send(new SubmitInwardCommand(lines), cancellationToken);
+        return mediator.Send(new SubmitInwardCommand(lines, request.WarehouseId), cancellationToken);
     }
 }

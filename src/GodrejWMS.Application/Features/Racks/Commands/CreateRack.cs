@@ -29,12 +29,16 @@ public sealed record CreateRackCommand(
     int LocationSubtypeId,
     int ZoneTypeId,
     int StartingDistancePriority,
-    int MaxPallets) : IRequest<int>;
+    int MaxPallets,
+    int WarehouseId) : IRequest<int>;
 
 public sealed class CreateRackValidator : AbstractValidator<CreateRackCommand>
 {
-    public CreateRackValidator(IApplicationDbContext db)
+    public CreateRackValidator(IApplicationDbContext db, IWarehouseAccessService warehouseAccess)
     {
+        RuleFor(x => x.WarehouseId)
+            .MustAsync((id, ct) => warehouseAccess.HasAccessAsync(id, ct))
+            .WithMessage("Warehouse is not assigned to you.");
         RuleFor(x => x.Code)
             .NotEmpty()
             .MaximumLength(10)
@@ -111,6 +115,7 @@ public sealed class CreateRackHandler(IApplicationDbContext db, IDateTimeProvide
 
         var rack = new Rack
         {
+            WarehouseId = request.WarehouseId,
             Code = request.Code.Trim().ToUpperInvariant(),
             Name = namePrefix,
             FromColumn = request.FromColumn,

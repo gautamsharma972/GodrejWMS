@@ -1,5 +1,5 @@
 @page "/inventory-movement/by-sku"
-@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInventoryMovement)]
 @using GodrejWMS.Application.Features.InventoryMovement.Commands
 @using GodrejWMS.Application.Features.InventoryMovement.Dtos
 @using GodrejWMS.Application.Features.InventoryMovement.Queries
@@ -100,7 +100,7 @@
                                 @foreach (var line in SortedLines)
                                 {
                                     <tr @key="line">
-                                        <td><input type="checkbox" class="form-check-input" @bind="line.IsSelected" /></td>
+                                        <td><input type="checkbox" class="form-check-input" @bind="line.IsSelected" @bind:after="InvalidateValidation" /></td>
                                         <td>@line.Record.MfgMonthLabel</td>
                                         <td><span class="record-code">@line.Record.LocationCode</span></td>
                                         <td class="text-end">@line.Record.QuantityBoxes.ToString("0.###")</td>
@@ -109,7 +109,7 @@
                                                 <input class="form-control form-control-sm" placeholder="e.g. A-05-01" autocomplete="off"
                                                        aria-label="@($"New location for {line.Record.LocationCode}")"
                                                        disabled="@(!line.IsSelected)"
-                                                       @bind="line.NewLocationCode" @bind:event="oninput"
+                                                       @bind="line.NewLocationCode" @bind:event="oninput" @bind:after="InvalidateValidation"
                                                        @onkeyup="e => OnNewLocationKeyUp(line, e)"
                                                        @onfocusout="() => OnNewLocationBlur(line)" />
                                                 @if (line.ShowSuggestions && line.Suggestions.Count > 0)
@@ -133,7 +133,7 @@
                                             </div>
                                         </td>
                                         <td style="max-width:120px">
-                                            <input type="number" class="form-control form-control-sm" min="0" step="0.001" disabled="@(!line.IsSelected)" @bind="line.MoveQuantity" />
+                                            <input type="number" class="form-control form-control-sm" min="0" step="0.001" disabled="@(!line.IsSelected)" @bind="line.MoveQuantity" @bind:after="InvalidateValidation" />
                                         </td>
                                     </tr>
                                 }
@@ -526,6 +526,18 @@
         line.NewLocationCode = suggestion.LocationCode;
         line.Suggestions = [];
         line.ShowSuggestions = false;
+        InvalidateValidation();
+    }
+
+    // Once a line is validated, its ResolvedDestinationId (used by ConfirmAsync) is captured
+    // separately from the editable row - if the user changes the destination, quantity, or which
+    // rows are selected after validating, the old resolved id/quantity would otherwise still be
+    // what actually gets confirmed even though the row now shows different values. Any such edit
+    // discards the stale validation so the user must re-run Continue before confirming again.
+    private void InvalidateValidation()
+    {
+        _validatedLines = null;
+        _confirmError = null;
     }
 
     private async Task OnNewLocationBlur(LineDraft line)

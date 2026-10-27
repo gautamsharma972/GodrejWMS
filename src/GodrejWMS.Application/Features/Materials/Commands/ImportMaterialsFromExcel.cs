@@ -56,6 +56,18 @@ public sealed class ImportMaterialsFromExcelHandler(
                 continue;
             }
 
+            if (row.PackSize <= 0)
+            {
+                errors.Add($"Row {row.RowNumber}: PK Size is required and must be greater than 0.");
+                continue;
+            }
+
+            if (row.PalletCapacityBoxes <= 0)
+            {
+                errors.Add($"Row {row.RowNumber}: Pallet Size is required and must be greater than 0.");
+                continue;
+            }
+
             var movementTypeId = movementTypeIdsByCode.GetValueOrDefault(row.MovementTypeCode, SkuMovementTypeIds.SlowMoving);
             var seasonId = seasonIdsByCode.GetValueOrDefault(row.SeasonCode, SeasonIds.Rainy);
 

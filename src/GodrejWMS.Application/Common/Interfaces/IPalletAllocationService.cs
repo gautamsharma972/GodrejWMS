@@ -11,13 +11,15 @@ public interface IPalletAllocationService
 {
     /// <summary>
     /// Allocates <paramref name="quantityBoxes"/> of <paramref name="materialId"/> (manufactured in
-    /// <paramref name="mfgMonth"/>) across one or more pallet positions. Existing confirmed stock and
-    /// pending put-away reservations are both considered occupied for capacity scoring.
+    /// <paramref name="mfgMonth"/>) across one or more pallet positions within
+    /// <paramref name="warehouseId"/> only. Existing confirmed stock and pending put-away
+    /// reservations are both considered occupied for capacity scoring.
     /// </summary>
     Task<InwardAllocationResult> AllocateAsync(
         int materialId,
         decimal quantityBoxes,
         int mfgMonth,
+        int warehouseId,
         int stockSubtypeId = LocationSubtypeIds.Good,
         CancellationToken cancellationToken = default);
 }

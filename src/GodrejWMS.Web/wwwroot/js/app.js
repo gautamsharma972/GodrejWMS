@@ -18,6 +18,7 @@ document.addEventListener('click', (event) => {
 
 const VISITS_STORAGE_KEY = 'godrejWms.visits';
 const SIDEBAR_STORAGE_KEY = 'godrejWms.sidebarCollapsed';
+const ACTIVE_WAREHOUSE_STORAGE_KEY = 'godrejWms.activeWarehouseId';
 
 const idleTimerEvents = ['mousedown', 'mousemove', 'keydown', 'wheel', 'touchstart', 'scroll'];
 let idleTimerHandle = null;
@@ -46,6 +47,24 @@ window.godrejWms = {
             window.localStorage.setItem(SIDEBAR_STORAGE_KEY, collapsed ? 'true' : 'false');
         } catch {
             // The sidebar still works for this session when browser storage is unavailable.
+        }
+    },
+
+    getActiveWarehouseId: function () {
+        try {
+            const value = window.localStorage.getItem(ACTIVE_WAREHOUSE_STORAGE_KEY);
+            const parsed = value === null ? NaN : parseInt(value, 10);
+            return Number.isNaN(parsed) ? null : parsed;
+        } catch {
+            return null;
+        }
+    },
+
+    setActiveWarehouseId: function (warehouseId) {
+        try {
+            window.localStorage.setItem(ACTIVE_WAREHOUSE_STORAGE_KEY, String(warehouseId));
+        } catch {
+            // Just a convenience re-pick on next visit; the picker still works for this session.
         }
     },
 

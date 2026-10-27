@@ -24,7 +24,7 @@ public class RejectPulloutTests
         await db.SaveChangesAsync();
 
         var submit = new SubmitPulloutHandler(db, new PulloutAllocationService(db), new TestClock(), new TestCurrentUser());
-        var preview = await submit.Handle(new([new SubmitPulloutLine(123, 4)]), CancellationToken.None);
+        var preview = await submit.Handle(new([new SubmitPulloutLine(123, 4)], WarehouseId: 1), CancellationToken.None);
         return (db, submit, preview.ReferenceNumber);
     }
 
@@ -131,4 +131,6 @@ file sealed class TestCurrentUser : ICurrentUserService
     public string? UserName => "test@godrejwms.local";
 
     public bool IsInRole(string role) => true;
+
+    public IReadOnlyList<string> Roles => ["Superadmin"];
 }

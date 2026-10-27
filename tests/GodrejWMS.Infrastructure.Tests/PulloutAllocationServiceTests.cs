@@ -42,7 +42,7 @@ public class PulloutAllocationServiceTests
         var preview = await handler.Handle(new SubmitPulloutCommand([
             new SubmitPulloutLine(material.MaterialNumber, 300, "Bangalore"),
             new SubmitPulloutLine(material.MaterialNumber, 200, "A-bad")
-        ]), default);
+        ], WarehouseId: 1), default);
 
         Assert.Collection(preview.Lines,
             line =>
@@ -65,11 +65,20 @@ public class PulloutAllocationServiceTests
             pick.MfgMonthLabel,
             pick.LocationCode,
             line.PlantName))).ToList();
-        var bytes = new ClosedXmlExcelService().WritePulloutDownload(downloadRows);
+        var loadingSheetHeader = new PulloutLoadingSheetHeaderDto(preview.ReferenceNumber, preview.CreatedAt, "Bangalore");
+        var loadingSheetRows = preview.Lines
+            .Select(line => new PulloutLoadingSheetRowDto(line.MaterialNumber, line.MaterialDescription, line.RequestedQuantityBoxes, line.Status))
+            .ToList();
+        var bytes = new ClosedXmlExcelService().WritePulloutDownload(downloadRows, loadingSheetHeader, loadingSheetRows);
         using var workbook = new XLWorkbook(new MemoryStream(bytes));
         var sheet = workbook.Worksheet("Pullout Download");
         Assert.Equal("Bangalore", sheet.Cell(2, 6).GetString());
         Assert.Equal("A-bad", sheet.Cell(3, 6).GetString());
+
+        var loadingSheet = workbook.Worksheet("Loading Sheet");
+        Assert.Equal(preview.ReferenceNumber, loadingSheet.Cell(10, 7).GetString());
+        Assert.Equal("Bangalore", loadingSheet.Cell(7, 2).GetString());
+        Assert.Equal("Available", loadingSheet.Cell(12, 8).GetString());
     }
 
     [Fact]
@@ -83,15 +92,15 @@ public class PulloutAllocationServiceTests
             db, new PulloutAllocationService(db), clock, new PulloutUser());
         GodrejWMS.Application.Features.Pullout.Commands.SubmitPulloutLine[] lines = [new(123, 1)];
 
-        var first = await handler.Handle(new(lines), default);
-        var second = await handler.Handle(new(lines), default);
+        var first = await handler.Handle(new(lines, WarehouseId: 1), default);
+        var second = await handler.Handle(new(lines, WarehouseId: 1), default);
         Assert.Equal("PICK-20260916-162052", first.ReferenceNumber);
         Assert.Equal("PICK-20260916-162053", second.ReferenceNumber);
         var refreshed = await handler.Handle(new(lines, RefreshReference: first.ReferenceNumber), default);
         Assert.Equal(first.ReferenceNumber, refreshed.ReferenceNumber);
 
         clock.UtcNow = clock.UtcNow.AddDays(1);
-        var nextDay = await handler.Handle(new(lines), default);
+        var nextDay = await handler.Handle(new(lines, WarehouseId: 1), default);
         Assert.Equal("PICK-20260917-000001", nextDay.ReferenceNumber);
     }
 
@@ -111,7 +120,7 @@ public class PulloutAllocationServiceTests
         var handler = new GodrejWMS.Application.Features.Pullout.Commands.SubmitPulloutHandler(
             db, new PulloutAllocationService(db), new PulloutClock(), new PulloutUser());
         GodrejWMS.Application.Features.Pullout.Commands.SubmitPulloutLine[] lines = [new(123, 3), new(123, 2)];
-        var preview = await handler.Handle(new(lines), default);
+        var preview = await handler.Handle(new(lines, WarehouseId: 1), default);
         await db.SaveChangesAsync();
         Assert.Equal(10, db.StockBatches.Single().QuantityBoxes);
         Assert.False(Assert.Single(db.PulloutTransactions).IsConfirmed);
@@ -134,7 +143,7 @@ public class PulloutAllocationServiceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(new(lines, preview), default));
         Assert.Equal(5, db.StockBatches.Single().QuantityBoxes);
 
-        var nextPreview = await handler.Handle(new(lines), default);
+        var nextPreview = await handler.Handle(new(lines, WarehouseId: 1), default);
         db.StockBatches.Single().QuantityBoxes = 1;
         await db.SaveChangesAsync();
         await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(new(lines, nextPreview), default));
@@ -191,7 +200,7 @@ public class PulloutAllocationServiceTests
         var sut = new PulloutAllocationService(db);
 
         // Act: pick 15 boxes — should fully drain MAR (10) then take 5 from APR, leaving MAY untouched.
-        var result = await sut.AllocateAsync(material.Id, 15);
+        var result = await sut.AllocateAsync(material.Id, 15, warehouseId: 1);
         await db.SaveChangesAsync(); // the service mutates tracked entities but leaves SaveChanges to the caller
 
         // Assert
@@ -240,7 +249,7 @@ public class PulloutAllocationServiceTests
 
         var sut = new PulloutAllocationService(db);
 
-        var result = await sut.AllocateAsync(material.Id, 10);
+        var result = await sut.AllocateAsync(material.Id, 10, warehouseId: 1);
         await db.SaveChangesAsync();
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
@@ -267,7 +276,7 @@ public class PulloutAllocationServiceTests
         await db.SaveChangesAsync();
 
         var sut = new PulloutAllocationService(db);
-        var result = await sut.AllocateAsync(material.Id, 5);
+        var result = await sut.AllocateAsync(material.Id, 5, warehouseId: 1);
 
         Assert.Equal(AllocationStatus.Failed, result.Status);
         Assert.Equal(0, result.PickedQuantityBoxes);
@@ -308,7 +317,7 @@ public class PulloutAllocationServiceTests
 
         await db.SaveChangesAsync();
 
-        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 45, preview: true);
+        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 45, warehouseId: 1, preview: true);
 
         // Level-major (DistancePriority) would give A-01-01, A-02-01, A-03-01, A-01-02, ...
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
@@ -329,7 +338,7 @@ public class PulloutAllocationServiceTests
         db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-02-02"].Id, MfgMonth = 202606, QuantityBoxes = 10 });
         await db.SaveChangesAsync();
 
-        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 35, preview: true);
+        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 35, warehouseId: 1, preview: true);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         Assert.Equal(
@@ -350,4 +359,5 @@ file sealed class PulloutUser : GodrejWMS.Application.Common.Interfaces.ICurrent
     public string? UserId => "test";
     public string? UserName => "test";
     public bool IsInRole(string role) => true;
+    public IReadOnlyList<string> Roles => ["Superadmin"];
 }

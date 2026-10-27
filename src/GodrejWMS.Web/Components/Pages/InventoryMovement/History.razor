@@ -1,5 +1,5 @@
 @page "/inventory-movement/history"
-@attribute [Authorize(Roles = "Admin,Supervisor,Operator")]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInventoryMovement)]
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Features.InventoryMovement.Dtos
 @using GodrejWMS.Application.Features.InventoryMovement.Queries
@@ -48,6 +48,8 @@
                 <input class="form-control filter-control" placeholder="Destination Location" @bind="_destinationLocation" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
                 <input class="form-control filter-control" type="date" title="From date" value="@_fromDate" @onchange="OnFromChanged" />
                 <input class="form-control filter-control" type="date" title="To date" value="@_toDate" @onchange="OnToChanged" />
+                <WarehouseSelect WarehouseId="_warehouseFilter" WarehouseIdChanged="OnWarehouseFilterChangedAsync"
+                                  AllowClear="true" Placeholder="Filter by warehouse..." />
             </div>
             @if (_page is not null)
             {
@@ -162,6 +164,7 @@
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private int _loadSequence;
     private string _search = string.Empty;
+    private int? _warehouseFilter;
     private string _sourceLocation = string.Empty;
     private string _destinationLocation = string.Empty;
     private string _fromDate = string.Empty;
@@ -189,6 +192,7 @@
                 DestinationLocationCode: string.IsNullOrWhiteSpace(_destinationLocation) ? null : _destinationLocation.Trim(),
                 FromDate: ParseDate(_fromDate),
                 ToDate: ParseDate(_toDate),
+                WarehouseId: _warehouseFilter,
                 PageNumber: page,
                 PageSize: 10));
 
@@ -203,6 +207,12 @@
     }
 
     private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadPage(1);
+
+    private async Task OnWarehouseFilterChangedAsync(int? warehouseId)
+    {
+        _warehouseFilter = warehouseId;
+        await LoadPage(1);
+    }
 
     private async Task OnFromChanged(ChangeEventArgs e)
     {
