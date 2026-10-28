@@ -3,6 +3,7 @@ using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Domain.Entities;
+using GodrejWMS.Domain.Enums;
 using GodrejWMS.Domain.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +15,11 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// the operator confirms it. Confirmed put-aways already have stock booked and can no longer be
 /// moved this way. A reason is mandatory since this always overrides the engine's own recommendation.
 /// </summary>
-public sealed record ChangeInwardPutawayLocationCommand(int PutawayId, int NewPalletPositionId, string? Reason = null) : IRequest<InwardResultDto>;
+public sealed record ChangeInwardPutawayLocationCommand(
+    int PutawayId,
+    int NewPalletPositionId,
+    string? Reason = null,
+    decimal? QuantityBoxes = null) : IRequest<InwardResultDto>;
 
 public sealed class ChangeInwardPutawayLocationValidator : AbstractValidator<ChangeInwardPutawayLocationCommand>
 {
@@ -22,6 +27,11 @@ public sealed class ChangeInwardPutawayLocationValidator : AbstractValidator<Cha
     {
         RuleFor(x => x.PutawayId).GreaterThan(0);
         RuleFor(x => x.NewPalletPositionId).GreaterThan(0);
+        RuleFor(x => x.QuantityBoxes)
+            .GreaterThan(0)
+            .Must(quantity => !quantity.HasValue || decimal.IsInteger(quantity.Value))
+            .WithMessage("Quantity must be a positive whole number.")
+            .When(x => x.QuantityBoxes.HasValue);
         RuleFor(x => x.Reason)
             .NotEmpty()
             .WithMessage("A reason is required when overriding the recommended put-away location.")
@@ -36,6 +46,7 @@ public sealed class ChangeInwardPutawayLocationHandler(IApplicationDbContext db)
     {
         var putaway = await db.InwardPutaways
             .Include(p => p.InwardTransactionLine)
+                .ThenInclude(l => l.Putaways)
             .Include(p => p.PalletPosition)
             .FirstOrDefaultAsync(p => p.Id == request.PutawayId, cancellationToken)
             ?? throw new NotFoundException(nameof(InwardPutaway), request.PutawayId);
@@ -47,7 +58,22 @@ public sealed class ChangeInwardPutawayLocationHandler(IApplicationDbContext db)
 
         var transactionId = putaway.InwardTransactionLine.InwardTransactionId;
 
-        if (putaway.PalletPositionId == request.NewPalletPositionId)
+        var requestedQuantity = request.QuantityBoxes ?? putaway.QuantityBoxes;
+        var otherLineQuantity = putaway.InwardTransactionLine.Putaways
+            .Where(p => p.Id != putaway.Id)
+            .Sum(p => p.QuantityBoxes);
+        if (otherLineQuantity + requestedQuantity > putaway.InwardTransactionLine.RequestedQuantityBoxes)
+        {
+            var availableForThisReservation = Math.Max(0,
+                putaway.InwardTransactionLine.RequestedQuantityBoxes - otherLineQuantity);
+            throw new InvalidOperationException(
+                $"Quantity cannot exceed {availableForThisReservation:0.###} box(es) because the line requested " +
+                $"{putaway.InwardTransactionLine.RequestedQuantityBoxes:0.###} box(es) in total.");
+        }
+
+        var locationChanged = putaway.PalletPositionId != request.NewPalletPositionId;
+        var quantityChanged = putaway.QuantityBoxes != requestedQuantity;
+        if (!locationChanged && !quantityChanged)
         {
             return await LoadResultAsync(transactionId, cancellationToken);
         }
@@ -82,12 +108,12 @@ public sealed class ChangeInwardPutawayLocationHandler(IApplicationDbContext db)
         var otherReservations = await db.InwardPutaways
             .AsNoTracking()
             .Where(p => !p.IsConfirmed && p.Id != putaway.Id && p.PalletPositionId == newPosition.Id)
-            .Select(p => new { p.QuantityBoxes, p.InwardTransactionLine.MaterialId })
+            .Select(p => new { p.QuantityBoxes, p.InwardTransactionLine.MaterialId, p.InwardTransactionLine.MfgMonth })
             .ToListAsync(cancellationToken);
         var confirmedBatches = await db.StockBatches
             .AsNoTracking()
             .Where(b => b.PalletPositionId == newPosition.Id && b.QuantityBoxes > 0)
-            .Select(b => new { b.QuantityBoxes, b.MaterialId })
+            .Select(b => new { b.QuantityBoxes, b.MaterialId, b.MfgMonth })
             .ToListAsync(cancellationToken);
 
         // Same rule the allocation engine's Tier 2 consolidation uses: a position may only ever
@@ -99,22 +125,59 @@ public sealed class ChangeInwardPutawayLocationHandler(IApplicationDbContext db)
                 $"Location {newPosition.LocationCode} already holds a different material and cannot receive this put-away.");
         }
 
+        var targetWarehouseId = await db.Racks
+            .IgnoreQueryFilters()
+            .Where(r => r.Id == newPosition.RackId)
+            .Select(r => r.WarehouseId)
+            .SingleAsync(cancellationToken);
+        var allowPkmMixing = await db.Warehouses
+            .AsNoTracking()
+            .Where(w => w.Id == targetWarehouseId)
+            .Select(w => (bool?)w.AllowPkmMixing)
+            .SingleOrDefaultAsync(cancellationToken) ?? true;
+        if (!allowPkmMixing
+            && (otherReservations.Any(r => r.MfgMonth != putaway.InwardTransactionLine.MfgMonth)
+                || confirmedBatches.Any(b => b.MfgMonth != putaway.InwardTransactionLine.MfgMonth)))
+        {
+            throw new InvalidOperationException(
+                $"Location {newPosition.LocationCode} already holds a different PKM and this warehouse does not allow PKM mixing.");
+        }
+
         var reservedByOthers = otherReservations.Sum(r => r.QuantityBoxes);
         var confirmedStock = confirmedBatches.Sum(b => b.QuantityBoxes);
 
         var effectiveCapacity = PalletCapacityCalculator.EffectiveCapacityBoxes(newPosition, material);
         var free = effectiveCapacity - reservedByOthers - confirmedStock;
 
-        if (free < putaway.QuantityBoxes)
+        if (free < requestedQuantity)
         {
             throw new InvalidOperationException(
-                $"Location {newPosition.LocationCode} does not have enough free capacity ({free:0.###} of {putaway.QuantityBoxes:0.###} box(es) needed).");
+                $"Location {newPosition.LocationCode} does not have enough free capacity ({free:0.###} of {requestedQuantity:0.###} box(es) needed).");
         }
 
         putaway.PalletPositionId = newPosition.Id;
-        putaway.AllocationReason = "Location manually reassigned by operator";
+        putaway.QuantityBoxes = requestedQuantity;
+        putaway.AllocationReason = locationChanged && quantityChanged
+            ? "Location and quantity manually changed by operator"
+            : locationChanged
+                ? "Location manually reassigned by operator"
+                : "Quantity manually changed by operator";
         putaway.OverrideReason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
         putaway.RowVersion++;
+
+        if (quantityChanged)
+        {
+            var allocated = otherLineQuantity + requestedQuantity;
+            putaway.InwardTransactionLine.AllocatedQuantityBoxes = allocated;
+            putaway.InwardTransactionLine.Status = allocated >= putaway.InwardTransactionLine.RequestedQuantityBoxes
+                ? AllocationStatus.Fulfilled
+                : allocated > 0
+                    ? AllocationStatus.Partial
+                    : AllocationStatus.Failed;
+            putaway.InwardTransactionLine.Remarks = allocated >= putaway.InwardTransactionLine.RequestedQuantityBoxes
+                ? null
+                : $"{putaway.InwardTransactionLine.RequestedQuantityBoxes - allocated:0.###} box(es) remain unallocated after the put-away quantity change.";
+        }
         await db.SaveChangesAsync(cancellationToken);
 
         return await LoadResultAsync(transactionId, cancellationToken);

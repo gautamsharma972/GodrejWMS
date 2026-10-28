@@ -7,4 +7,5 @@ public sealed record WarehouseDto(
     int? StateId, string? StateName,
     int? RegionId, string? RegionName,
     string? Address,
+    bool AllowPkmMixing,
     bool IsActive);

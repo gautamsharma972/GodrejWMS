@@ -12,6 +12,34 @@ namespace GodrejWMS.Infrastructure.Tests;
 public class PulloutAllocationServiceTests
 {
     [Fact]
+    public async Task PendingPullout_ReservesStock_ForSubsequentOrders()
+    {
+        using var db = TestDbContextFactory.Create();
+        var rack = new Rack { Code = "A", Columns = 1, Levels = 1 };
+        var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 1 };
+        rack.PalletPositions.Add(position);
+        db.Racks.Add(rack);
+        var material = new Material { MaterialNumber = 900001, Description = "Reserved stock test", DesignType = "X", SeasonId = SeasonIds.Rainy };
+        db.Materials.Add(material);
+        await db.SaveChangesAsync();
+        db.StockBatches.Add(new StockBatch
+        {
+            MaterialId = material.Id, PalletPositionId = position.Id,
+            MfgMonth = 202610, QuantityBoxes = 10
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new SubmitPulloutHandler(db, new PulloutAllocationService(db), new PulloutClock(), new PulloutUser());
+        var first = await handler.Handle(new SubmitPulloutCommand([new(material.MaterialNumber, 7)], WarehouseId: 1), default);
+        var second = await handler.Handle(new SubmitPulloutCommand([new(material.MaterialNumber, 7)], WarehouseId: 1), default);
+
+        Assert.Equal(7, Assert.Single(first.Lines).PickedQuantityBoxes);
+        Assert.Equal(3, Assert.Single(second.Lines).PickedQuantityBoxes);
+        Assert.Equal(10, db.StockBatches.Single().QuantityBoxes);
+        Assert.Equal(10, db.PulloutPicks.Sum(p => p.QuantityBoxes));
+    }
+
+    [Fact]
     public async Task Preview_And_Download_Preserve_Different_Plants_For_The_Same_Material()
     {
         using var db = TestDbContextFactory.Create();
@@ -65,15 +93,27 @@ public class PulloutAllocationServiceTests
             pick.MfgMonthLabel,
             pick.LocationCode,
             line.PlantName))).ToList();
-        var loadingSheetHeader = new PulloutLoadingSheetHeaderDto(preview.ReferenceNumber, preview.CreatedAt, "Bangalore");
+        var loadingSheetHeader = new PulloutLoadingSheetHeaderDto(
+            preview.ReferenceNumber, preview.CreatedAt, "Bangalore",
+            WarehouseAddress: "C/O RPM Logistics Pvt Ltd. Add- E - 2 Vadpa Village BHIWANDI-421302");
         var loadingSheetRows = preview.Lines
             .Select(line => new PulloutLoadingSheetRowDto(line.MaterialNumber, line.MaterialDescription, line.RequestedQuantityBoxes, line.Status))
             .ToList();
         var bytes = new ClosedXmlExcelService().WritePulloutDownload(downloadRows, loadingSheetHeader, loadingSheetRows);
         using var workbook = new XLWorkbook(new MemoryStream(bytes));
         var sheet = workbook.Worksheet("Pullout Download");
-        Assert.Equal("Bangalore", sheet.Cell(2, 6).GetString());
-        Assert.Equal("A-bad", sheet.Cell(3, 6).GetString());
+        Assert.Equal("GODREJ CONSUMER PRODUCTS LTD", sheet.Cell("A2").GetString());
+        Assert.Equal("C/O RPM Logistics Pvt Ltd. Add- E - 2 Vadpa Village BHIWANDI-421302", sheet.Cell("A3").GetString());
+        Assert.Equal("Picklist", sheet.Cell("A4").GetString());
+        Assert.Equal("Material Code", sheet.Cell("A10").GetString());
+        Assert.Equal("Bangalore", sheet.Cell(11, 6).GetString());
+        Assert.Equal("A-bad", sheet.Cell(12, 6).GetString());
+        Assert.Equal("Bangalore", sheet.Cell("B7").GetString());
+        Assert.Equal(preview.CreatedAt.ToString("dd.MM.yyyy"), sheet.Cell("G6").GetString());
+        Assert.Contains(sheet.MergedRanges, range => range.RangeAddress.ToString() == "A2:H2");
+        Assert.False(sheet.ShowGridLines);
+        Assert.Equal(2, sheet.PageSetup.FirstRowToRepeatAtTop);
+        Assert.Equal(8, sheet.PageSetup.LastRowToRepeatAtTop);
 
         var loadingSheet = workbook.Worksheet("Loading Sheet");
         Assert.Equal(preview.ReferenceNumber, loadingSheet.Cell(10, 7).GetString());

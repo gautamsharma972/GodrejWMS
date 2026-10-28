@@ -52,6 +52,29 @@ public sealed record StockSummaryDto(
     decimal TodayPulloutBoxes,
     int FullLocationCount,
     decimal FreeCapacityBoxes,
+    int LowStockLocationCount,
     IReadOnlyList<SeasonBreakdownDto> BySeason);
+
+public sealed record LowStockLocationDto(
+    int MaterialId,
+    long MaterialNumber,
+    string MaterialDescription,
+    int MfgMonth,
+    string MfgMonthLabel,
+    int PalletPositionId,
+    string LocationCode,
+    decimal QuantityBoxes,
+    decimal MrpPrice,
+    int PalletCapacityBoxes,
+    decimal ThresholdBoxes);
+
+public sealed record LowStockMovementImportRow(
+    long MaterialNumber,
+    string MfgMonthText,
+    string SourceLocationCode,
+    string DestinationLocationCode,
+    decimal QuantityBoxes,
+    string ReasonCode,
+    int RowNumber);
 
 public sealed record SeasonBreakdownDto(int SeasonId, string SeasonCode, string SeasonName, decimal TotalQuantityBoxes, int MaterialCount);

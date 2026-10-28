@@ -93,7 +93,7 @@ public class InventoryMovementServiceTests
     }
 
     [Fact]
-    public async Task Test4_RejectsMoveIntoDestinationHoldingDifferentSku()
+    public async Task Test4_AllowsMoveIntoDestinationHoldingDifferentSku()
     {
         var (db, material, source, destination, reason) = SeedScenario();
         var otherMaterial = new Material
@@ -109,8 +109,9 @@ public class InventoryMovementServiceTests
         var sut = CreateService(db);
         var result = await sut.ExecuteAsync(new InventoryMovementLineRequest(material.Id, 202603, source.Id, destination.Id, 10), reason.Id);
 
-        Assert.False(result.Success);
-        Assert.Contains("different SKU", result.ErrorMessage);
+        Assert.True(result.Success);
+        Assert.Equal(2, db.StockBatches.Count(b => b.PalletPositionId == destination.Id && b.QuantityBoxes > 0));
+        Assert.Equal(10, db.StockBatches.Single(b => b.PalletPositionId == destination.Id && b.MaterialId == material.Id).QuantityBoxes);
     }
 
     [Fact]
@@ -129,16 +130,16 @@ public class InventoryMovementServiceTests
     }
 
     [Fact]
-    public async Task Test6_RejectsWhenDestinationCapacityInsufficient()
+    public async Task Test6_DoesNotValidateDestinationPalletCapacity()
     {
         var (db, material, source, destination, reason) = SeedScenario(sourceQty: 25, destinationCapacity: 20);
         var sut = CreateService(db);
 
         var result = await sut.ExecuteAsync(new InventoryMovementLineRequest(material.Id, 202603, source.Id, destination.Id, 25), reason.Id);
 
-        Assert.False(result.Success);
-        Assert.Contains("insufficient capacity", result.ErrorMessage);
-        Assert.Equal(25, db.StockBatches.Single(b => b.PalletPositionId == source.Id).QuantityBoxes);
+        Assert.True(result.Success);
+        Assert.Equal(0, db.StockBatches.Single(b => b.PalletPositionId == source.Id).QuantityBoxes);
+        Assert.Equal(25, db.StockBatches.Single(b => b.PalletPositionId == destination.Id).QuantityBoxes);
     }
 
     [Fact]
@@ -166,7 +167,7 @@ public class InventoryMovementServiceTests
     }
 
     [Fact]
-    public async Task Test9_RejectsWhenDestinationIsInactive()
+    public async Task Test9_AllowsInactiveDestination()
     {
         var (db, material, source, destination, reason) = SeedScenario();
         destination.IsActive = false;
@@ -175,8 +176,8 @@ public class InventoryMovementServiceTests
         var sut = CreateService(db);
         var result = await sut.ExecuteAsync(new InventoryMovementLineRequest(material.Id, 202603, source.Id, destination.Id, 10), reason.Id);
 
-        Assert.False(result.Success);
-        Assert.Contains("inactive", result.ErrorMessage);
+        Assert.True(result.Success);
+        Assert.Equal(10, db.StockBatches.Single(b => b.PalletPositionId == destination.Id).QuantityBoxes);
     }
 
     [Fact]

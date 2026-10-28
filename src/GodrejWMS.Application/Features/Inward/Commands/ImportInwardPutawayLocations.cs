@@ -3,6 +3,7 @@ using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
+using GodrejWMS.Domain.Enums;
 using GodrejWMS.Domain.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +15,7 @@ public sealed record ImportInwardPutawayLocationsCommand(
     Stream FileStream,
     string Reason) : IRequest<ImportInwardPutawayLocationsResult>;
 
-public sealed record ImportInwardPutawayLocationsResult(int UpdatedLocations);
+public sealed record ImportInwardPutawayLocationsResult(int UpdatedLocations, int UpdatedQuantities);
 
 public sealed class ImportInwardPutawayLocationsValidator : AbstractValidator<ImportInwardPutawayLocationsCommand>
 {
@@ -24,7 +25,7 @@ public sealed class ImportInwardPutawayLocationsValidator : AbstractValidator<Im
         RuleFor(x => x.FileStream).NotNull();
         RuleFor(x => x.Reason)
             .NotEmpty()
-            .WithMessage("A reason is required when changing put-away locations from Excel.")
+            .WithMessage("A reason is required when changing put-away allocations from Excel.")
             .MaximumLength(250);
     }
 }
@@ -56,6 +57,12 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
             throw new InvalidOperationException("A rejected GRN cannot be changed.");
         }
 
+        var allowPkmMixing = await db.Warehouses
+            .AsNoTracking()
+            .Where(w => w.Id == transaction.WarehouseId)
+            .Select(w => (bool?)w.AllowPkmMixing)
+            .SingleOrDefaultAsync(cancellationToken) ?? true;
+
         var putaways = transaction.Lines.SelectMany(line => line.Putaways).OrderBy(p => p.Id).ToList();
         if (putaways.Count == 0)
         {
@@ -78,7 +85,7 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
         }
 
         var putawaysById = putaways.ToDictionary(p => p.Id);
-        var targetCodes = new Dictionary<int, (string Code, int RowNumber)>();
+        var targetPlans = new Dictionary<int, (string Code, decimal QuantityBoxes, int RowNumber)>();
         foreach (var row in identifiedRows)
         {
             if (!row.ReferenceNumber.Equals(transaction.ReferenceNumber, StringComparison.OrdinalIgnoreCase))
@@ -107,11 +114,16 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
             }
 
             if (row.RequestedQuantityBoxes != line.RequestedQuantityBoxes
-                || row.AllocatedQuantityBoxes != line.AllocatedQuantityBoxes
-                || row.QuantityBoxes != putaway.QuantityBoxes)
+                || row.AllocatedQuantityBoxes != line.AllocatedQuantityBoxes)
             {
                 throw new InvalidOperationException(
-                    $"Row {row.RowNumber}: quantities do not match the current GRN allocation. Download the workbook again before editing locations.");
+                    $"Row {row.RowNumber}: line quantities do not match the current GRN allocation. Download the workbook again before editing allocations.");
+            }
+
+            if (row.QuantityBoxes <= 0 || !decimal.IsInteger(row.QuantityBoxes))
+            {
+                throw new InvalidOperationException(
+                    $"Row {row.RowNumber}: Qty at Position must be a positive whole number.");
             }
 
             if (string.IsNullOrWhiteSpace(row.LocationCode))
@@ -133,7 +145,13 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
                     $"Row {row.RowNumber}: confirmed put-away {putaway.PalletPosition.LocationCode} can no longer be moved.");
             }
 
-            targetCodes[putaway.Id] = (targetCode, row.RowNumber);
+            if (putaway.IsConfirmed && row.QuantityBoxes != putaway.QuantityBoxes)
+            {
+                throw new InvalidOperationException(
+                    $"Row {row.RowNumber}: confirmed put-away quantity {putaway.QuantityBoxes:0.###} can no longer be changed.");
+            }
+
+            targetPlans[putaway.Id] = (targetCode, row.QuantityBoxes, row.RowNumber);
         }
 
         var workbookIds = identifiedRows.Select(row => row.PutawayId!.Value).ToHashSet();
@@ -150,7 +168,18 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
             throw new InvalidOperationException("All put-away locations in this GRN are already confirmed and cannot be changed.");
         }
 
-        var distinctTargetCodes = pendingPutaways.Select(p => targetCodes[p.Id].Code).Distinct().ToArray();
+
+        foreach (var line in transaction.Lines)
+        {
+            var plannedTotal = line.Putaways.Sum(putaway => targetPlans[putaway.Id].QuantityBoxes);
+            if (plannedTotal > line.RequestedQuantityBoxes)
+            {
+                throw new InvalidOperationException(
+                    $"Material {line.Material.MaterialNumber}: planned quantity {plannedTotal:0.###} exceeds the requested {line.RequestedQuantityBoxes:0.###} box(es).");
+            }
+        }
+
+        var distinctTargetCodes = pendingPutaways.Select(p => targetPlans[p.Id].Code).Distinct().ToArray();
         var positions = await db.PalletPositions
             .Include(p => p.StockBatches)
             .Where(p => distinctTargetCodes.Contains(p.LocationCode))
@@ -159,7 +188,7 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
 
         foreach (var putaway in pendingPutaways)
         {
-            var target = targetCodes[putaway.Id];
+            var target = targetPlans[putaway.Id];
             if (!positionsByCode.ContainsKey(target.Code))
             {
                 throw new InvalidOperationException($"Row {target.RowNumber}: location {target.Code} was not found.");
@@ -177,7 +206,9 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
             {
                 p.PalletPositionId,
                 p.QuantityBoxes,
-                p.InwardTransactionLine.MaterialId
+                p.InwardTransactionLine.MaterialId,
+                p.InwardTransactionLine.MfgMonth,
+                p.InwardTransactionLine.InwardTransaction.ReferenceNumber
             })
             .ToListAsync(cancellationToken);
 
@@ -190,11 +221,16 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
             p => p.StockBatches.Where(b => b.QuantityBoxes > 0).Select(b => b.MaterialId)
                 .Concat(otherReservations.Where(r => r.PalletPositionId == p.Id).Select(r => r.MaterialId))
                 .ToHashSet());
+        var mfgMonths = positions.ToDictionary(
+            p => p.Id,
+            p => p.StockBatches.Where(b => b.QuantityBoxes > 0).Select(b => b.MfgMonth)
+                .Concat(otherReservations.Where(r => r.PalletPositionId == p.Id).Select(r => r.MfgMonth))
+                .ToHashSet());
 
-        var plan = new Dictionary<int, PalletPosition>();
+        var plan = new Dictionary<int, (PalletPosition Position, decimal QuantityBoxes)>();
         foreach (var putaway in pendingPutaways.OrderBy(p => p.Id))
         {
-            var targetInfo = targetCodes[putaway.Id];
+            var targetInfo = targetPlans[putaway.Id];
             var target = positionsByCode[targetInfo.Code];
             var material = putaway.InwardTransactionLine.Material;
 
@@ -222,29 +258,70 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
                     $"Row {targetInfo.RowNumber}: location {target.LocationCode} already holds a different SKU.");
             }
 
-            var capacity = PalletCapacityCalculator.EffectiveCapacityBoxes(target, material);
-            var free = capacity - occupied[target.Id];
-            if (free < putaway.QuantityBoxes)
+            if (!allowPkmMixing && mfgMonths[target.Id].Count > 0
+                && !mfgMonths[target.Id].SetEquals([putaway.InwardTransactionLine.MfgMonth]))
             {
+                var blockingReservation = otherReservations.FirstOrDefault(r =>
+                    r.PalletPositionId == target.Id && r.MfgMonth != putaway.InwardTransactionLine.MfgMonth);
                 throw new InvalidOperationException(
-                    $"Row {targetInfo.RowNumber}: location {target.LocationCode} has only {free:0.###} free box(es); {putaway.QuantityBoxes:0.###} are required.");
+                    blockingReservation is not null
+                        ? $"Row {targetInfo.RowNumber}: location {target.LocationCode} is reserved by pending GRN {blockingReservation.ReferenceNumber} with a different PKM. This warehouse does not allow PKM mixing."
+                        : $"Row {targetInfo.RowNumber}: location {target.LocationCode} contains confirmed stock with a different PKM. This warehouse does not allow PKM mixing.");
             }
 
-            plan[putaway.Id] = target;
-            occupied[target.Id] += putaway.QuantityBoxes;
+            var capacity = PalletCapacityCalculator.EffectiveCapacityBoxes(target, material);
+            var free = capacity - occupied[target.Id];
+            if (free < targetInfo.QuantityBoxes)
+            {
+                throw new InvalidOperationException(
+                    $"Row {targetInfo.RowNumber}: location {target.LocationCode} has only {free:0.###} free box(es); {targetInfo.QuantityBoxes:0.###} are required.");
+            }
+
+            plan[putaway.Id] = (target, targetInfo.QuantityBoxes);
+            occupied[target.Id] += targetInfo.QuantityBoxes;
             materialIds[target.Id].Add(material.Id);
+            mfgMonths[target.Id].Add(putaway.InwardTransactionLine.MfgMonth);
         }
 
-        var changed = pendingPutaways.Where(p => p.PalletPositionId != plan[p.Id].Id).ToList();
+        var changed = pendingPutaways
+            .Where(p => p.PalletPositionId != plan[p.Id].Position.Id || p.QuantityBoxes != plan[p.Id].QuantityBoxes)
+            .ToList();
+        var updatedLocations = changed.Count(p => p.PalletPositionId != plan[p.Id].Position.Id);
+        var updatedQuantities = changed.Count(p => p.QuantityBoxes != plan[p.Id].QuantityBoxes);
+        var quantityChangedLineIds = changed
+            .Where(p => p.QuantityBoxes != plan[p.Id].QuantityBoxes)
+            .Select(p => p.InwardTransactionLineId)
+            .ToHashSet();
         var touchedPositionIds = new HashSet<int>();
         foreach (var putaway in changed)
         {
+            var locationChanged = putaway.PalletPositionId != plan[putaway.Id].Position.Id;
+            var quantityChanged = putaway.QuantityBoxes != plan[putaway.Id].QuantityBoxes;
             touchedPositionIds.Add(putaway.PalletPositionId);
-            touchedPositionIds.Add(plan[putaway.Id].Id);
-            putaway.PalletPositionId = plan[putaway.Id].Id;
-            putaway.AllocationReason = "Location reassigned from GRN Excel upload";
+            touchedPositionIds.Add(plan[putaway.Id].Position.Id);
+            putaway.PalletPositionId = plan[putaway.Id].Position.Id;
+            putaway.QuantityBoxes = plan[putaway.Id].QuantityBoxes;
+            putaway.AllocationReason = locationChanged && quantityChanged
+                ? "Location and quantity changed from GRN Excel upload"
+                : locationChanged
+                    ? "Location reassigned from GRN Excel upload"
+                    : "Quantity changed from GRN Excel upload";
             putaway.OverrideReason = request.Reason.Trim();
             putaway.RowVersion++;
+        }
+
+        foreach (var line in transaction.Lines.Where(line => quantityChangedLineIds.Contains(line.Id)))
+        {
+            var allocated = line.Putaways.Sum(p => p.QuantityBoxes);
+            line.AllocatedQuantityBoxes = allocated;
+            line.Status = allocated >= line.RequestedQuantityBoxes
+                ? AllocationStatus.Fulfilled
+                : allocated > 0
+                    ? AllocationStatus.Partial
+                    : AllocationStatus.Failed;
+            line.Remarks = allocated >= line.RequestedQuantityBoxes
+                ? null
+                : $"{line.RequestedQuantityBoxes - allocated:0.###} box(es) remain unallocated after the put-away quantity change.";
         }
 
         if (changed.Count > 0)
@@ -263,10 +340,10 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
             catch (DbUpdateConcurrencyException)
             {
                 throw new InvalidOperationException(
-                    "Warehouse availability changed while the workbook was being applied. No location changes were saved; download the GRN again and retry.");
+                    "Warehouse availability changed while the workbook was being applied. No allocation changes were saved; download the GRN again and retry.");
             }
         }
 
-        return new ImportInwardPutawayLocationsResult(changed.Count);
+        return new ImportInwardPutawayLocationsResult(updatedLocations, updatedQuantities);
     }
 }

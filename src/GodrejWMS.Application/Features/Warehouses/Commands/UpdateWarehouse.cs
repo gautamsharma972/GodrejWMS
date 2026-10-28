@@ -8,7 +8,8 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Application.Features.Warehouses.Commands;
 
 public sealed record UpdateWarehouseCommand(
-    int Id, string Code, string Name, int WarehouseCategoryId, int CityId, string? Address, bool IsActive) : IRequest;
+    int Id, string Code, string Name, int WarehouseCategoryId, int CityId, string? Address,
+    bool AllowPkmMixing, bool IsActive) : IRequest;
 
 public sealed class UpdateWarehouseValidator : AbstractValidator<UpdateWarehouseCommand>
 {
@@ -43,8 +44,25 @@ public sealed class UpdateWarehouseHandler(IApplicationDbContext db)
         warehouse.WarehouseCategoryId = request.WarehouseCategoryId;
         warehouse.CityId = request.CityId;
         warehouse.Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim();
+        warehouse.AllowPkmMixing = request.AllowPkmMixing;
         warehouse.IsActive = request.IsActive;
 
+        await db.SaveChangesAsync(cancellationToken);
+    }
+}
+
+/// <summary>Updates only the inward PKM-mixing policy from Warehouse Master's quick switch.</summary>
+public sealed record UpdateWarehousePkmMixingCommand(int Id, bool AllowPkmMixing) : IRequest;
+
+public sealed class UpdateWarehousePkmMixingHandler(IApplicationDbContext db)
+    : IRequestHandler<UpdateWarehousePkmMixingCommand>
+{
+    public async Task Handle(UpdateWarehousePkmMixingCommand request, CancellationToken cancellationToken)
+    {
+        var warehouse = await db.Warehouses.FindAsync([request.Id], cancellationToken)
+            ?? throw new NotFoundException(nameof(Warehouse), request.Id);
+
+        warehouse.AllowPkmMixing = request.AllowPkmMixing;
         await db.SaveChangesAsync(cancellationToken);
     }
 }

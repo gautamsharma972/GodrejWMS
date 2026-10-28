@@ -43,7 +43,15 @@ public sealed record PalletPositionDto(
     decimal? FreeBoxes,
     bool IsFull,
     bool IsActive,
-    IReadOnlyList<PalletPositionStockDto> Stock);
+    IReadOnlyList<PalletPositionStockDto> Stock,
+    IReadOnlyList<PalletPositionReservationDto>? PendingReservations = null);
+
+public sealed record PalletPositionReservationDto(
+    string ReferenceNumber,
+    long MaterialNumber,
+    string MaterialDescription,
+    string MfgMonthLabel,
+    decimal QuantityBoxes);
 
 public sealed record PalletPositionStockDto(
     long MaterialNumber,

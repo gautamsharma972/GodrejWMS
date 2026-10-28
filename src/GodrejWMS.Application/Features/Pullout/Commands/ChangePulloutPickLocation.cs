@@ -113,11 +113,15 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db)
             .ToListAsync(cancellationToken);
         var batchesBySource = batches.ToDictionary(batch => (batch.PalletPositionId, batch.MfgMonth));
 
-        var allocatedByOtherPicks = transaction.Lines
-            .SelectMany(transactionLine => transactionLine.Picks)
-            .Where(otherPick => !replacedPickIds.Contains(otherPick.Id) && otherPick.PulloutTransactionLine.MaterialId == line.MaterialId)
-            .GroupBy(otherPick => (otherPick.PalletPositionId, otherPick.MfgMonth))
-            .ToDictionary(group => group.Key, group => group.Sum(otherPick => otherPick.QuantityBoxes));
+        var allocatedByOtherPicks = await db.PulloutPicks.AsNoTracking()
+            .Where(otherPick => !replacedPickIds.Contains(otherPick.Id)
+                && otherPick.PulloutTransactionLine.MaterialId == line.MaterialId
+                && otherPick.PulloutTransactionLine.PulloutTransaction.WarehouseId == transaction.WarehouseId
+                && !otherPick.PulloutTransactionLine.PulloutTransaction.IsConfirmed
+                && !otherPick.PulloutTransactionLine.PulloutTransaction.IsRejected)
+            .GroupBy(otherPick => new { otherPick.PalletPositionId, otherPick.MfgMonth })
+            .Select(group => new { group.Key.PalletPositionId, group.Key.MfgMonth, Quantity = group.Sum(p => p.QuantityBoxes) })
+            .ToDictionaryAsync(x => (x.PalletPositionId, x.MfgMonth), x => x.Quantity, cancellationToken);
 
         foreach (var source in parsedSources)
         {

@@ -1,6 +1,5 @@
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
-using GodrejWMS.Domain.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Infrastructure.Services;
@@ -121,11 +120,6 @@ public class InventoryMovementService(IApplicationDbContext db, IDateTimeProvide
             return ("Destination location not found.", null, null);
         }
 
-        if (!destinationPosition.IsActive)
-        {
-            return ($"Destination location {destinationPosition.LocationCode} is inactive.", null, null);
-        }
-
         var sourceBatch = await db.StockBatches.FirstOrDefaultAsync(b =>
             b.MaterialId == request.MaterialId &&
             b.MfgMonth == request.MfgMonth &&
@@ -146,27 +140,6 @@ public class InventoryMovementService(IApplicationDbContext db, IDateTimeProvide
         if (material is null)
         {
             return ("Material not found.", null, null);
-        }
-
-        // Same rule the put-away engine and Inward reroute/confirm paths already enforce: a
-        // position may only ever hold one material at a time.
-        var destinationBatches = await db.StockBatches
-            .Where(b => b.PalletPositionId == request.DestinationPalletPositionId && b.QuantityBoxes > 0)
-            .Select(b => new { b.MaterialId, b.QuantityBoxes })
-            .ToListAsync(cancellationToken);
-
-        if (destinationBatches.Any(b => b.MaterialId != request.MaterialId))
-        {
-            return ("Destination location already contains a different SKU.", null, null);
-        }
-
-        var occupiedAtDestination = destinationBatches.Sum(b => b.QuantityBoxes);
-        var effectiveCapacity = PalletCapacityCalculator.EffectiveCapacityBoxes(destinationPosition, material);
-        var freeAtDestination = effectiveCapacity - occupiedAtDestination;
-
-        if (freeAtDestination < request.QuantityBoxes)
-        {
-            return ($"Destination location has insufficient capacity. Available capacity: {Math.Max(0, freeAtDestination):0.###}.", null, null);
         }
 
         return (null, sourceBatch, material);

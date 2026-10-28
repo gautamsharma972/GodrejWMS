@@ -97,6 +97,14 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db) : IRequestH
 
         var freeCapacityBoxes = Math.Max(0, totalCapacityBoxes - totalStockBoxes - pendingPutawayBoxes);
 
+        var lowStockLocationCount = await db.StockBatches
+            .Where(b => b.QuantityBoxes > 0
+                && b.Material.PalletCapacityBoxes > 0
+                && b.QuantityBoxes <= b.Material.PalletCapacityBoxes * 0.10m)
+            .Select(b => b.PalletPositionId)
+            .Distinct()
+            .CountAsync(cancellationToken);
+
         var bySeason = await db.StockBatches
             .Where(b => b.QuantityBoxes > 0)
             .GroupBy(b => new { b.Material.SeasonId, Code = b.Material.Season.Code, Name = b.Material.Season.DisplayName })
@@ -129,6 +137,7 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db) : IRequestH
             todayPulloutBoxes,
             fullLocationCount,
             freeCapacityBoxes,
+            lowStockLocationCount,
             bySeason);
     }
 }

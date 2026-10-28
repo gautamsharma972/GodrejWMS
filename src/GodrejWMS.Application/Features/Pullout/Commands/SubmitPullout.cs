@@ -130,7 +130,8 @@ public sealed class SubmitPulloutHandler(
             // lines in input order. Calling the preview allocator once per plant would allow the
             // same stock batch to be proposed more than once.
             var allocation = await allocator.AllocateAsync(
-                material.Id, materialLines.Sum(l => l.QuantityBoxes), transaction.WarehouseId, cancellationToken, preview: true);
+                material.Id, materialLines.Sum(l => l.QuantityBoxes), transaction.WarehouseId, cancellationToken,
+                preview: true, excludePulloutTransactionId: reference is null ? null : transaction.Id);
             var availablePicks = new Queue<RemainingPick>(allocation.Picks.Select(p => new RemainingPick(
                 p.LocationCode, p.MfgMonth, p.QuantityBoxes)));
 
@@ -207,6 +208,7 @@ public sealed class SubmitPulloutHandler(
                 transaction.Lines = proposedLines;
                 transaction.PreviewJson = JsonSerializer.Serialize(result);
                 if (reference is null) db.PulloutTransactions.Add(transaction);
+                await TouchReservedStockAsync(proposedLines, cancellationToken);
             }
             transaction.RowVersion++;
             for (var attempt = 0; ; attempt++)
@@ -215,6 +217,11 @@ public sealed class SubmitPulloutHandler(
                 {
                     await db.SaveChangesAsync(cancellationToken);
                     break;
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    throw new InvalidOperationException(
+                        "Stock was reserved by another pullout while this order was being uploaded. Upload or refresh the order again to allocate the remaining available stock.");
                 }
                 catch (DbUpdateException) when (reference is null && attempt < 4)
                 {
@@ -237,6 +244,22 @@ public sealed class SubmitPulloutHandler(
             db.ChangeTracker.Clear();
             throw;
         }
+    }
+
+    private async Task TouchReservedStockAsync(
+        IReadOnlyList<PulloutTransactionLine> lines,
+        CancellationToken cancellationToken)
+    {
+        var materialIds = lines.Select(line => line.MaterialId).Distinct().ToArray();
+        var positionIds = lines.SelectMany(line => line.Picks).Select(pick => pick.PalletPositionId).Distinct().ToArray();
+        var mfgMonths = lines.SelectMany(line => line.Picks).Select(pick => pick.MfgMonth).Distinct().ToArray();
+        var batches = await db.StockBatches
+            .Where(batch => materialIds.Contains(batch.MaterialId)
+                && positionIds.Contains(batch.PalletPositionId)
+                && mfgMonths.Contains(batch.MfgMonth))
+            .ToListAsync(cancellationToken);
+        foreach (var batch in batches)
+            batch.RowVersion++;
     }
 
     private async Task ApplySavedPicksAsync(

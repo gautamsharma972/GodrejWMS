@@ -1,0 +1,154 @@
+@page "/low-stock-locations"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.View)]
+@using GodrejWMS.Application.Common
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Features.InventoryMovement.Commands
+@using GodrejWMS.Application.Features.InventoryMovement.Dtos
+@using GodrejWMS.Application.Features.InventoryMovement.Queries
+@using GodrejWMS.Application.Features.Racks.Queries
+@using GodrejWMS.Application.Features.StockMaster.Dtos
+@using GodrejWMS.Application.Features.StockMaster.Queries
+@inject IMediator Mediator
+@inject IExcelService ExcelService
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Low Stock Locations - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Inventory Health</div>
+            <h1>Low Stock Locations</h1>
+            <p class="page-kicker">Locations holding 10% or less of the material's pallet capacity.</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-outline-primary" @onclick="DownloadAsync"><i class="bi bi-download"></i> Download Excel</button>
+            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.Move">
+                <label class="btn btn-primary mb-0"><i class="bi bi-upload"></i> Upload movements
+                    <InputFile class="visually-hidden" accept=".xlsx" OnChange="UploadAsync" />
+                </label>
+            </PermissionAuthorize>
+            <a class="btn btn-outline-secondary" href="/"><i class="bi bi-arrow-left"></i> Dashboard</a>
+        </div>
+    </div>
+
+    <div class="feedback-bar info mb-3" role="note">
+        <div class="feedback-bar-icon"><i class="bi bi-info-circle"></i></div>
+        <div class="feedback-bar-content"><strong>Excel movement workflow</strong><span>Download the list, complete the three yellow columns, then upload it. Reason Code must match an active movement reason.</span></div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="feedback-bar danger mb-3" role="alert"><div class="feedback-bar-icon"><i class="bi bi-exclamation-triangle"></i></div><div class="feedback-bar-content"><strong>Movement not completed</strong><span>@_error</span></div></div>
+    }
+    @if (_results.Count > 0)
+    {
+        <div class="feedback-bar @(_results.All(r => r.Success) ? "success" : "danger") mb-3" role="status"><div class="feedback-bar-icon"><i class="bi bi-check-circle"></i></div><div class="feedback-bar-content"><strong>@_results.Count(r => r.Success) of @_results.Count movement(s) completed</strong><span>@string.Join(" ", _results.Where(r => !r.Success).Select(r => r.ErrorMessage))</span></div></div>
+    }
+
+    @if (_loading)
+    {
+        <div class="loading-panel"><span class="spinner-border spinner-border-sm"></span> Loading low stock locations...</div>
+    }
+    else
+    {
+        <div class="panel">
+            <div class="panel-header"><div><h2 class="panel-title">@_rows.Select(row => row.PalletPositionId).Distinct().Count() location(s) · @_rows.Count inventory record(s)</h2><p class="panel-subtitle">Threshold is calculated independently from each material's pallet capacity.</p></div></div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead><tr><th>Location</th><th>Material Code</th><th>Material Description</th><th>PKM</th><th class="text-end">Box Qty</th><th class="text-end">MRP</th><th class="text-end">10% Threshold</th><th class="table-actions">Action</th></tr></thead>
+                    <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        <tr>
+                            <td><span class="location-badge"><i class="bi bi-geo-alt"></i> @row.LocationCode</span></td>
+                            <td><span class="record-code">@row.MaterialNumber</span></td>
+                            <td>@row.MaterialDescription</td>
+                            <td><span class="status-pill neutral">@row.MfgMonthLabel</span></td>
+                            <td class="text-end fw-bold text-danger">@row.QuantityBoxes.ToString("0.###")</td>
+                            <td class="text-end">@row.MrpPrice.ToString("N2")</td>
+                            <td class="text-end">@row.ThresholdBoxes.ToString("0.###")</td>
+                            <td class="table-actions">
+                                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.Move">
+                                    <a class="btn btn-sm btn-outline-primary" href="@MoveUrl(row)"><i class="bi bi-arrow-left-right"></i> Move</a>
+                                </PermissionAuthorize>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<LowStockLocationDto> _rows = [];
+    private IReadOnlyList<MovementReasonDto> _reasons = [];
+    private List<InventoryMovementLineResultDto> _results = [];
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _rows = await Mediator.Send(new GetLowStockLocationsQuery());
+        _reasons = await Mediator.Send(new GetMovementReasonsQuery());
+        _loading = false;
+    }
+
+    private string MoveUrl(LowStockLocationDto row) =>
+        $"/inventory-movement/by-sku?materialId={row.MaterialId}&sourcePositionId={row.PalletPositionId}&mfgMonth={row.MfgMonth}&from=low-stock";
+
+    private async Task DownloadAsync()
+    {
+        var bytes = ExcelService.WriteLowStockLocations(_rows, _reasons);
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "low-stock-locations.xlsx", Convert.ToBase64String(bytes), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task UploadAsync(InputFileChangeEventArgs args)
+    {
+        _error = null;
+        _results = [];
+        try
+        {
+            await using var browserStream = args.File.OpenReadStream(10 * 1024 * 1024);
+            using var uploadStream = new MemoryStream();
+            await browserStream.CopyToAsync(uploadStream);
+            uploadStream.Position = 0;
+            var imports = ExcelService.ReadLowStockMovements(uploadStream);
+            var pending = new List<(InventoryMovementLineInput Line, int ReasonId, int RowNumber)>();
+            foreach (var import in imports)
+            {
+                if (!MfgMonthParser.TryParse(import.MfgMonthText, out var mfgMonth))
+                    throw new InvalidOperationException($"Row {import.RowNumber}: invalid PKM '{import.MfgMonthText}'.");
+                var source = _rows.SingleOrDefault(row => row.MaterialNumber == import.MaterialNumber
+                    && row.MfgMonth == mfgMonth
+                    && row.LocationCode.Equals(import.SourceLocationCode, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new InvalidOperationException($"Row {import.RowNumber}: the source inventory no longer matches the current low-stock list. Download a fresh file.");
+                var destination = await Mediator.Send(new GetPalletPositionByCodeQuery(import.DestinationLocationCode));
+                var reason = _reasons.SingleOrDefault(item => item.Code.Equals(import.ReasonCode, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new InvalidOperationException($"Row {import.RowNumber}: Reason Code '{import.ReasonCode}' is not active.");
+                if (import.QuantityBoxes > source.QuantityBoxes)
+                    throw new InvalidOperationException($"Row {import.RowNumber}: Move Quantity exceeds the current {source.QuantityBoxes:0.###} box(es).");
+                pending.Add((new InventoryMovementLineInput(
+                    source.MaterialId, source.MfgMonth, source.PalletPositionId, destination.Id, import.QuantityBoxes), reason.Id, import.RowNumber));
+            }
+
+            var validation = await Mediator.Send(new ValidateInventoryMovementLinesQuery(pending.Select(item => item.Line).ToList()));
+            var invalid = validation.Select((result, index) => (result, pending[index].RowNumber)).FirstOrDefault(item => !item.result.Valid);
+            if (invalid.result is not null && !invalid.result.Valid)
+                throw new InvalidOperationException($"Row {invalid.RowNumber}: {invalid.result.Reason}");
+
+            foreach (var group in pending.GroupBy(item => item.ReasonId))
+            {
+                var result = await Mediator.Send(new ConfirmInventoryMovementCommand(group.Select(item => item.Line).ToList(), group.Key));
+                _results.AddRange(result);
+            }
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+}

@@ -41,7 +41,7 @@ public sealed class GetRackLayoutHandler(IApplicationDbContext db) : IRequestHan
                 p.DistancePriority,
                 p.MaxPallets,
                 p.IsActive,
-                OccupiedBoxes = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
+                StockBoxes = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
                 OccupyingPalletCapacityBoxes = p.StockBatches
                     .Where(b => b.QuantityBoxes > 0)
                     .Select(b => (int?)b.Material.PalletCapacityBoxes)
@@ -64,18 +64,37 @@ public sealed class GetRackLayoutHandler(IApplicationDbContext db) : IRequestHan
             })
             .ToListAsync(cancellationToken);
 
+        var reservations = await db.InwardPutaways.AsNoTracking()
+            .Where(ip => !ip.IsConfirmed && ip.PalletPosition.RackId == request.RackId)
+            .OrderBy(ip => ip.InwardTransactionLine.InwardTransaction.ReferenceNumber)
+            .Select(ip => new
+            {
+                ip.PalletPositionId,
+                ip.InwardTransactionLine.InwardTransaction.ReferenceNumber,
+                ip.InwardTransactionLine.Material.MaterialNumber,
+                MaterialDescription = ip.InwardTransactionLine.Material.Description,
+                ip.InwardTransactionLine.Material.PalletCapacityBoxes,
+                ip.InwardTransactionLine.MfgMonth,
+                ip.QuantityBoxes
+            }).ToListAsync(cancellationToken);
+
         var dtoPositions = positions
             .OrderBy(p => p.Level).ThenBy(p => p.Column)
             .Select(p =>
             {
-                var capacityBoxes = p.OccupyingPalletCapacityBoxes is { } palletCapacity
-                    ? (int?)PalletCapacityCalculator.EffectiveCapacityBoxes(p.MaxPallets, palletCapacity)
+                var positionReservations = reservations.Where(r => r.PalletPositionId == p.Id).ToList();
+                var palletCapacity = p.OccupyingPalletCapacityBoxes
+                    ?? positionReservations.Select(r => (int?)r.PalletCapacityBoxes).FirstOrDefault();
+                var capacityBoxes = palletCapacity is { } capacityPerPallet
+                    ? (int?)PalletCapacityCalculator.EffectiveCapacityBoxes(p.MaxPallets, capacityPerPallet)
                     : null;
+                var reservedBoxes = positionReservations.Sum(r => r.QuantityBoxes);
+                var committedBoxes = p.StockBoxes + reservedBoxes;
 
                 return new PalletPositionDto(
                     p.Id, rack.Id, p.LocationCode, p.FlatLabel, p.Column, p.Level,
                     p.LocationTypeId, p.LocationTypeCode, p.LocationTypeName, p.LocationSubtypeId, p.LocationSubtypeCode, p.LocationSubtypeName, p.ZoneTypeId, p.ZoneTypeCode, p.ZoneTypeName, p.DistancePriority, p.MaxPallets, capacityBoxes,
-                    p.OccupiedBoxes, capacityBoxes is { } cap ? Math.Max(0, cap - p.OccupiedBoxes) : null, capacityBoxes is { } capForFull && p.OccupiedBoxes >= capForFull, p.IsActive,
+                    committedBoxes, capacityBoxes is { } cap ? Math.Max(0, cap - committedBoxes) : null, capacityBoxes is { } capForFull && committedBoxes >= capForFull, p.IsActive,
                     p.Stock.Select(s => new PalletPositionStockDto(
                         s.MaterialNumber,
                         s.MaterialDescription,
@@ -83,7 +102,10 @@ public sealed class GetRackLayoutHandler(IApplicationDbContext db) : IRequestHan
                         MfgMonthParser.Format(s.MfgMonth),
                         s.StockSubtypeCode,
                         s.StockSubtypeName,
-                        s.QuantityBoxes)).ToList());
+                        s.QuantityBoxes)).ToList(),
+                    positionReservations.Select(r => new PalletPositionReservationDto(
+                        r.ReferenceNumber, r.MaterialNumber, r.MaterialDescription,
+                        MfgMonthParser.Format(r.MfgMonth), r.QuantityBoxes)).ToList());
             })
             .ToList();
 

@@ -6,6 +6,7 @@ using GodrejWMS.Infrastructure.Persistence;
 using GodrejWMS.Web.Components;
 using GodrejWMS.Web.Components.Account;
 using GodrejWMS.Web.Services;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -97,31 +98,55 @@ else
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
-// A long-lived page (a tab left open while the session changed underneath it - signed in as a
-// different user elsewhere, an idle-timeout sign-out, an admin resetting the password/role) can
-// submit a form whose antiforgery token is still bound to a different user's claims than the one
-// now authenticated. UseAntiforgery() below throws for that before the endpoint ever runs (so for
-// Logout specifically, nothing partially happened), and the safe, simple response is the same as
-// any other stale-session case: send them back to sign in, not a crash page in Development or the
-// generic /Error page in Production.
+app.UseAuthentication();
+app.UseAuthorization();
+
+// A long-lived page can submit a form token that belongs to an expired or replaced session (or one
+// from before a server restart, which rotates the Data Protection keys the token was encrypted
+// with). Most of those AntiforgeryMiddleware (registered below) handles by recording a failed
+// verdict and continuing - caught by the feature check just after it. But some invalid/stale-token
+// shapes make its internals throw outright instead (seen in production as a raw
+// InvalidOperationException from DefaultAntiforgeryTokenStore, before any verdict is ever
+// recorded) - letting that reach UseExceptionHandler/UseStatusCodePagesWithReExecute re-executes
+// the same broken request a second time and crashes again, which is what was surfacing as an
+// unhandled exception. This wraps UseAntiforgery() itself so any exception it throws also ends in
+// the same recoverable sign-in redirect instead.
 app.Use(async (context, next) =>
 {
     try
     {
         await next();
     }
-    catch (Exception ex) when (
-        ex is Microsoft.AspNetCore.Antiforgery.AntiforgeryValidationException ||
-        (ex is Microsoft.AspNetCore.Http.BadHttpRequestException && ex.Message.Contains("anti-forgery", StringComparison.OrdinalIgnoreCase)))
+    catch (Exception ex) when (!context.Response.HasStarted && IsAntiforgeryFailure(ex))
     {
+        app.Logger.LogWarning(ex,
+            "Rejected invalid antiforgery form submission (thrown) for {Method} {Path}; redirecting to sign in.",
+            context.Request.Method,
+            context.Request.Path);
         context.Response.Redirect("/Account/Login");
     }
 });
 
-app.UseAuthentication();
-app.UseAuthorization();
-
 app.UseAntiforgery();
+
+// The common case: AntiforgeryMiddleware recorded a failed verdict without throwing. Inspect it
+// immediately after validation and short-circuit before endpoint/form processing, keeping
+// antiforgery enforcement enabled while giving the user a recoverable fresh sign-in request
+// instead of an unhandled production error.
+app.Use(async (context, next) =>
+{
+    if (context.Features.Get<IAntiforgeryValidationFeature>() is { IsValid: false })
+    {
+        app.Logger.LogWarning(
+            "Rejected stale or invalid antiforgery form submission for {Method} {Path}; redirecting to sign in.",
+            context.Request.Method,
+            context.Request.Path);
+        context.Response.Redirect("/Account/Login");
+        return;
+    }
+
+    await next();
+});
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
@@ -134,3 +159,15 @@ app.MapAdditionalIdentityEndpoints();
 await DatabaseMigrationRunner.ApplyPendingAsync(app.Services);
 
 app.Run();
+
+// Covers every shape an invalid/stale antiforgery token has been observed to throw as: the
+// documented AntiforgeryValidationException, a BadHttpRequestException whose message names
+// "anti-forgery", and a raw InvalidOperationException out of DefaultAntiforgeryTokenStore whose
+// message names "IAntiforgeryValidationFeature" - matched by namespace/message rather than an
+// exact type list so a future framework-internal variant of the same failure is still caught here
+// instead of reaching the user as a 500.
+static bool IsAntiforgeryFailure(Exception ex) =>
+    ex is AntiforgeryValidationException ||
+    ex.GetType().Namespace?.StartsWith("Microsoft.AspNetCore.Antiforgery", StringComparison.Ordinal) == true ||
+    ex.Message.Contains("anti-forgery", StringComparison.OrdinalIgnoreCase) ||
+    ex.Message.Contains("antiforgery", StringComparison.OrdinalIgnoreCase);

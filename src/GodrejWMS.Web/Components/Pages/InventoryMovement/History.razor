@@ -7,7 +7,7 @@
 
 <PageTitle>Inventory Movement History - Godrej WMS</PageTitle>
 
-<div class="page-shell">
+<div class="page-shell movement-history-page">
     <div class="page-header">
         <div>
             <div class="eyebrow">Inventory Movement</div>
@@ -26,7 +26,7 @@
         </div>
     </div>
 
-    <div class="panel">
+    <div class="panel movement-history-panel">
         <div class="panel-header">
             <div>
                 <h2 class="panel-title">Movement Register</h2>
@@ -70,8 +70,8 @@
         }
         else
         {
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
+            <div class="table-responsive movement-history-table-wrap">
+                <table class="table table-hover align-middle mb-0 movement-history-table">
                     <thead>
                         <tr>
                             <th>Movement ID</th>
@@ -92,10 +92,15 @@
                             <tr class="record-row" style="cursor:pointer" @onclick="() => OpenDetail(item)">
                                 <td><span class="record-code">@item.MovementNumber</span></td>
                                 <td>@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
-                                <td>@item.MaterialNumber<br /><small class="text-muted">@item.MaterialDescription</small></td>
+                                <td>
+                                    <div class="movement-sku-cell">
+                                        <span class="record-code">@item.MaterialNumber</span>
+                                        <span class="text-muted">@item.MaterialDescription</span>
+                                    </div>
+                                </td>
                                 <td>@item.MfgMonthLabel</td>
-                                <td><span class="record-code">@item.SourceLocationCode</span></td>
-                                <td><span class="record-code">@item.DestinationLocationCode</span></td>
+                                <td><span class="movement-location-badge"><i class="bi bi-geo-alt" aria-hidden="true"></i>@item.SourceLocationCode</span></td>
+                                <td><span class="movement-location-badge"><i class="bi bi-geo-alt" aria-hidden="true"></i>@item.DestinationLocationCode</span></td>
                                 <td class="text-end">@item.QuantityBoxes.ToString("0.###")</td>
                                 <td>@(item.PerformedByUserName ?? "-")</td>
                                 <td>@item.ReasonName</td>

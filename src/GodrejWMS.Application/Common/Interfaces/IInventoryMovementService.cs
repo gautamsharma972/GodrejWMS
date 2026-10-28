@@ -24,12 +24,12 @@ public sealed record InventoryMovementLineResult(bool Success, string? ErrorMess
 /// Subtype are read from the source row and never altered (§22 of the spec this was built against:
 /// "Inventory Movement must not reset or modify FIFO attributes").
 ///
-/// Every rule below is enforced here, not in UI code (§32): location existence/active state,
-/// source-cannot-equal-destination, sufficient source quantity, the no-SKU-mixing rule (a
-/// position may only ever hold one material - the same rule <see cref="PalletAllocationService"/>
-/// and the Inward reroute/confirm paths already enforce), and destination capacity via the same
-/// shared <see cref="GodrejWMS.Domain.Services.PalletCapacityCalculator"/> formula every other
-/// allocation path uses. Concurrency is handled the same way as Inward: <c>StockBatch.RowVersion</c>
+/// Every rule below is enforced here, not in UI code (§32): location existence,
+/// source-cannot-equal-destination, an active source, and sufficient source quantity. Inventory
+/// Movement is the deliberate exception to put-away rules: any existing destination is allowed,
+/// including inactive locations and locations of any type/subtype/zone; destination SKU mixing is
+/// allowed and pallet capacity is not validated. Concurrency is handled the same way as Inward:
+/// <c>StockBatch.RowVersion</c>
 /// is incremented on every mutated row, so a losing concurrent move fails with
 /// <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/> instead of silently
 /// overbooking or over-deducting.

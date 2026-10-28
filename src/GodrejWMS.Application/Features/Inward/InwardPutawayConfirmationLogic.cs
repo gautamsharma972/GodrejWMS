@@ -46,6 +46,26 @@ internal static class InwardPutawayConfirmationLogic
                 $"Location {position.LocationCode} now holds a different material and cannot receive this put-away. Re-route it to a new location.");
         }
 
+        var allowPkmMixing = await db.Warehouses
+            .AsNoTracking()
+            .Where(w => db.InwardTransactions.Any(t => t.Id == line.InwardTransactionId && t.WarehouseId == w.Id))
+            .Select(w => (bool?)w.AllowPkmMixing)
+            .SingleOrDefaultAsync(cancellationToken) ?? true;
+        if (!allowPkmMixing)
+        {
+            var differentPkmAtPosition = await db.StockBatches
+                .AsNoTracking()
+                .AnyAsync(b => b.PalletPositionId == putaway.PalletPositionId
+                    && b.MaterialId == line.MaterialId
+                    && b.MfgMonth != line.MfgMonth
+                    && b.QuantityBoxes > 0, cancellationToken);
+            if (differentPkmAtPosition)
+            {
+                throw new InvalidOperationException(
+                    $"Location {position.LocationCode} now holds a different PKM and this warehouse does not allow PKM mixing. Re-route it to a new location.");
+            }
+        }
+
         var confirmedAtPosition = await db.StockBatches
             .AsNoTracking()
             .Where(b => b.PalletPositionId == putaway.PalletPositionId && b.MaterialId == line.MaterialId)

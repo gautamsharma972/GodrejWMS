@@ -20,6 +20,7 @@ public sealed class GetWarehousesHandler(IApplicationDbContext db)
                 w.City != null ? w.City.StateId : null, w.City != null ? w.City.State.Name : null,
                 w.City != null ? w.City.State.RegionId : null, w.City != null ? w.City.State.Region.Name : null,
                 w.Address,
+                w.AllowPkmMixing,
                 w.IsActive))
             .ToListAsync(cancellationToken);
 }

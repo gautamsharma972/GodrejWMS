@@ -1,12 +1,42 @@
 using System.IO.Compression;
 using GodrejWMS.Infrastructure.Services;
 using GodrejWMS.Application.Features.Materials.Dtos;
+using GodrejWMS.Application.Features.InventoryMovement.Dtos;
+using GodrejWMS.Application.Features.StockMaster.Dtos;
 using Xunit;
 
 namespace GodrejWMS.Infrastructure.Tests;
 
 public class ClosedXmlExcelServiceTests
 {
+    [Fact]
+    public void LowStockWorkbook_RoundTripsEditableMovementColumns()
+    {
+        var service = new ClosedXmlExcelService();
+        var bytes = service.WriteLowStockLocations([
+            new LowStockLocationDto(1, 40019311, "Test material", 202610, "OCT|2026", 2, "A-01-01", 2, 10, 20, 2)
+        ], [new MovementReasonDto(1, "StockConsolidation", "Stock consolidation", true)]);
+        using var workbook = new ClosedXML.Excel.XLWorkbook(new MemoryStream(bytes));
+        var sheet = workbook.Worksheet("Low Stock Locations");
+        Assert.Equal("StockConsolidation", workbook.Worksheet("Movement Reasons").Cell("A2").GetString());
+        var reasonValidation = Assert.Single(sheet.DataValidations.GetAllInRange(sheet.Cell("I2").AsRange().RangeAddress));
+        Assert.Equal(ClosedXML.Excel.XLAllowedValues.List, reasonValidation.AllowedValues);
+        Assert.Equal("LowStockMovementReasonCodes", reasonValidation.Value);
+        sheet.Cell("G2").Value = "A-02-01";
+        sheet.Cell("H2").Value = 2;
+        sheet.Cell("I2").Value = "StockConsolidation";
+        using var edited = new MemoryStream();
+        workbook.SaveAs(edited);
+        edited.Position = 0;
+
+        var row = Assert.Single(service.ReadLowStockMovements(edited));
+        Assert.Equal(40019311, row.MaterialNumber);
+        Assert.Equal("A-01-01", row.SourceLocationCode);
+        Assert.Equal("A-02-01", row.DestinationLocationCode);
+        Assert.Equal(2, row.QuantityBoxes);
+        Assert.Equal("StockConsolidation", row.ReasonCode);
+    }
+
     [Fact]
     public void WriteMaterialMaster_WritesCompleteExportWithTypedValues()
     {
@@ -52,6 +82,59 @@ public class ClosedXmlExcelServiceTests
         var rows = service.ReadInwardUpload(stream);
 
         Assert.NotEmpty(rows);
+        Assert.All(rows, row =>
+        {
+            Assert.True(row.QuantityBoxes > 0);
+            Assert.True(decimal.IsInteger(row.QuantityBoxes));
+        });
+    }
+
+    [Fact]
+    public void ReadInwardUpload_SkipsBlankRows_AndReadsLaterValidRows()
+    {
+        using var workbook = new ClosedXML.Excel.XLWorkbook();
+        var sheet = workbook.Worksheets.Add("Inward Upload");
+        sheet.Cell("A1").Value = "Material Code";
+        sheet.Cell("B1").Value = "Total Stock in CFB(qty)";
+        sheet.Cell("C1").Value = "Mfg Year";
+        sheet.Cell("D1").Value = "Mfg Month";
+        sheet.Cell("A3").Value = 40019311;
+        sheet.Cell("B3").Value = 10;
+        sheet.Cell("C3").Value = 2026;
+        sheet.Cell("D3").Value = "OCT";
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        stream.Position = 0;
+
+        var rows = new ClosedXmlExcelService().ReadInwardUpload(stream);
+
+        var row = Assert.Single(rows);
+        Assert.Equal(3, row.RowNumber);
+        Assert.Equal(10, row.QuantityBoxes);
+    }
+
+    [Fact]
+    public void ReadInwardUpload_InvalidQuantity_ReportsExcelRowAndRequiredFormat()
+    {
+        using var workbook = new ClosedXML.Excel.XLWorkbook();
+        var sheet = workbook.Worksheets.Add("Inward Upload");
+        sheet.Cell("A1").Value = "Material Code";
+        sheet.Cell("B1").Value = "Total Stock in CFB(qty)";
+        sheet.Cell("C1").Value = "Mfg Year";
+        sheet.Cell("D1").Value = "Mfg Month";
+        sheet.Cell("A2").Value = 40019311;
+        sheet.Cell("B2").Value = 0.008;
+        sheet.Cell("C2").Value = 2026;
+        sheet.Cell("D2").Value = "OCT";
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        stream.Position = 0;
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            new ClosedXmlExcelService().ReadInwardUpload(stream));
+
+        Assert.Contains("Row 2", error.Message);
+        Assert.Contains("whole number", error.Message);
     }
 
     [Fact]

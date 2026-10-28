@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Application.Features.Warehouses.Commands;
 
 public sealed record CreateWarehouseCommand(
-    string Code, string Name, int WarehouseCategoryId, int CityId, string? Address) : IRequest<int>;
+    string Code, string Name, int WarehouseCategoryId, int CityId, string? Address, bool AllowPkmMixing = true) : IRequest<int>;
 
 public sealed class CreateWarehouseValidator : AbstractValidator<CreateWarehouseCommand>
 {
@@ -51,6 +51,7 @@ public sealed class CreateWarehouseHandler(IApplicationDbContext db)
             WarehouseCategoryId = request.WarehouseCategoryId,
             CityId = request.CityId,
             Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim(),
+            AllowPkmMixing = request.AllowPkmMixing,
             IsActive = true
         };
         db.Warehouses.Add(warehouse);

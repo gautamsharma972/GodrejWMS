@@ -439,6 +439,55 @@ public class PalletAllocationServiceTests
     }
 
     [Fact]
+    public async Task AllocateAsync_WhenWarehouseBlocksPkmMixing_UsesEmptyPositionForDifferentMfgMonth()
+    {
+        var (db, material, _) = SeedWarehouse(capacityBoxes: 40);
+        db.Warehouses.Add(new Warehouse
+        {
+            Id = 1,
+            Code = "GCPL",
+            Name = "GCPL",
+            AllowPkmMixing = false
+        });
+
+        var occupiedPosition = db.PalletPositions.First(p => p.LocationCode == "A-01-01");
+        AddStock(db, material, occupiedPosition, mfgMonth: 201001, quantityBoxes: 30);
+        await db.SaveChangesAsync();
+
+        var sut = new PalletAllocationService(db, new TestClock());
+        var result = await sut.AllocateAsync(material.Id, 15, mfgMonth: 201002, warehouseId: 1);
+
+        Assert.Equal(AllocationStatus.Fulfilled, result.Status);
+        Assert.DoesNotContain(result.Lines, line => line.LocationCode == "A-01-01");
+        Assert.Contains(result.Lines, line => line.LocationCode == "A-02-01" && line.QuantityBoxes == 15);
+    }
+
+    [Fact]
+    public async Task AllocateAsync_WhenWarehouseBlocksPkmMixing_DoesNotTopUpLegacyMixedPosition()
+    {
+        var (db, material, _) = SeedWarehouse(capacityBoxes: 40);
+        db.Warehouses.Add(new Warehouse
+        {
+            Id = 1,
+            Code = "GCPL",
+            Name = "GCPL",
+            AllowPkmMixing = false
+        });
+
+        var mixedPosition = db.PalletPositions.First(p => p.LocationCode == "A-01-01");
+        AddStock(db, material, mixedPosition, mfgMonth: 201001, quantityBoxes: 10);
+        AddStock(db, material, mixedPosition, mfgMonth: 201002, quantityBoxes: 10);
+        await db.SaveChangesAsync();
+
+        var sut = new PalletAllocationService(db, new TestClock());
+        var result = await sut.AllocateAsync(material.Id, 5, mfgMonth: 201002, warehouseId: 1);
+
+        Assert.Equal(AllocationStatus.Fulfilled, result.Status);
+        Assert.DoesNotContain(result.Lines, line => line.LocationCode == "A-01-01");
+        Assert.Contains(result.Lines, line => line.LocationCode == "A-02-01" && line.QuantityBoxes == 5);
+    }
+
+    [Fact]
     public async Task AllocateAsync_ExcludesPositionHoldingDifferentMaterial_FromConsolidationTier()
     {
         var (db, material, _) = SeedWarehouse(capacityBoxes: 40);

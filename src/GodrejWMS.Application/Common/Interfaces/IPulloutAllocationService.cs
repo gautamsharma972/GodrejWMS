@@ -21,7 +21,8 @@ public interface IPulloutAllocationService
         decimal quantityBoxes,
         int warehouseId,
         CancellationToken cancellationToken = default,
-        bool preview = false);
+        bool preview = false,
+        int? excludePulloutTransactionId = null);
 }
 
 public sealed record PulloutAllocationResult(

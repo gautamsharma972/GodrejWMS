@@ -80,8 +80,8 @@ else
         <h2>Operations Cockpit</h2>
         <span class="sync-chip"><span class="live-dot"></span> Live workflow signals</span>
     </div>
-    <div class="audit-metric-grid mb-4" data-tour="dash-cockpit">
-        <div class="audit-summary-card accent-blue">
+    <div class="audit-metric-grid operations-cockpit-grid mb-4" data-tour="dash-cockpit">
+        <div class="audit-summary-card @PutawayAccentClass()">
             <div class="audit-summary-top">
                 <span class="audit-summary-icon"><i class="bi bi-clipboard-check" aria-hidden="true"></i></span>
                 <span class="audit-summary-status">Put-away queue</span>
@@ -126,6 +126,17 @@ else
             <div class="audit-summary-label">Partial or failed line(s)</div>
             <div class="audit-summary-meta">Review allocation and picking history when this is above zero</div>
         </div>
+        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.View">
+            <a class="audit-summary-card accent-pending dashboard-card-link" href="/low-stock-locations">
+                <div class="audit-summary-top">
+                    <span class="audit-summary-icon"><i class="bi bi-box2-heart" aria-hidden="true"></i></span>
+                    <span class="audit-summary-status">Low stock locations</span>
+                </div>
+                <div class="audit-summary-value">@_summary.LowStockLocationCount.ToString("N0")</div>
+                <div class="audit-summary-label">Location(s) at or below 10% pallet size</div>
+                <div class="audit-summary-meta">View materials, download Excel, or move inventory</div>
+            </a>
+        </PermissionAuthorize>
         <div class="audit-summary-card accent-green">
             <div class="audit-summary-top">
                 <span class="audit-summary-icon"><i class="bi bi-box-arrow-in-down" aria-hidden="true"></i></span>
@@ -257,10 +268,13 @@ else
         _summary is null || _summary.TotalCapacityBoxes <= 0 ? 0 : Math.Clamp(_summary.FreeCapacityBoxes / _summary.TotalCapacityBoxes * 100, 0, 100);
 
     private string ExceptionAccentClass() =>
-        _summary?.ExceptionLineCount > 0 ? "accent-indigo" : "accent-green";
+        _summary?.ExceptionLineCount > 0 ? "accent-danger" : "accent-green";
 
     private string PendingAccentClass() =>
-        PendingConfirmationCount() > 0 ? "accent-indigo" : "accent-green";
+        PendingConfirmationCount() > 0 ? "accent-pending" : "accent-green";
+
+    private string PutawayAccentClass() =>
+        _summary?.PendingPutawayTransactions > 0 ? "accent-pending" : "accent-green";
 
     private static string SeasonClass(string code) =>
         code.ToLowerInvariant();

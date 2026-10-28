@@ -72,6 +72,11 @@ public sealed class ChangeInwardPutawayRackHandler(IApplicationDbContext db)
             .AsNoTracking()
             .FirstOrDefaultAsync(r => r.IsActive && r.Code == rackCode, cancellationToken)
             ?? throw new InvalidOperationException($"Rack {rackCode} is inactive or was not found.");
+        var allowPkmMixing = await db.Warehouses
+            .AsNoTracking()
+            .Where(w => w.Id == rack.WarehouseId)
+            .Select(w => (bool?)w.AllowPkmMixing)
+            .SingleOrDefaultAsync(cancellationToken) ?? true;
 
         var positions = await db.PalletPositions
             .Include(p => p.StockBatches)
@@ -87,7 +92,8 @@ public sealed class ChangeInwardPutawayRackHandler(IApplicationDbContext db)
             {
                 p.PalletPositionId,
                 p.QuantityBoxes,
-                p.InwardTransactionLine.MaterialId
+                p.InwardTransactionLine.MaterialId,
+                p.InwardTransactionLine.MfgMonth
             })
             .ToListAsync(cancellationToken);
 
@@ -102,6 +108,13 @@ public sealed class ChangeInwardPutawayRackHandler(IApplicationDbContext db)
                 .Select(b => b.MaterialId)
                 .Concat(otherReservations.Where(r => r.PalletPositionId == p.Id).Select(r => r.MaterialId))
                 .ToHashSet());
+        var mfgMonths = positions.ToDictionary(
+            p => p.Id,
+            p => p.StockBatches
+                .Where(b => b.QuantityBoxes > 0)
+                .Select(b => b.MfgMonth)
+                .Concat(otherReservations.Where(r => r.PalletPositionId == p.Id).Select(r => r.MfgMonth))
+                .ToHashSet());
 
         var plan = new Dictionary<int, PalletPosition>();
         foreach (var putaway in putaways
@@ -114,6 +127,7 @@ public sealed class ChangeInwardPutawayRackHandler(IApplicationDbContext db)
                 .Where(p => p.LocationSubtypeId == putaway.PalletPosition.LocationSubtypeId)
                 .Where(p => !material.RequirePreferredZone || !material.PreferredZoneTypeId.HasValue || p.ZoneTypeId == material.PreferredZoneTypeId.Value)
                 .Where(p => materialIds[p.Id].Count == 0 || materialIds[p.Id].SetEquals([material.Id]))
+                .Where(p => allowPkmMixing || mfgMonths[p.Id].Count == 0 || mfgMonths[p.Id].SetEquals([putaway.InwardTransactionLine.MfgMonth]))
                 .Where(p => PalletCapacityCalculator.EffectiveCapacityBoxes(p, material) - occupied[p.Id] >= putaway.QuantityBoxes)
                 .OrderByDescending(p => materialIds[p.Id].Contains(material.Id))
                 .ThenBy(p => p.DistancePriority)
@@ -129,6 +143,7 @@ public sealed class ChangeInwardPutawayRackHandler(IApplicationDbContext db)
             plan[putaway.Id] = candidate;
             occupied[candidate.Id] += putaway.QuantityBoxes;
             materialIds[candidate.Id].Add(material.Id);
+            mfgMonths[candidate.Id].Add(putaway.InwardTransactionLine.MfgMonth);
         }
 
         var touchedPositions = new HashSet<int>();

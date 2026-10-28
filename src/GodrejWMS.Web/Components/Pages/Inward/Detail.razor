@@ -43,58 +43,53 @@
             <div class="toolbar-group inward-detail-actions">
                 @if (!_detail.IsConfirmed && !_detail.IsRejected)
                 {
-                    <a class="btn btn-outline-primary" href="@($"/inward/{_detail.Id}/putaway")" title="Start put-away execution">
-                        <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
-                        Putaway
-                    </a>
-                    <button type="button" class="btn btn-primary" @onclick="ConfirmPutawayAsync" disabled="@_confirming"
-                            title="Confirm all reserved put-away locations">
-                        <i class="bi bi-check2-circle" aria-hidden="true"></i>
-                        @(_confirming ? "Confirming..." : "Confirm")
-                    </button>
+                    <div class="inward-action-cluster inward-workflow-actions">
+                        <a class="btn btn-outline-primary" href="@($"/inward/{_detail.Id}/putaway")" title="Start put-away execution">
+                            <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
+                            Putaway
+                        </a>
+                        <button type="button" class="btn btn-primary" @onclick="ConfirmPutawayAsync" disabled="@_confirming"
+                                title="Confirm all reserved put-away locations">
+                            <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                            @(_confirming ? "Confirming..." : "Confirm")
+                        </button>
+                    </div>
                 }
 
-                @if (CanReallocate || CanReject || !_detail.IsRejected || CanUploadLocationChanges)
+                @if (!_detail.IsRejected || CanUploadLocationChanges || CanReallocate)
                 {
-                    <div class="dropdown inward-more-actions">
-                        <button type="button" class="btn btn-outline-secondary dropdown-toggle"
-                                data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="bi bi-three-dots" aria-hidden="true"></i>
-                            More
+                    <div class="inward-action-cluster inward-allocation-actions">
+                    @if (!_detail.IsRejected)
+                    {
+                        <button type="button" class="btn btn-outline-secondary" @onclick="DownloadExcelAsync"
+                                title="Download this GRN's allocation as Excel@(_detail.IsConfirmed ? string.Empty : " (before confirming)")">
+                            <i class="bi bi-file-earmark-arrow-down" aria-hidden="true"></i>
+                            Download allocation
                         </button>
-                        <div class="dropdown-menu dropdown-menu-end">
-                            @if (!_detail.IsRejected)
-                            {
-                                <button type="button" class="dropdown-item" @onclick="DownloadExcelAsync"
-                                        title="Download this GRN's allocation as Excel@(_detail.IsConfirmed ? string.Empty : " (before confirming)")">
-                                    <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
-                                    Download allocation
-                                </button>
-                            }
-                            @if (CanUploadLocationChanges)
-                            {
-                                <button type="button" class="dropdown-item" @onclick="OpenLocationUpload">
-                                    <i class="bi bi-file-earmark-arrow-up" aria-hidden="true"></i>
-                                    Upload location changes
-                                </button>
-                            }
-                            @if (CanReallocate)
-                            {
-                                <button type="button" class="dropdown-item" @onclick="ReallocateAsync" disabled="@_reallocating">
-                                    <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
-                                    @(_reallocating ? "Reallocating..." : "Reallocate locations")
-                                </button>
-                            }
-                            @if (CanReject)
-                            {
-                                <div class="dropdown-divider"></div>
-                                <button type="button" class="dropdown-item text-danger" @onclick="ToggleRejectPanel">
-                                    <i class="bi bi-x-circle" aria-hidden="true"></i>
-                                    Reject GRN
-                                </button>
-                            }
-                        </div>
+                    }
+                    @if (CanUploadLocationChanges)
+                    {
+                        <button type="button" class="btn btn-outline-secondary" @onclick="OpenLocationUpload">
+                            <i class="bi bi-file-earmark-arrow-up" aria-hidden="true"></i>
+                            Upload changes
+                        </button>
+                    }
+                    @if (CanReallocate)
+                    {
+                        <button type="button" class="btn btn-outline-secondary" @onclick="ReallocateAsync" disabled="@_reallocating">
+                            <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+                            @(_reallocating ? "Reallocating..." : "Reallocate")
+                        </button>
+                    }
                     </div>
+                }
+
+                @if (CanReject)
+                {
+                    <button type="button" class="btn btn-outline-danger inward-reject-action" @onclick="ToggleRejectPanel">
+                        <i class="bi bi-x-circle" aria-hidden="true"></i>
+                        Reject GRN
+                    </button>
                 }
                 <a class="btn btn-outline-secondary" href="/inward">
                     <i class="bi bi-arrow-left" aria-hidden="true"></i>
@@ -374,9 +369,9 @@
                                             {
                                                 <button type="button"
                                                         class="btn btn-sm btn-outline-secondary allocation-change-button"
-                                                        title="Change rack or put-away location"
-                                                        aria-label="Change rack or put-away location"
-                                                        @onclick="() => OpenChangeLocationAsync(row.Putaway.Id, row.Putaway.LocationCode)">
+                                                        title="Change put-away quantity or location"
+                                                        aria-label="Change put-away quantity or location"
+                                                        @onclick="() => OpenChangeLocationAsync(row.Putaway.Id, row.Putaway.LocationCode, row.Putaway.QuantityBoxes, row.Line.RequestedQuantityBoxes - row.Line.AllocatedQuantityBoxes + row.Putaway.QuantityBoxes)">
                                                     <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
                                                     <span>Change</span>
                                                 </button>
@@ -510,12 +505,16 @@
         @if (_isChangeLocationOpen)
         {
             <div class="slide-over-backdrop" role="presentation" @onclick="CloseChangeLocation">
-                <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="change-location-title" @onclick:stopPropagation="true">
+                <div class="slide-over-panel putaway-change-panel" role="dialog" aria-modal="true" aria-labelledby="change-location-title" @onclick:stopPropagation="true">
                     <div class="slide-over-header">
                         <div>
                             <div class="eyebrow">Put-away Reservation</div>
-                            <h2 id="change-location-title" class="slide-over-title">Change Location</h2>
-                            <p class="slide-over-subtitle">Currently reserved at @_changeCurrentLocationCode</p>
+                            <h2 id="change-location-title" class="slide-over-title">Change Quantity or Location</h2>
+                            <p class="slide-over-subtitle">Adjust the quantity or split it across available locations.</p>
+                            <div class="putaway-current-summary">
+                                <span><i class="bi bi-box-seam" aria-hidden="true"></i> @_changeOriginalQuantityBoxes.ToString("0.###") box(es)</span>
+                                <span><i class="bi bi-geo-alt" aria-hidden="true"></i> @_changeCurrentLocationCode</span>
+                            </div>
                         </div>
                         <button type="button" class="slide-over-close" aria-label="Close change location" @onclick="CloseChangeLocation">
                             <i class="bi bi-x-lg" aria-hidden="true"></i>
@@ -528,7 +527,7 @@
                             <div class="alert alert-danger mb-0">@_changeError</div>
                         }
 
-                        <div class="mb-3">
+                        <div class="putaway-reason-field">
                             <label class="form-label">Reason for override <span class="text-danger">*</span></label>
                             <input class="form-control" placeholder="e.g. Damaged pallet in original slot"
                                    @bind="_changeReason" @bind:event="oninput" />
@@ -547,7 +546,7 @@
                         }
                         else
                         {
-                        <div class="toolbar-panel change-location-toolbar">
+                        <div class="toolbar-panel change-location-toolbar putaway-location-toolbar">
                             <div class="toolbar-group">
                                     <div class="input-group search-control">
                                         <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
@@ -565,38 +564,48 @@
                                 <span class="sync-chip">@DisplayChangeOptions.Count().ToString("N0") location(s)</span>
                             </div>
 
-                            <div class="table-responsive">
+                            <div class="table-responsive putaway-location-list">
                                 <table class="table table-hover align-middle mb-0">
                                     <thead>
                                         <tr>
+                                            <th class="selection-column"></th>
                                             <th>Location</th>
-                                            <th>Rack</th>
-                                            <th>Subtype</th>
-                                            <th>Zone</th>
-                                            <th class="text-end">Free / Capacity</th>
-                                            <th class="table-actions"></th>
+                                            <th class="text-end">Available</th>
+                                            <th class="change-quantity-column">Quantity</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         @foreach (var option in DisplayChangeOptions)
                                         {
-                                            <tr class="@(option.IsCurrent ? "table-active" : null)">
-                                                <td><span class="record-code">@option.LocationCode</span></td>
-                                                <td><span class="status-pill neutral">@RackCodeOf(option.LocationCode)</span></td>
-                                                <td><span class="status-pill @SubtypeClass(option.LocationSubtypeCode)">@option.LocationSubtypeName</span></td>
-                                                <td><span class="status-pill @ZoneClass(option.ZoneTypeCode)">@option.ZoneTypeName</span></td>
-                                                <td class="text-end">@option.FreeBoxes.ToString("0.###") / @option.CapacityBoxes</td>
-                                                <td class="table-actions">
-                                                    @if (option.IsCurrent)
-                                                    {
-                                                        <span class="status-pill info">Current</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <button type="button" class="btn btn-sm btn-primary" disabled="@(_changingLocation || string.IsNullOrWhiteSpace(_changeReason))" @onclick="() => MoveToLocationAsync(option.Id)">
-                                                            Move Here
-                                                        </button>
-                                                    }
+                                            <tr class="@(_selectedChangePositionIds.Contains(option.Id) ? "putaway-location-selected" : null)">
+                                                <td class="selection-column"><input class="form-check-input" type="checkbox"
+                                                    aria-label="Select @option.LocationCode"
+                                                    checked="@_selectedChangePositionIds.Contains(option.Id)"
+                                                    @onchange="eventArgs => ToggleChangeLocation(option, eventArgs)" /></td>
+                                                <td>
+                                                    <div class="putaway-location-identity">
+                                                        <span class="record-code">@option.LocationCode</span>
+                                                        @if (option.IsCurrent)
+                                                        {
+                                                            <span class="putaway-current-badge">Current</span>
+                                                        }
+                                                    </div>
+                                                    <div class="putaway-location-meta">
+                                                        <span>Rack @RackCodeOf(option.LocationCode)</span>
+                                                        <span>@option.LocationSubtypeName</span>
+                                                        <span>@option.ZoneTypeName</span>
+                                                    </div>
+                                                </td>
+                                                <td class="text-end"><strong>@option.FreeBoxes.ToString("0.###")</strong><span class="putaway-capacity"> of @option.CapacityBoxes</span></td>
+                                                <td class="change-quantity-column">
+                                                    <input class="form-control form-control-sm" type="number" min="1"
+                                                           max="@MaximumQuantityFor(option)" step="1"
+                                                           aria-label="Quantity for @option.LocationCode"
+                                                           disabled="@(!_selectedChangePositionIds.Contains(option.Id))"
+                                                           placeholder="Select first"
+                                                           value="@(_selectedChangePositionIds.Contains(option.Id) ? QuantityFor(option) : null)"
+                                                           @oninput="eventArgs => SetQuantity(option.Id, eventArgs.Value?.ToString())" />
+                                                    <div class="form-text">Max @MaximumQuantityFor(option).ToString("0.###")</div>
                                                 </td>
                                             </tr>
                                         }
@@ -606,8 +615,13 @@
                         }
                     </div>
 
-                    <div class="slide-over-footer">
-                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseChangeLocation">Close</button>
+                    <div class="slide-over-footer putaway-change-footer">
+                        <div class="putaway-selection-summary">
+                            <strong>@SelectedChangeQuantity.ToString("0.###") / @_changeMaximumQuantityBoxes.ToString("0.###") boxes</strong>
+                            <span>@_selectedChangePositionIds.Count location(s) selected</span>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseChangeLocation">Cancel</button>
+                        <button type="button" class="btn btn-primary" disabled="@(!CanApplyChanges)" @onclick="ApplyAllocationsAsync">Apply changes</button>
                     </div>
                 </div>
             </div>
@@ -668,9 +682,9 @@
                 <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="location-upload-title" @onclick:stopPropagation="true">
                     <div class="slide-over-header">
                         <div>
-                            <div class="eyebrow">GRN Location Update</div>
-                            <h2 id="location-upload-title" class="slide-over-title">Upload Location Changes</h2>
-                            <p class="slide-over-subtitle">Update reserved pallet positions for @_detail.ReferenceNumber.</p>
+                            <div class="eyebrow">GRN Allocation Update</div>
+                            <h2 id="location-upload-title" class="slide-over-title">Upload Allocation Changes</h2>
+                            <p class="slide-over-subtitle">Update pending quantities and pallet positions for @_detail.ReferenceNumber.</p>
                         </div>
                         <button type="button" class="slide-over-close" aria-label="Close upload" @onclick="CloseLocationUpload">
                             <i class="bi bi-x-lg" aria-hidden="true"></i>
@@ -686,18 +700,18 @@
                             <div class="info-bar-icon"><i class="bi bi-shield-check" aria-hidden="true"></i></div>
                             <div class="info-bar-content">
                                 <h2>Validated before saving</h2>
-                                <p>Only edit the blue Pallet Position column in the downloaded workbook. SKU, PKM, quantities, location compatibility, and final capacity are validated together. If any row fails, nothing is changed.</p>
+                                <p>Edit only the blue Pallet Position and Qty at Position columns for pending rows. SKU, PKM, requested totals, location compatibility, and final capacity are validated together. If any row fails, nothing is changed.</p>
                             </div>
                         </div>
 
                         <div class="mb-3">
                             <label class="form-label">Updated GRN workbook <span class="text-danger">*</span></label>
                             <InputFile class="form-control" accept=".xlsx" OnChange="OnLocationWorkbookSelected" />
-                            <div class="form-text">First download the latest workbook for this GRN, edit the Pallet Position values, then upload the complete file.</div>
+                            <div class="form-text">First download the latest workbook, edit pending Pallet Position or Qty at Position values, then upload the complete file.</div>
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label">Reason for location changes <span class="text-danger">*</span></label>
+                            <label class="form-label">Reason for allocation changes <span class="text-danger">*</span></label>
                             <input class="form-control" maxlength="250" placeholder="e.g. Physical slot unavailable during put-away"
                                    @bind="_locationUploadReason" @bind:event="oninput" />
                         </div>
@@ -738,6 +752,10 @@
     private bool _isChangeLocationOpen;
     private int _changingPutawayId;
     private string _changeCurrentLocationCode = string.Empty;
+    private decimal _changeOriginalQuantityBoxes;
+    private decimal _changeMaximumQuantityBoxes;
+    private readonly Dictionary<int, decimal> _changeQuantities = [];
+    private readonly HashSet<int> _selectedChangePositionIds = [];
     private IReadOnlyList<InwardPalletChangeOptionDto>? _changeOptions;
     private string _changeLocationSearch = string.Empty;
     private string _changeRackFilter = string.Empty;
@@ -852,10 +870,14 @@
         _palletDetailsError = null;
     }
 
-    private async Task OpenChangeLocationAsync(int putawayId, string currentLocationCode)
+    private async Task OpenChangeLocationAsync(int putawayId, string currentLocationCode, decimal quantityBoxes, decimal maximumQuantityBoxes)
     {
         _changingPutawayId = putawayId;
         _changeCurrentLocationCode = currentLocationCode;
+        _changeOriginalQuantityBoxes = quantityBoxes;
+        _changeMaximumQuantityBoxes = maximumQuantityBoxes;
+        _changeQuantities.Clear();
+        _selectedChangePositionIds.Clear();
         _changeOptions = null;
         _changeLocationSearch = string.Empty;
         _changeRackFilter = RackCodeOf(currentLocationCode);
@@ -866,6 +888,13 @@
         try
         {
             _changeOptions = await Mediator.Send(new GetInwardPalletChangeOptionsQuery(putawayId));
+            foreach (var option in _changeOptions)
+            {
+                _changeQuantities[option.Id] = option.IsCurrent
+                    ? quantityBoxes
+                    : Math.Min(quantityBoxes, MaximumQuantityFor(option));
+                if (option.IsCurrent) _selectedChangePositionIds.Add(option.Id);
+            }
         }
         catch (Exception ex)
         {
@@ -878,6 +907,8 @@
     {
         _isChangeLocationOpen = false;
         _changeOptions = null;
+        _changeQuantities.Clear();
+        _selectedChangePositionIds.Clear();
         _changeRackFilter = string.Empty;
         _changeError = null;
     }
@@ -888,9 +919,10 @@
         _changeError = null;
         try
         {
-            await Mediator.Send(new ChangeInwardPutawayLocationCommand(_changingPutawayId, newPositionId, _changeReason));
+            await Mediator.Send(new ChangeInwardPutawayLocationCommand(
+                _changingPutawayId, newPositionId, _changeReason, _changeQuantities.GetValueOrDefault(newPositionId)));
             _detail = await Mediator.Send(new GetInwardDetailQuery(TransactionId));
-            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Put-away location changed.");
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Put-away allocation updated.");
             CloseChangeLocation();
         }
         catch (Exception ex)
@@ -902,6 +934,77 @@
         {
             _changingLocation = false;
         }
+    }
+
+    private bool CanApplyChange(InwardPalletChangeOptionDto option, bool requireChange = false)
+    {
+        var quantity = QuantityFor(option);
+        if (_changingLocation || string.IsNullOrWhiteSpace(_changeReason)
+            || quantity <= 0 || !decimal.IsInteger(quantity)
+            || quantity > MaximumQuantityFor(option))
+        {
+            return false;
+        }
+
+        return !requireChange || !option.IsCurrent || quantity != _changeOriginalQuantityBoxes;
+    }
+
+    private decimal QuantityFor(InwardPalletChangeOptionDto option) =>
+        _changeQuantities.GetValueOrDefault(option.Id, Math.Min(_changeOriginalQuantityBoxes, MaximumQuantityFor(option)));
+
+    private decimal MaximumQuantityFor(InwardPalletChangeOptionDto option) =>
+        Math.Min(_changeMaximumQuantityBoxes, option.FreeBoxes);
+
+    private void SetQuantity(int positionId, string? value)
+    {
+        _changeQuantities[positionId] = decimal.TryParse(value, out var quantity) ? quantity : 0;
+    }
+
+    private decimal SelectedChangeQuantity => _selectedChangePositionIds.Sum(id => _changeQuantities.GetValueOrDefault(id));
+    private bool CanApplyChanges => !_changingLocation && !string.IsNullOrWhiteSpace(_changeReason)
+        && _selectedChangePositionIds.Count > 0 && SelectedChangeQuantity > 0
+        && SelectedChangeQuantity <= _changeMaximumQuantityBoxes
+        && _selectedChangePositionIds.All(id => decimal.IsInteger(_changeQuantities.GetValueOrDefault(id))
+            && _changeQuantities.GetValueOrDefault(id) > 0
+            && _changeQuantities.GetValueOrDefault(id) <= MaximumQuantityFor(_changeOptions!.First(o => o.Id == id)));
+
+    private void ToggleChangeLocation(InwardPalletChangeOptionDto option, ChangeEventArgs args)
+    {
+        var isSelected = args.Value is true
+            || (args.Value is string value && bool.TryParse(value, out var parsed) && parsed);
+        if (!isSelected)
+        {
+            _selectedChangePositionIds.Remove(option.Id);
+            return;
+        }
+
+        _selectedChangePositionIds.Add(option.Id);
+        var quantityAtOtherSelectedLocations = _selectedChangePositionIds
+            .Where(id => id != option.Id)
+            .Sum(id => _changeQuantities.GetValueOrDefault(id));
+        var remainingForLocation = Math.Max(0, _changeMaximumQuantityBoxes - quantityAtOtherSelectedLocations);
+        var currentQuantity = _changeQuantities.GetValueOrDefault(option.Id);
+        if (currentQuantity <= 0 || currentQuantity > remainingForLocation)
+        {
+            _changeQuantities[option.Id] = Math.Min(MaximumQuantityFor(option), remainingForLocation);
+        }
+    }
+
+    private async Task ApplyAllocationsAsync()
+    {
+        _changingLocation = true;
+        _changeError = null;
+        try
+        {
+            var destinations = _selectedChangePositionIds.Select(id =>
+                new InwardPutawayDestination(id, _changeQuantities[id])).ToList();
+            await Mediator.Send(new ChangeInwardPutawayAllocationsCommand(_changingPutawayId, destinations, _changeReason));
+            _detail = await Mediator.Send(new GetInwardDetailQuery(TransactionId));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Put-away allocations updated.");
+            CloseChangeLocation();
+        }
+        catch (Exception ex) { _changeError = ex.Message; }
+        finally { _changingLocation = false; }
     }
 
     private IEnumerable<PutawayDetailRow> DisplayPutawayRows
@@ -1200,10 +1303,13 @@
             _detail = await Mediator.Send(new GetInwardDetailQuery(TransactionId));
             _isLocationUploadOpen = false;
             _locationWorkbook = null;
+            var updatedParts = new List<string>();
+            if (result.UpdatedLocations > 0) updatedParts.Add($"{result.UpdatedLocations} location(s)");
+            if (result.UpdatedQuantities > 0) updatedParts.Add($"{result.UpdatedQuantities} quantity value(s)");
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast",
-                result.UpdatedLocations == 0
-                    ? "Workbook validated. No pallet locations were changed."
-                    : $"{result.UpdatedLocations} pallet location(s) updated from Excel.");
+                updatedParts.Count == 0
+                    ? "Workbook validated. No allocations were changed."
+                    : $"Updated {string.Join(" and ", updatedParts)} from Excel.");
         }
         catch (Exception ex)
         {

@@ -18,7 +18,8 @@ public class PulloutAllocationService(IApplicationDbContext db) : IPulloutAlloca
         decimal quantityBoxes,
         int warehouseId,
         CancellationToken cancellationToken = default,
-        bool preview = false)
+        bool preview = false,
+        int? excludePulloutTransactionId = null)
     {
         var remaining = quantityBoxes;
         var picks = new List<PulloutPickLine>();
@@ -41,6 +42,22 @@ public class PulloutAllocationService(IApplicationDbContext db) : IPulloutAlloca
             .ThenBy(b => b.PalletPosition.LocationCode)
             .ToListAsync(cancellationToken);
 
+        var reserved = await db.PulloutPicks.AsNoTracking()
+            .Where(p => p.PulloutTransactionLine.MaterialId == materialId
+                && p.PulloutTransactionLine.PulloutTransaction.WarehouseId == warehouseId
+                && !p.PulloutTransactionLine.PulloutTransaction.IsConfirmed
+                && !p.PulloutTransactionLine.PulloutTransaction.IsRejected
+                && (!excludePulloutTransactionId.HasValue
+                    || p.PulloutTransactionLine.PulloutTransactionId != excludePulloutTransactionId.Value))
+            .GroupBy(p => new { p.PalletPositionId, p.MfgMonth })
+            .Select(group => new
+            {
+                group.Key.PalletPositionId,
+                group.Key.MfgMonth,
+                QuantityBoxes = group.Sum(p => p.QuantityBoxes)
+            })
+            .ToDictionaryAsync(x => (x.PalletPositionId, x.MfgMonth), x => x.QuantityBoxes, cancellationToken);
+
         foreach (var batch in batches)
         {
             if (remaining <= 0)
@@ -48,7 +65,10 @@ public class PulloutAllocationService(IApplicationDbContext db) : IPulloutAlloca
                 break;
             }
 
-            var take = Math.Min(remaining, batch.QuantityBoxes);
+            var available = Math.Max(0, batch.QuantityBoxes
+                - reserved.GetValueOrDefault((batch.PalletPositionId, batch.MfgMonth)));
+            var take = Math.Min(remaining, available);
+            if (take <= 0) continue;
             batch.QuantityBoxes -= take;
             batch.RowVersion++;
             remaining -= take;

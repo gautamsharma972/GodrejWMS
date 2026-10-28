@@ -107,7 +107,7 @@ else
             <aside class="panel position-detail-panel">
                 <div class="position-detail-heading">
                     <h2>Position details</h2>
-                    <p>@(_selected is null ? "Select a location from the rack map." : "Stock and location settings at a glance.")</p>
+                    <p>@(_selected is null ? "Select a location from the rack map." : "Stock, pending reservations, and location settings at a glance.")</p>
                 </div>
                 <div class="panel-body">
                     @if (_selected is null)
@@ -133,7 +133,7 @@ else
                                 </div>
 
                                 <div class="position-utilization-row">
-                                    <span>Space used</span>
+                                    <span>Space committed</span>
                                     <strong>@_selected.OccupiedBoxes.ToString("0.###") of @(_selected.CapacityBoxes?.ToString() ?? "—") boxes</strong>
                                     <span>@OccupancyPercent(_selected).ToString("0.#")%</span>
                                 </div>
@@ -141,6 +141,33 @@ else
                                     <span style="@($"width:{OccupancyPercent(_selected):0.##}%")"></span>
                                 </div>
                             </section>
+
+                            @if ((_selected.PendingReservations?.Count ?? 0) > 0)
+                            {
+                                <section class="position-section">
+                                    <div class="position-section-header">
+                                        <h3>Pending inward reservations</h3>
+                                        <span>@_selected.PendingReservations!.Count item(s)</span>
+                                    </div>
+                                    <div class="sku-stock-list">
+                                        @foreach (var reservation in _selected.PendingReservations)
+                                        {
+                                            <article class="sku-stock-card">
+                                                <div class="sku-stock-card-header">
+                                                    <span class="sku-code-chip">@reservation.MaterialNumber</span>
+                                                    <span class="status-pill warning">Reserved</span>
+                                                </div>
+                                                <h4>@reservation.MaterialDescription</h4>
+                                                <dl class="sku-stock-meta">
+                                                    <div><dt>GRN</dt><dd>@reservation.ReferenceNumber</dd></div>
+                                                    <div><dt>PKM</dt><dd>@reservation.MfgMonthLabel</dd></div>
+                                                    <div><dt>Boxes</dt><dd>@reservation.QuantityBoxes.ToString("0.###")</dd></div>
+                                                </dl>
+                                            </article>
+                                        }
+                                    </div>
+                                </section>
+                            }
 
                             <dl class="position-facts">
                                 <div>
@@ -460,7 +487,11 @@ else
             (position.FlatLabel?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
             position.Stock.Any(s =>
                 s.MaterialNumber.ToString().Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                s.MaterialDescription.Contains(term, StringComparison.OrdinalIgnoreCase));
+                s.MaterialDescription.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+            (position.PendingReservations?.Any(r =>
+                r.ReferenceNumber.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                r.MaterialNumber.ToString().Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                r.MaterialDescription.Contains(term, StringComparison.OrdinalIgnoreCase)) ?? false);
     }
 
     private static string ZoneClass(string code) => code switch

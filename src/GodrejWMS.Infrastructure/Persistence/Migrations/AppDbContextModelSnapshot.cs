@@ -1661,6 +1661,11 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("varchar(500)");
 
+                    b.Property<bool>("AllowPkmMixing")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("tinyint(1)")
+                        .HasDefaultValue(true);
+
                     b.Property<int?>("CityId")
                         .HasColumnType("int");
 

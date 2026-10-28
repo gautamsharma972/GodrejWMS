@@ -1,6 +1,8 @@
 using ClosedXML.Excel;
+using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.Inward.Dtos;
+using GodrejWMS.Application.Features.InventoryMovement.Dtos;
 using GodrejWMS.Application.Features.Locations.Dtos;
 using GodrejWMS.Application.Features.Materials.Dtos;
 using GodrejWMS.Application.Features.Pullout.Dtos;
@@ -21,6 +23,93 @@ namespace GodrejWMS.Infrastructure.Services;
 /// </summary>
 public class ClosedXmlExcelService : IExcelService
 {
+    public byte[] WriteLowStockLocations(IReadOnlyList<LowStockLocationDto> rows, IReadOnlyList<MovementReasonDto> reasons)
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Low Stock Locations");
+        string[] headers = ["Material Code", "Material Description", "PKM", "Source Location", "Box Qty", "MRP", "Destination Location", "Move Quantity", "Reason Code"];
+        WriteHeader(ws, headers);
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var row = i + 2;
+            var item = rows[i];
+            ws.Cell(row, 1).Value = item.MaterialNumber.ToString();
+            ws.Cell(row, 1).Style.NumberFormat.Format = "@";
+            ws.Cell(row, 2).Value = item.MaterialDescription;
+            ws.Cell(row, 3).Value = item.MfgMonthLabel;
+            ws.Cell(row, 4).Value = item.LocationCode;
+            ws.Cell(row, 5).Value = item.QuantityBoxes;
+            ws.Cell(row, 6).Value = item.MrpPrice;
+            ws.Cell(row, 5).Style.NumberFormat.Format = "0.###";
+            ws.Cell(row, 6).Style.NumberFormat.Format = "#,##0.00";
+        }
+        ws.SheetView.FreezeRows(1);
+        ws.RangeUsed()?.SetAutoFilter();
+        ws.Columns(1, 9).AdjustToContents(10, 45);
+        double[] minimumWidths = [18, 34, 14, 18, 12, 12, 22, 16, 22];
+        for (var column = 1; column <= minimumWidths.Length; column++)
+            ws.Column(column).Width = Math.Max(ws.Column(column).Width, minimumWidths[column - 1]);
+        ws.Range(2, 7, Math.Max(2, rows.Count + 1), 9).Style.Fill.BackgroundColor = XLColor.FromHtml("#FFF7D6");
+
+        var reasonsSheet = workbook.Worksheets.Add("Movement Reasons");
+        WriteHeader(reasonsSheet, ["Reason Code", "Description"]);
+        var activeReasons = reasons.Where(reason => reason.IsActive).OrderBy(reason => reason.DisplayName).ToList();
+        for (var i = 0; i < activeReasons.Count; i++)
+        {
+            reasonsSheet.Cell(i + 2, 1).Value = activeReasons[i].Code;
+            reasonsSheet.Cell(i + 2, 2).Value = activeReasons[i].DisplayName;
+        }
+        if (activeReasons.Count > 0 && rows.Count > 0)
+        {
+            reasonsSheet.Range(2, 1, activeReasons.Count + 1, 1)
+                .AddToNamed("LowStockMovementReasonCodes", XLScope.Workbook);
+            var reasonValidation = ws.Range(2, 9, rows.Count + 1, 9).CreateDataValidation();
+            reasonValidation.List("LowStockMovementReasonCodes");
+            reasonValidation.IgnoreBlanks = true;
+            reasonValidation.InCellDropdown = true;
+            reasonValidation.ShowErrorMessage = true;
+            reasonValidation.ErrorTitle = "Invalid reason code";
+            reasonValidation.ErrorMessage = "Select an active reason code from the dropdown.";
+        }
+        reasonsSheet.SheetView.FreezeRows(1);
+        reasonsSheet.RangeUsed()?.SetAutoFilter();
+        reasonsSheet.Columns(1, 2).AdjustToContents(12, 45);
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public IReadOnlyList<LowStockMovementImportRow> ReadLowStockMovements(Stream fileStream)
+    {
+        using var workbook = LoadWorkbook(fileStream);
+        var ws = workbook.Worksheets.First();
+        var headerRow = FindHeaderRow(ws, "Material Code");
+        var rows = new List<LowStockMovementImportRow>();
+        var lastRow = ws.LastRowUsed()?.RowNumber() ?? headerRow;
+        for (var row = headerRow + 1; row <= lastRow; row++)
+        {
+            if (ws.Cell(row, 1).IsEmpty() && ws.Cell(row, 7).IsEmpty()) continue;
+            if (!ws.Cell(row, 1).TryGetValue(out long materialNumber) || materialNumber <= 0)
+                throw new InvalidOperationException($"Row {row}: Material Code is required.");
+            var destination = ws.Cell(row, 7).GetString().Trim();
+            if (destination.Length == 0) continue;
+            var quantity = ReadDecimal(ws.Cell(row, 8));
+            if (quantity <= 0) throw new InvalidOperationException($"Row {row}: Move Quantity must be greater than zero.");
+            var reason = ws.Cell(row, 9).GetString().Trim();
+            if (reason.Length == 0) throw new InvalidOperationException($"Row {row}: Reason Code is required.");
+            rows.Add(new LowStockMovementImportRow(
+                materialNumber,
+                ws.Cell(row, 3).GetString().Trim(),
+                ws.Cell(row, 4).GetString().Trim(),
+                destination,
+                quantity,
+                reason,
+                row));
+        }
+        if (rows.Count == 0) throw new InvalidOperationException("No movement rows were found. Enter Destination Location, Move Quantity, and Reason Code.");
+        return rows;
+    }
+
     public byte[] WriteOperationalReport(string title,
         IReadOnlyList<(string Header, Func<ReportRow, string> Value)> columns,
         IReadOnlyList<ReportRow> rows)
@@ -333,9 +422,9 @@ public class ClosedXmlExcelService : IExcelService
 
         var samples = new object[][]
         {
-            [40000015, 0.008, 2010, "MAR"],
-            [40000015, 0.008, 2010, "APR"],
-            [40000015, 0.008, 2010, "MAY"]
+            [40000015, 8, 2010, "MAR"],
+            [40000015, 12, 2010, "APR"],
+            [40000015, 16, 2010, "MAY"]
         };
 
         for (var r = 0; r < samples.Length; r++)
@@ -374,27 +463,58 @@ public class ClosedXmlExcelService : IExcelService
 
         var headerRow = FindHeaderRow(ws, "Material Code");
         var rows = new List<InwardImportRow>();
+        var errors = new List<string>();
+        var lastRow = ws.LastRowUsed()?.RowNumber() ?? headerRow;
 
-        var row = headerRow + 1;
-        while (true)
+        for (var row = headerRow + 1; row <= lastRow; row++)
         {
-            var cellA = ws.Cell(row, 1);
-            if (cellA.IsEmpty() || !cellA.TryGetValue(out long materialCode) || materialCode <= 0)
+            var materialCell = ws.Cell(row, 1);
+            var quantityCell = ws.Cell(row, 2);
+            var yearCell = ws.Cell(row, 3);
+            var monthCell = ws.Cell(row, 4);
+
+            if (materialCell.IsEmpty() && quantityCell.IsEmpty() && yearCell.IsEmpty() && monthCell.IsEmpty())
             {
-                break;
+                continue;
             }
 
-            var mfgYear = (int)ws.Cell(row, 3).GetValue<double>();
-            var mfgMonth = ws.Cell(row, 4).GetString().Trim();
+            var rowErrors = new List<string>();
+            if (!materialCell.TryGetValue(out long materialCode) || materialCode <= 0)
+                rowErrors.Add("Material Code must be a positive whole number");
+
+            if (!quantityCell.TryGetValue(out decimal quantityBoxes) || quantityBoxes <= 0)
+                rowErrors.Add("Total Stock in CFB(qty) must be greater than zero");
+            else if (!decimal.IsInteger(quantityBoxes))
+                rowErrors.Add("Total Stock in CFB(qty) must be a whole number (no decimals)");
+
+            if (!yearCell.TryGetValue(out int mfgYear) || mfgYear is < 1900 or > 9999)
+                rowErrors.Add("Mfg Year must be a valid four-digit year");
+
+            var mfgMonth = monthCell.GetString().Trim();
+            var mfgMonthText = $"{mfgMonth}|{mfgYear}";
+            if (string.IsNullOrWhiteSpace(mfgMonth) || !MfgMonthParser.TryParse(mfgMonthText, out _))
+                rowErrors.Add("Mfg Month must be JAN through DEC");
+
+            if (rowErrors.Count > 0)
+            {
+                errors.Add($"Row {row}: {string.Join("; ", rowErrors)}.");
+                continue;
+            }
 
             rows.Add(new InwardImportRow(
                 MaterialCode: materialCode,
-                QuantityBoxes: (decimal)ws.Cell(row, 2).GetValue<double>(),
-                MfgMonthText: $"{mfgMonth}|{mfgYear}",
+                QuantityBoxes: quantityBoxes,
+                MfgMonthText: mfgMonthText,
                 RowNumber: row));
-
-            row++;
         }
+
+        if (errors.Count > 0)
+            throw new InvalidOperationException($"The inward workbook contains invalid data. {string.Join(" ", errors.Take(10))}");
+
+        if (rows.Count == 0)
+            throw new InvalidOperationException(
+                "No inward rows were found. Enter data below the header using Material Code, " +
+                "a whole-number box quantity, Mfg Year, and Mfg Month.");
 
         return rows;
     }
@@ -490,22 +610,23 @@ public class ClosedXmlExcelService : IExcelService
     {
         using var workbook = new XLWorkbook();
 
-        // Sheet 1: unchanged - same column layout the pick-list download has always used.
-        string[] headers = ["Material Code", "Material Desc.", "Total Stock in CFB", "Mfg Month", "Pallet Position", "Plant Name"];
+        // Sheet 1: printable Picklist layout with the transport header followed by one row per
+        // allocated pallet position. The underlying pick data and column order stay unchanged.
         var downloadSheet = workbook.Worksheets.Add("Pullout Download");
-        WriteHeader(downloadSheet, headers);
-        var rowNum = 2;
+        BuildPicklistLayout(downloadSheet, loadingSheetHeader, rows.Count);
+        var rowNum = PicklistFirstDataRow;
         foreach (var i in rows)
         {
-            downloadSheet.Cell(rowNum, 1).Value = i.MaterialNumber;
+            downloadSheet.Cell(rowNum, 1).Value = i.MaterialNumber.ToString();
+            downloadSheet.Cell(rowNum, 1).Style.NumberFormat.Format = "@";
             downloadSheet.Cell(rowNum, 2).Value = i.MaterialDescription;
             downloadSheet.Cell(rowNum, 3).Value = i.QuantityBoxes;
+            downloadSheet.Cell(rowNum, 3).Style.NumberFormat.Format = "0.###";
             downloadSheet.Cell(rowNum, 4).Value = i.MfgMonthLabel;
             downloadSheet.Cell(rowNum, 5).Value = i.PalletPositionCode;
             downloadSheet.Cell(rowNum, 6).Value = i.PlantName;
             rowNum++;
         }
-        downloadSheet.Columns().AdjustToContents();
 
         // Sheet 2: the GCPL Loading Sheet layout, Code/Description/Del Qty as requested and
         // Remarks set from each line's allocation outcome - every other data column (Priority,
@@ -529,6 +650,119 @@ public class ClosedXmlExcelService : IExcelService
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
         return stream.ToArray();
+    }
+
+    private const int PicklistFirstDataRow = 11;
+
+    private static void BuildPicklistLayout(
+        IXLWorksheet ws,
+        PulloutLoadingSheetHeaderDto header,
+        int dataRowCount)
+    {
+        ws.ShowGridLines = false;
+        ws.Column(1).Width = 17;
+        ws.Column(2).Width = 52;
+        ws.Column(3).Width = 21;
+        ws.Column(4).Width = 13;
+        ws.Column(5).Width = 17;
+        ws.Column(6).Width = 15;
+        ws.Column(7).Width = 13;
+        ws.Column(8).Width = 13;
+
+        var lastRow = Math.Max(PicklistFirstDataRow, PicklistFirstDataRow + dataRowCount - 1);
+        var borderedRange = ws.Range(2, 1, lastRow, 8);
+        borderedRange.Style.Font.FontName = "Arial";
+        borderedRange.Style.Font.FontSize = 10;
+        borderedRange.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+        borderedRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+        borderedRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+        borderedRange.Style.Border.OutsideBorderColor = XLColor.Black;
+        borderedRange.Style.Border.InsideBorderColor = XLColor.Black;
+
+        ws.Range("A2:H2").Merge();
+        ws.Cell("A2").Value = "GODREJ CONSUMER PRODUCTS LTD";
+        ws.Range("A3:H3").Merge();
+        ws.Cell("A3").Value = string.IsNullOrWhiteSpace(header.WarehouseAddress) ? "NA" : header.WarehouseAddress;
+        ws.Range("A4:H4").Merge();
+        ws.Cell("A4").Value = "Picklist";
+
+        ws.Range("A2:H4").Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        ws.Range("A2:H4").Style.Font.Bold = true;
+        ws.Cell("A4").Style.Font.FontSize = 15;
+
+        void Label(string cell, string text)
+        {
+            ws.Cell(cell).Value = text;
+            ws.Cell(cell).Style.Font.Bold = true;
+        }
+
+        ws.Range("B5:C5").Merge();
+        ws.Range("B6:C6").Merge();
+        ws.Range("B7:C7").Merge();
+        ws.Range("B8:C8").Merge();
+        ws.Range("G5:H5").Merge();
+        ws.Range("G6:H6").Merge();
+        ws.Range("G7:H7").Merge();
+        ws.Range("G8:H8").Merge();
+
+        Label("A5", "Transport");
+        Label("D5", "GATE NO:");
+        Label("F5", "Plan Time:");
+        Label("A6", "Vehicle no");
+        Label("F6", "Date");
+        Label("A7", "Destination");
+        Label("F7", "Start Time");
+        Label("A8", "Driver No");
+        Label("F8", "End Time");
+
+        var fields = header.Fields;
+        void SetText(string cell, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value)) ws.Cell(cell).Value = value;
+        }
+
+        SetText("B5", fields?.TransportName);
+        SetText("E5", fields?.GateNumber);
+        SetText("G5", fields?.PlanTime);
+        SetText("B6", fields?.VehicleNumber);
+        if (!string.IsNullOrWhiteSpace(fields?.DateText))
+        {
+            ws.Cell("G6").Value = fields.DateText;
+        }
+        else
+        {
+            ws.Cell("G6").Value = header.CreatedAt.ToString("dd.MM.yyyy");
+        }
+        SetText("B7", header.PlantName);
+        SetText("G7", fields?.StartTime);
+        SetText("B8", fields?.DriverNumber);
+        SetText("G8", fields?.EndTime);
+
+        string[] columnHeaders =
+            ["Material Code", "Material Desc.", "Total Stock in CFB", "Mfg Month", "Pallet Position", "Plant Name"];
+        for (var column = 0; column < columnHeaders.Length; column++)
+        {
+            ws.Cell(10, column + 1).Value = columnHeaders[column];
+        }
+
+        ws.Range("A10:H10").Style.Font.Bold = true;
+        ws.Range("A10:H10").Style.Fill.BackgroundColor = XLColor.FromHtml("#F3F4F6");
+        ws.Range("A10:H10").Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
+
+        ws.Row(1).Height = 10;
+        ws.Row(2).Height = 22;
+        ws.Row(3).Height = 22;
+        ws.Row(4).Height = 30;
+        for (var row = 5; row <= 10; row++) ws.Row(row).Height = 22;
+        for (var row = PicklistFirstDataRow; row <= lastRow; row++) ws.Row(row).Height = 22;
+
+        ws.PageSetup.PageOrientation = XLPageOrientation.Landscape;
+        ws.PageSetup.FitToPages(1, 0);
+        ws.PageSetup.SetRowsToRepeatAtTop(2, 8);
+        ws.PageSetup.Margins.Top = 0.25;
+        ws.PageSetup.Margins.Bottom = 0.25;
+        ws.PageSetup.Margins.Left = 0.25;
+        ws.PageSetup.Margins.Right = 0.25;
     }
 
     private static string DescribeAvailability(AllocationStatus status) => status switch
@@ -879,12 +1113,16 @@ public class ClosedXmlExcelService : IExcelService
             ws.Cell(rowNum, 9).Value = item.QuantityBoxes;
             ws.Cell(rowNum, 10).Value = item.PutawayStatus;
             ws.Cell(rowNum, 11).Value = XLCellValue.FromObject(item.PutawayId);
+            var editableFill = item.PutawayStatus.Equals("Reserved", StringComparison.OrdinalIgnoreCase)
+                ? XLColor.FromHtml("#EAF2FF")
+                : XLColor.FromHtml("#F1F5F9");
+            ws.Cell(rowNum, 8).Style.Fill.BackgroundColor = editableFill;
+            ws.Cell(rowNum, 9).Style.Fill.BackgroundColor = editableFill;
             rowNum++;
         }
 
         ws.SheetView.FreezeRows(1);
         ws.RangeUsed()?.SetAutoFilter();
-        ws.Column(8).Style.Fill.BackgroundColor = XLColor.FromHtml("#EAF2FF");
         ws.Column(11).Hide();
         ws.Columns().AdjustToContents();
 
@@ -902,7 +1140,7 @@ public class ClosedXmlExcelService : IExcelService
         if (!ws.Cell(headerRow, 11).GetString().Trim().Equals("Put-away ID", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                "This workbook does not contain put-away identifiers. Download the GRN Excel again, edit only the Pallet Position column, and re-upload it.");
+                "This workbook does not contain put-away identifiers. Download the GRN Excel again, edit only Pallet Position and Qty at Position, and re-upload it.");
         }
 
         var rows = new List<InwardPutawayReassignmentImportRow>();

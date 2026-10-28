@@ -16,6 +16,12 @@ public class Warehouse
 
     public string? Address { get; set; }
 
+    /// <summary>
+    /// When enabled, inward put-away may consolidate different manufacturing periods of the
+    /// same material into one pallet position. Enabled by default to preserve existing behavior.
+    /// </summary>
+    public bool AllowPkmMixing { get; set; } = true;
+
     public bool IsActive { get; set; } = true;
 }
 

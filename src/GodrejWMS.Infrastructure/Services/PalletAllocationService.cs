@@ -15,6 +15,10 @@ namespace GodrejWMS.Infrastructure.Services;
 /// zone) — this also covers a brand-new SKU's very first placement, and anything Tier 2 couldn't
 /// place.
 ///
+/// Warehouses can disable PKM mixing. In that mode, both the exact-match top-up tier and the
+/// consolidation tier reject a position that already contains or reserves another PKM for the
+/// material; empty positions and positions containing only the incoming PKM remain eligible.
+///
 /// Within a tier, positions are ranked lexicographically, most to least significant: zone/velocity
 /// fit (<see cref="ScoreLocation"/>), then Design Code proximity (prefer a rack already holding the
 /// same Design Code), then the physical Rack -> Column -> Level fill sequence: a column is filled
@@ -43,6 +47,14 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
         var material = await db.Materials
             .AsNoTracking()
             .FirstAsync(m => m.Id == materialId, cancellationToken);
+        // Existing warehouses default to allowing PKM mixing. The nullable projection also keeps
+        // isolated service tests/backward-compatible callers on the historical behavior when
+        // their lightweight data setup does not materialize a Warehouse row.
+        var allowPkmMixing = await db.Warehouses
+            .AsNoTracking()
+            .Where(w => w.Id == warehouseId)
+            .Select(w => (bool?)w.AllowPkmMixing)
+            .SingleOrDefaultAsync(cancellationToken) ?? true;
         var activeSeasonId = await GetActiveSeasonAsync(cancellationToken);
         var stockSubtypeCode = await db.LocationSubtypes
             .AsNoTracking()
@@ -79,7 +91,9 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
             .ToListAsync(cancellationToken);
 
         var topUpPositions = candidatePositions
-            .Where(p => HasSameSkuPkmStock(p, materialId, mfgMonth, stockSubtypeId) || HasSameSkuPkmReservation(p.Id, pendingReservations, materialId, mfgMonth, stockSubtypeId))
+            .Where(p => (HasSameSkuPkmStock(p, materialId, mfgMonth, stockSubtypeId)
+                    || HasSameSkuPkmReservation(p.Id, pendingReservations, materialId, mfgMonth, stockSubtypeId))
+                && (allowPkmMixing || !HasDifferentPkmForMaterial(p, materialId, mfgMonth, pendingReservations)))
             .OrderBy(p => ScoreLocation(p, material, activeSeasonId, mfgMonth, oldestMfgMonth: null));
 
         foreach (var position in topUpPositions)
@@ -118,7 +132,7 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
                 remaining = FillSameRackConsolidation(
                     candidatePositions, pendingReservations, reservedByPosition, lines,
                     materialId, stockSubtypeId, material, activeSeasonId, mfgMonth, oldestMfgMonth,
-                    remaining);
+                    allowPkmMixing, remaining);
             }
 
             foreach (var position in candidatePositions
@@ -182,6 +196,7 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
         int activeSeasonId,
         int incomingMfgMonth,
         int? oldestMfgMonth,
+        bool allowPkmMixing,
         decimal remaining)
     {
         var rackQuantities = new Dictionary<int, decimal>();
@@ -220,7 +235,8 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
             }
 
             var rackCandidates = candidatePositions
-                .Where(p => p.RackId == rackId && IsConsolidationEligible(p, materialId, pendingReservations))
+                .Where(p => p.RackId == rackId && IsConsolidationEligible(
+                    p, materialId, incomingMfgMonth, allowPkmMixing, pendingReservations))
                 .OrderBy(p => ScoreLocation(p, material, activeSeasonId, incomingMfgMonth, oldestMfgMonth))
                 .ThenBy(p => p.Column)
                 .ThenBy(p => p.Level);
@@ -248,12 +264,38 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
         return remaining;
     }
 
-    private static bool IsConsolidationEligible(PalletPosition position, int materialId, IReadOnlyList<PendingReservation> pendingReservations)
+    private static bool IsConsolidationEligible(
+        PalletPosition position,
+        int materialId,
+        int incomingMfgMonth,
+        bool allowPkmMixing,
+        IReadOnlyList<PendingReservation> pendingReservations)
     {
         var hasOtherMaterialStock = position.StockBatches.Any(b => b.QuantityBoxes > 0 && b.MaterialId != materialId);
         var hasOtherMaterialReservation = pendingReservations.Any(r => r.PalletPositionId == position.Id && r.QuantityBoxes > 0 && r.MaterialId != materialId);
-        return !hasOtherMaterialStock && !hasOtherMaterialReservation;
+        if (hasOtherMaterialStock || hasOtherMaterialReservation)
+        {
+            return false;
+        }
+
+        if (allowPkmMixing)
+        {
+            return true;
+        }
+
+        return !HasDifferentPkmForMaterial(position, materialId, incomingMfgMonth, pendingReservations);
     }
+
+    private static bool HasDifferentPkmForMaterial(
+        PalletPosition position,
+        int materialId,
+        int incomingMfgMonth,
+        IReadOnlyList<PendingReservation> pendingReservations) =>
+        position.StockBatches.Any(b =>
+            b.QuantityBoxes > 0 && b.MaterialId == materialId && b.MfgMonth != incomingMfgMonth)
+        || pendingReservations.Any(r =>
+            r.PalletPositionId == position.Id && r.QuantityBoxes > 0
+            && r.MaterialId == materialId && r.MfgMonth != incomingMfgMonth);
 
     private static bool HasSameSkuPkmStock(PalletPosition position, int materialId, int mfgMonth, int stockSubtypeId) =>
         position.StockBatches.Any(b => b.MaterialId == materialId && b.MfgMonth == mfgMonth && b.StockSubtypeId == stockSubtypeId && b.QuantityBoxes > 0);

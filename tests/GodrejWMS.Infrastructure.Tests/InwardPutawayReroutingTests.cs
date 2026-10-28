@@ -121,6 +121,33 @@ public class InwardPutawayReroutingTests
     }
 
     [Fact]
+    public async Task ChangeLocation_Throws_WhenWarehouseBlocksPkmMixingAndTargetHasDifferentPkm()
+    {
+        var (db, materialA, _, _, target, putaway) = SeedScenario();
+        db.Warehouses.Add(new Warehouse
+        {
+            Id = 1,
+            Code = "GCPL",
+            Name = "GCPL",
+            AllowPkmMixing = false
+        });
+        db.StockBatches.Add(new StockBatch
+        {
+            MaterialId = materialA.Id,
+            PalletPositionId = target.Id,
+            MfgMonth = 201002,
+            QuantityBoxes = 5
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new ChangeInwardPutawayLocationHandler(db);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            handler.Handle(new ChangeInwardPutawayLocationCommand(putaway.Id, target.Id, "Target changed"), CancellationToken.None));
+
+        Assert.Contains("does not allow PKM mixing", error.Message);
+    }
+
+    [Fact]
     public async Task ChangeLocation_Succeeds_AndRecordsOverrideReason_WhenTargetIsFree()
     {
         var (db, _, _, _, target, putaway) = SeedScenario();
@@ -132,6 +159,143 @@ public class InwardPutawayReroutingTests
         Assert.Equal(target.Id, moved.PalletPositionId);
         Assert.Equal("Damaged pallet in original slot", moved.OverrideReason);
         Assert.Equal(1u, moved.RowVersion);
+    }
+
+    [Fact]
+    public async Task ChangeAllocation_UpdatesQuantityAtCurrentLocation_AndRecalculatesLine()
+    {
+        var (db, _, _, current, _, putaway) = SeedScenario();
+        var handler = new ChangeInwardPutawayLocationHandler(db);
+
+        await handler.Handle(
+            new ChangeInwardPutawayLocationCommand(putaway.Id, current.Id, "Only three boxes received", 3),
+            CancellationToken.None);
+
+        var updated = db.InwardPutaways.Single(p => p.Id == putaway.Id);
+        var line = db.InwardTransactionLines.Single(l => l.Id == putaway.InwardTransactionLineId);
+        Assert.Equal(3, updated.QuantityBoxes);
+        Assert.Equal(current.Id, updated.PalletPositionId);
+        Assert.Equal(3, line.AllocatedQuantityBoxes);
+        Assert.Equal(AllocationStatus.Partial, line.Status);
+        Assert.Contains("2 box(es) remain unallocated", line.Remarks);
+    }
+
+    [Fact]
+    public async Task ChangeAllocation_RejectsQuantityAboveRequestedLineTotal()
+    {
+        var (db, _, _, current, _, putaway) = SeedScenario();
+        var handler = new ChangeInwardPutawayLocationHandler(db);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new ChangeInwardPutawayLocationCommand(putaway.Id, current.Id, "Increase", 6),
+            CancellationToken.None));
+
+        Assert.Contains("cannot exceed 5", error.Message);
+        Assert.Equal(5, db.InwardPutaways.Single(p => p.Id == putaway.Id).QuantityBoxes);
+    }
+
+    [Fact]
+    public async Task ChangeAllocation_RejectsConfirmedPutaway()
+    {
+        var (db, _, _, current, _, putaway) = SeedScenario();
+        putaway.IsConfirmed = true;
+        await db.SaveChangesAsync();
+        var handler = new ChangeInwardPutawayLocationHandler(db);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new ChangeInwardPutawayLocationCommand(putaway.Id, current.Id, "Reduce", 3),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ChangeAllocations_SplitsPutawayAcrossMultipleLocations()
+    {
+        var (db, _, _, current, target, putaway) = SeedScenario();
+        var handler = new ChangeInwardPutawayAllocationsHandler(db);
+
+        await handler.Handle(new ChangeInwardPutawayAllocationsCommand(
+            putaway.Id,
+            [new(current.Id, 2), new(target.Id, 3)],
+            "Split receipt across two slots"), CancellationToken.None);
+
+        var allocations = db.InwardPutaways.Where(p => p.InwardTransactionLineId == putaway.InwardTransactionLineId).ToList();
+        Assert.Equal(2, allocations.Count);
+        Assert.Equal(5, allocations.Sum(p => p.QuantityBoxes));
+        Assert.Contains(allocations, p => p.PalletPositionId == current.Id && p.QuantityBoxes == 2);
+        Assert.Contains(allocations, p => p.PalletPositionId == target.Id && p.QuantityBoxes == 3);
+    }
+
+    [Fact]
+    public async Task ChangeAllocations_RejectsCombinedQuantityAboveInwardQuantity()
+    {
+        var (db, _, _, current, target, putaway) = SeedScenario();
+        var handler = new ChangeInwardPutawayAllocationsHandler(db);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new ChangeInwardPutawayAllocationsCommand(putaway.Id,
+                [new(current.Id, 3), new(target.Id, 3)], "Too many"), CancellationToken.None));
+
+        Assert.Single(db.InwardPutaways.Where(p => p.InwardTransactionLineId == putaway.InwardTransactionLineId));
+        Assert.Equal(5, putaway.QuantityBoxes);
+    }
+
+    [Fact]
+    public async Task ChangeAllocations_FromHistory_CanSplitAnExistingAllocationAcrossMoreLocations()
+    {
+        var (db, _, _, current, target, putaway) = SeedScenario();
+        var third = new PalletPosition { RackId = current.RackId, Column = 3, Level = 1, LocationCode = "A-03-01" };
+        db.PalletPositions.Add(third);
+        await db.SaveChangesAsync();
+
+        var handler = new ChangeInwardPutawayAllocationsHandler(db);
+        await handler.Handle(new ChangeInwardPutawayAllocationsCommand(
+            putaway.Id,
+            [new(current.Id, 2), new(target.Id, 3)],
+            "Initial split"), CancellationToken.None);
+
+        var historyAllocation = db.InwardPutaways.Single(p => p.PalletPositionId == current.Id);
+        await handler.Handle(new ChangeInwardPutawayAllocationsCommand(
+            historyAllocation.Id,
+            [new(current.Id, 1), new(third.Id, 1)],
+            "Split history allocation"), CancellationToken.None);
+
+        var allocations = db.InwardPutaways
+            .Where(p => p.InwardTransactionLineId == putaway.InwardTransactionLineId)
+            .ToList();
+        Assert.Equal(3, allocations.Count);
+        Assert.Equal(5, allocations.Sum(p => p.QuantityBoxes));
+        Assert.Contains(allocations, p => p.PalletPositionId == current.Id && p.QuantityBoxes == 1);
+        Assert.Contains(allocations, p => p.PalletPositionId == target.Id && p.QuantityBoxes == 3);
+        Assert.Contains(allocations, p => p.PalletPositionId == third.Id && p.QuantityBoxes == 1);
+    }
+
+    [Fact]
+    public async Task ChangeAllocations_FromHistory_RejectsAggregateAboveInwardQuantity()
+    {
+        var (db, _, _, current, target, putaway) = SeedScenario();
+        var third = new PalletPosition { RackId = current.RackId, Column = 3, Level = 1, LocationCode = "A-03-01" };
+        db.PalletPositions.Add(third);
+        await db.SaveChangesAsync();
+
+        var handler = new ChangeInwardPutawayAllocationsHandler(db);
+        await handler.Handle(new ChangeInwardPutawayAllocationsCommand(
+            putaway.Id,
+            [new(current.Id, 2), new(target.Id, 3)],
+            "Initial split"), CancellationToken.None);
+
+        var historyAllocation = db.InwardPutaways.Single(p => p.PalletPositionId == current.Id);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new ChangeInwardPutawayAllocationsCommand(
+                historyAllocation.Id,
+                [new(current.Id, 2), new(third.Id, 1)],
+                "Too many from history"), CancellationToken.None));
+
+        Assert.Contains("exceed the material's inward quantity", error.Message);
+        var allocations = db.InwardPutaways
+            .Where(p => p.InwardTransactionLineId == putaway.InwardTransactionLineId)
+            .ToList();
+        Assert.Equal(2, allocations.Count);
+        Assert.Equal(5, allocations.Sum(p => p.QuantityBoxes));
     }
 
     [Fact]
@@ -309,6 +473,27 @@ public class InwardPutawayReroutingTests
     }
 
     [Fact]
+    public async Task ExcelReassignment_ChangesPendingQuantity_AndRecalculatesLine()
+    {
+        var (db, material, _, current, _, putaway) = SeedScenario();
+        var service = new ClosedXmlExcelService();
+        using var workbook = BuildReassignmentWorkbook(service, material, putaway, current.LocationCode, quantityBoxes: 3);
+        var handler = new ImportInwardPutawayLocationsHandler(db, service);
+
+        var result = await handler.Handle(
+            new ImportInwardPutawayLocationsCommand(
+                putaway.InwardTransactionLine.InwardTransactionId, workbook, "Only three boxes received"),
+            CancellationToken.None);
+
+        Assert.Equal(0, result.UpdatedLocations);
+        Assert.Equal(1, result.UpdatedQuantities);
+        Assert.Equal(3, db.InwardPutaways.Single(p => p.Id == putaway.Id).QuantityBoxes);
+        var line = db.InwardTransactionLines.Single(l => l.Id == putaway.InwardTransactionLineId);
+        Assert.Equal(3, line.AllocatedQuantityBoxes);
+        Assert.Equal(AllocationStatus.Partial, line.Status);
+    }
+
+    [Fact]
     public async Task ExcelReassignment_RejectsSkuMismatch_WithoutChangingLocation()
     {
         var (db, material, _, current, target, putaway) = SeedScenario();
@@ -373,7 +558,8 @@ public class InwardPutawayReroutingTests
         InwardPutaway putaway,
         string targetLocation,
         long? materialNumber = null,
-        string pkm = "JAN|2010")
+        string pkm = "JAN|2010",
+        decimal? quantityBoxes = null)
     {
         var line = putaway.InwardTransactionLine;
         var rows = new[]
@@ -387,7 +573,7 @@ public class InwardPutawayReroutingTests
                 line.AllocatedQuantityBoxes,
                 line.Status.ToString(),
                 targetLocation,
-                putaway.QuantityBoxes,
+                quantityBoxes ?? putaway.QuantityBoxes,
                 "Reserved",
                 putaway.Id)
         };

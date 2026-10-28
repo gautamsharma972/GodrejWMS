@@ -96,6 +96,17 @@
                                 <label class="form-label">Address</label>
                                 <InputText class="form-control" @bind-Value="_form.Address" />
                             </div>
+                            <div class="col-12">
+                                <div class="configuration-option">
+                                    <div>
+                                        <label class="configuration-option-title" for="warehouse-pkm-mixing">Allow PKM mixing</label>
+                                        <p class="configuration-option-help">Permit different manufacturing periods of the same material in one pallet position during inward put-away.</p>
+                                    </div>
+                                    <div class="form-check form-switch configuration-option-switch">
+                                        <InputCheckbox class="form-check-input" id="warehouse-pkm-mixing" @bind-Value="_form.AllowPkmMixing" />
+                                    </div>
+                                </div>
+                            </div>
                             @if (_editingId.HasValue)
                             {
                                 <div class="col-12">
@@ -171,6 +182,10 @@
     }
     else
     {
+        @if (!string.IsNullOrWhiteSpace(_tableError))
+        {
+            <div class="alert alert-danger mb-3">@_tableError</div>
+        }
         <div class="table-responsive panel-table">
             <table class="table table-hover align-middle mb-0">
                 <thead>
@@ -181,6 +196,7 @@
                         <th>City</th>
                         <th>State</th>
                         <th>Region</th>
+                        <th>PKM Mixing</th>
                         <th>Active</th>
                         <th class="table-actions"></th>
                     </tr>
@@ -195,6 +211,30 @@
                             <td>@(row.CityName ?? "-")</td>
                             <td>@(row.StateName ?? "-")</td>
                             <td>@(row.RegionName ?? "-")</td>
+                            <td>
+                                <AuthorizeView Roles="Superadmin" Context="pkmToggleContext">
+                                    <Authorized>
+                                        <button type="button"
+                                                class="pkm-mixing-toggle @(row.AllowPkmMixing ? "is-on" : "is-off")"
+                                                role="switch"
+                                                aria-checked="@row.AllowPkmMixing.ToString().ToLowerInvariant()"
+                                                aria-label="@($"{(row.AllowPkmMixing ? "Disable" : "Enable")} PKM mixing for {row.Name}")"
+                                                title="@($"PKM mixing: {(row.AllowPkmMixing ? "Allowed" : "Blocked")}")"
+                                                disabled="@_savingPkmWarehouseIds.Contains(row.Id)"
+                                                @onclick="() => TogglePkmMixingAsync(row)">
+                                            <span class="pkm-mixing-toggle-knob" aria-hidden="true"></span>
+                                        </button>
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        <span class="pkm-mixing-toggle @(row.AllowPkmMixing ? "is-on" : "is-off") is-readonly"
+                                              role="switch"
+                                              aria-checked="@row.AllowPkmMixing.ToString().ToLowerInvariant()"
+                                              aria-label="@($"PKM mixing for {row.Name}: {(row.AllowPkmMixing ? "Allowed" : "Blocked")}")">
+                                            <span class="pkm-mixing-toggle-knob" aria-hidden="true"></span>
+                                        </span>
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            </td>
                             <td><span class="status-pill @(row.IsActive ? "success" : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span></td>
                             <td class="table-actions">
                                 <AuthorizeView Roles="Superadmin" Context="rowEditContext">
@@ -225,6 +265,8 @@
     private int? _editingId;
     private FormModel _form = new();
     private string? _formError;
+    private string? _tableError;
+    private readonly HashSet<int> _savingPkmWarehouseIds = [];
 
     private WarehouseDto? _deleteTarget;
     private string? _deleteError;
@@ -245,6 +287,32 @@
         _rows = result.OrderBy(r => r.Name).ToList();
     }
 
+    private async Task TogglePkmMixingAsync(WarehouseDto row)
+    {
+        if (!_savingPkmWarehouseIds.Add(row.Id)) return;
+
+        _tableError = null;
+        try
+        {
+            var allowPkmMixing = !row.AllowPkmMixing;
+            await Mediator.Send(new UpdateWarehousePkmMixingCommand(row.Id, allowPkmMixing));
+            await LoadAsync();
+            await JsRuntime.InvokeVoidAsync(
+                "godrejWms.showToast",
+                $"PKM mixing {(allowPkmMixing ? "enabled" : "disabled")} for {row.Name}.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to update PKM mixing for warehouse {WarehouseId}", row.Id);
+            _tableError = "PKM mixing could not be updated. Please try again.";
+            await LoadAsync();
+        }
+        finally
+        {
+            _savingPkmWarehouseIds.Remove(row.Id);
+        }
+    }
+
     private void ShowCreateForm()
     {
         _formError = null;
@@ -253,6 +321,7 @@
         {
             WarehouseCategoryId = _categories.FirstOrDefault()?.Id ?? 0,
             RegionId = _regions.FirstOrDefault()?.Id ?? 0,
+            AllowPkmMixing = true,
             IsActive = true
         };
         _form.StateId = _states.FirstOrDefault(s => s.RegionId == _form.RegionId)?.Id ?? 0;
@@ -273,6 +342,7 @@
             StateId = row.StateId ?? 0,
             CityId = row.CityId ?? 0,
             Address = row.Address,
+            AllowPkmMixing = row.AllowPkmMixing,
             IsActive = row.IsActive
         };
         _showForm = true;
@@ -309,12 +379,13 @@
             if (_editingId.HasValue)
             {
                 await Mediator.Send(new UpdateWarehouseCommand(
-                    _editingId.Value, _form.Code, _form.Name, _form.WarehouseCategoryId, _form.CityId, _form.Address, _form.IsActive));
+                    _editingId.Value, _form.Code, _form.Name, _form.WarehouseCategoryId, _form.CityId, _form.Address,
+                    _form.AllowPkmMixing, _form.IsActive));
             }
             else
             {
                 await Mediator.Send(new CreateWarehouseCommand(
-                    _form.Code, _form.Name, _form.WarehouseCategoryId, _form.CityId, _form.Address));
+                    _form.Code, _form.Name, _form.WarehouseCategoryId, _form.CityId, _form.Address, _form.AllowPkmMixing));
             }
             _showForm = false;
             _editingId = null;
@@ -372,6 +443,7 @@
         public int StateId { get; set; }
         public int CityId { get; set; }
         public string? Address { get; set; }
+        public bool AllowPkmMixing { get; set; } = true;
         public bool IsActive { get; set; } = true;
     }
 }

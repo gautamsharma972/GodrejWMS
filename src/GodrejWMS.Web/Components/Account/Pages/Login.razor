@@ -24,11 +24,28 @@
         </a>
 
         <div class="login-brand-content">
-            <div class="eyebrow">Secure Operations Access</div>
-            <h1>Run warehouse movements with confidence.</h1>
+            <div class="login-eyebrow"><i class="bi bi-shield-check" aria-hidden="true"></i> Secure operations access</div>
+            <h1>Warehouse control,<br />from one secure place.</h1>
             <p>
-                Centralized access for stock visibility, rack operations, inward receipts, and pullout execution.
+                Keep stock, inward, put-away, and pullout workflows moving with one connected operations console.
             </p>
+
+            <div class="login-workflow-visual" aria-hidden="true">
+                <div class="workflow-node is-active">
+                    <span><i class="bi bi-box-arrow-in-down"></i></span>
+                    <small>Inward</small>
+                </div>
+                <div class="workflow-line"><span></span></div>
+                <div class="workflow-node">
+                    <span><i class="bi bi-grid-3x3-gap"></i></span>
+                    <small>Put-away</small>
+                </div>
+                <div class="workflow-line"><span></span></div>
+                <div class="workflow-node">
+                    <span><i class="bi bi-box-arrow-up"></i></span>
+                    <small>Pullout</small>
+                </div>
+            </div>
         </div>
 
         <div class="login-assurance-grid" aria-label="Platform assurances">
@@ -48,48 +65,57 @@
     </section>
 
     <section class="login-panel" aria-labelledby="login-title">
-        <div class="login-card">
-            <div class="login-card-header">
-                <div>
-                    <div class="eyebrow">Authorized Personnel</div>
-                    <h2 id="login-title">Sign in to your account</h2>
+        <div class="login-panel-inner">
+            <div class="login-card">
+                <div class="login-card-header">
+                    <div>
+                        <div class="eyebrow">Authorized personnel</div>
+                        <h2 id="login-title">Welcome back</h2>
+                        <p>Sign in with your assigned warehouse account.</p>
+                    </div>
+                    <span class="login-status"><span class="live-dot"></span> System online</span>
                 </div>
-                <span class="login-status"><span class="live-dot"></span> Online</span>
+
+                <StatusMessage Message="@errorMessage" />
+
+                <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" role="alert" />
+
+                    <div class="login-field form-floating mb-3">
+                        <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control auth-input" autocomplete="username" aria-required="true" placeholder="name@example.com" />
+                        <label for="Input.Email" class="form-label"><i class="bi bi-envelope" aria-hidden="true"></i> Email address</label>
+                        <ValidationMessage For="() => Input.Email" class="text-danger" />
+                    </div>
+
+                    <div class="login-field form-floating mb-3">
+                        <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="form-control auth-input" autocomplete="current-password" aria-required="true" placeholder="password" />
+                        <label for="Input.Password" class="form-label"><i class="bi bi-lock" aria-hidden="true"></i> Password</label>
+                        <ValidationMessage For="() => Input.Password" class="text-danger" />
+                    </div>
+
+                    <div class="login-options">
+                        <label class="form-check-label">
+                            <InputCheckbox @bind-Value="Input.RememberMe" class="darker-border-checkbox form-check-input" />
+                            Remember this device
+                        </label>
+                    </div>
+
+                    <button type="submit" class="w-100 btn btn-lg btn-primary login-submit">
+                        <span>Sign in securely</span>
+                        <i class="bi bi-arrow-right" aria-hidden="true"></i>
+                    </button>
+
+                </EditForm>
+
+                <div class="login-security-note">
+                    <i class="bi bi-lock-fill" aria-hidden="true"></i>
+                    <span>Your session is encrypted and access is role-controlled.</span>
+                </div>
             </div>
 
-            <StatusMessage Message="@errorMessage" />
-
-            <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login">
-                <DataAnnotationsValidator />
-                <ValidationSummary class="text-danger" role="alert" />
-
-                <div class="form-floating mb-3">
-                    <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control auth-input" autocomplete="username" aria-required="true" placeholder="name@example.com" />
-                    <label for="Input.Email" class="form-label">Email address</label>
-                    <ValidationMessage For="() => Input.Email" class="text-danger" />
-                </div>
-
-                <div class="form-floating mb-3">
-                    <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="form-control auth-input" autocomplete="current-password" aria-required="true" placeholder="password" />
-                    <label for="Input.Password" class="form-label">Password</label>
-                    <ValidationMessage For="() => Input.Password" class="text-danger" />
-                </div>
-
-                <div class="login-options">
-                    <label class="form-check-label">
-                        <InputCheckbox @bind-Value="Input.RememberMe" class="darker-border-checkbox form-check-input" />
-                        Remember this device
-                    </label>
-                </div>
-
-                <button type="submit" class="w-100 btn btn-lg btn-primary login-submit">
-                    <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
-                    Sign in
-                </button>
-
-            </EditForm>
+            <p class="login-support-copy">Need access assistance? Contact your warehouse administrator.</p>
         </div>
-
     </section>
 </div>
 

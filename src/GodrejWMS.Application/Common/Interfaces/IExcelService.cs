@@ -1,4 +1,5 @@
 using GodrejWMS.Application.Features.Inward.Dtos;
+using GodrejWMS.Application.Features.InventoryMovement.Dtos;
 using GodrejWMS.Application.Features.Locations.Dtos;
 using GodrejWMS.Application.Features.Materials.Dtos;
 using GodrejWMS.Application.Features.Pullout.Dtos;
@@ -54,6 +55,10 @@ public interface IExcelService
     /// <summary>Writes the "Format inventory master" / "Format invent pullout-download" layout.</summary>
     byte[] WriteStockMaster(IReadOnlyList<StockMasterRowDto> rows);
 
+    byte[] WriteLowStockLocations(IReadOnlyList<LowStockLocationDto> rows, IReadOnlyList<MovementReasonDto> reasons);
+
+    IReadOnlyList<LowStockMovementImportRow> ReadLowStockMovements(Stream fileStream);
+
     /// <summary>Writes a sample Inventory Master upload workbook: the same layout as
     /// <see cref="WriteStockMaster"/>, pre-filled with example rows.</summary>
     byte[] WriteStockMasterTemplate();
@@ -63,10 +68,9 @@ public interface IExcelService
     /// "inward" upload, it does not run the put-away allocation engine.</summary>
     IReadOnlyList<StockMasterImportRow> ReadStockMaster(Stream fileStream);
 
-    /// <summary>Writes a pullout download workbook: the existing "Pullout Download" sheet
-    /// (unchanged, mirrors "Format invent pullout-download"), plus a second "Loading Sheet" tab
-    /// replicating the GCPL Loading Sheet's exact layout, with Remarks set per line from its
-    /// allocation outcome.</summary>
+    /// <summary>Writes a pullout download workbook: a printable "Pullout Download" Picklist sheet
+    /// with transport details and one row per allocated pallet position, plus the existing
+    /// "Loading Sheet" tab with Remarks set per line from its allocation outcome.</summary>
     byte[] WritePulloutDownload(
         IReadOnlyList<PulloutDownloadRowDto> rows,
         PulloutLoadingSheetHeaderDto loadingSheetHeader,

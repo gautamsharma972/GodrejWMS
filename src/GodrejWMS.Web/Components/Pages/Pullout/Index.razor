@@ -718,6 +718,14 @@
             {
                 await JsRuntime.InvokeVoidAsync("godrejWms.unregisterOutsideClick", _outsideClickHandlerId);
             }
+            catch (JSDisconnectedException)
+            {
+                // The circuit can disconnect before component disposal completes.
+            }
+            catch (OperationCanceledException)
+            {
+                // Application/circuit shutdown can cancel pending JS interop.
+            }
             catch (InvalidOperationException)
             {
             }

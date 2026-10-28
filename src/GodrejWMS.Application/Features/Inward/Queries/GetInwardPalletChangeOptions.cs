@@ -36,6 +36,11 @@ public sealed class GetInwardPalletChangeOptionsHandler(IApplicationDbContext db
         var material = await db.Materials
             .AsNoTracking()
             .FirstAsync(m => m.Id == putaway.InwardTransactionLine.MaterialId, cancellationToken);
+        var allowPkmMixing = await db.InwardTransactions
+            .AsNoTracking()
+            .Where(t => t.Id == putaway.InwardTransactionLine.InwardTransactionId)
+            .Select(t => (bool?)t.Warehouse.AllowPkmMixing)
+            .SingleOrDefaultAsync(cancellationToken) ?? true;
 
         // Every OTHER unconfirmed reservation counts as occupied; this putaway's own current
         // reservation is excluded so a location can show its true free capacity once this
@@ -64,6 +69,25 @@ public sealed class GetInwardPalletChangeOptionsHandler(IApplicationDbContext db
                 .Distinct()
                 .ToListAsync(cancellationToken))
             .ToHashSet();
+
+        var blockedByDifferentPkm = allowPkmMixing
+            ? []
+            : (await db.StockBatches
+                .AsNoTracking()
+                .Where(b => b.QuantityBoxes > 0 && b.MaterialId == material.Id
+                    && b.MfgMonth != putaway.InwardTransactionLine.MfgMonth)
+                .Select(b => b.PalletPositionId)
+                .Distinct()
+                .ToListAsync(cancellationToken))
+                .Concat(await db.InwardPutaways
+                    .AsNoTracking()
+                    .Where(p => !p.IsConfirmed && p.Id != putaway.Id
+                        && p.InwardTransactionLine.MaterialId == material.Id
+                        && p.InwardTransactionLine.MfgMonth != putaway.InwardTransactionLine.MfgMonth)
+                    .Select(p => p.PalletPositionId)
+                    .Distinct()
+                    .ToListAsync(cancellationToken))
+                .ToHashSet();
 
         var positions = await db.PalletPositions
             .AsNoTracking()
@@ -98,7 +122,8 @@ public sealed class GetInwardPalletChangeOptionsHandler(IApplicationDbContext db
                     p.ZoneTypeId, p.ZoneTypeCode, p.ZoneTypeName, p.DistancePriority,
                     (int)effectiveCapacity, occupied, free, isCurrent);
             })
-            .Where(o => o.IsCurrent || (o.LocationSubtypeId == putaway.PalletPosition.LocationSubtypeId && o.FreeBoxes >= putaway.QuantityBoxes && !blockedByOtherMaterial.Contains(o.Id)
+            .Where(o => o.IsCurrent || (o.LocationSubtypeId == putaway.PalletPosition.LocationSubtypeId && o.FreeBoxes > 0
+                && !blockedByOtherMaterial.Contains(o.Id) && !blockedByDifferentPkm.Contains(o.Id)
                 && (!material.RequirePreferredZone || !material.PreferredZoneTypeId.HasValue || o.ZoneTypeId == material.PreferredZoneTypeId.Value)))
             .OrderByDescending(o => o.IsCurrent)
             .ThenBy(o => o.DistancePriority)

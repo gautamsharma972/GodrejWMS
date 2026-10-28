@@ -21,10 +21,19 @@
             <h1>Move by SKU</h1>
             <p class="page-kicker">Select a SKU, choose one or more inventory records, and assign each a new location.</p>
         </div>
-        <a class="btn btn-outline-secondary" href="/inventory-movement/by-location">
-            <i class="bi bi-geo-alt" aria-hidden="true"></i>
-            Move by Location instead
-        </a>
+        <div class="header-actions">
+            @if (IsFromLowStock)
+            {
+                <a class="btn btn-outline-secondary" href="/low-stock-locations">
+                    <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                    Back to Low Stock Locations
+                </a>
+            }
+            <a class="btn btn-outline-secondary" href="/inventory-movement/by-location">
+                <i class="bi bi-geo-alt" aria-hidden="true"></i>
+                Move by Location instead
+            </a>
+        </div>
     </div>
 
     <div class="panel">
@@ -285,9 +294,25 @@
 </div>
 
 @code {
+    [Parameter, SupplyParameterFromQuery(Name = "materialId")]
+    public int MaterialId { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "sourcePositionId")]
+    public int SourcePositionId { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "mfgMonth")]
+    public int MfgMonth { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "from")]
+    public string? From { get; set; }
+
+    private bool IsFromLowStock => string.Equals(From, "low-stock", StringComparison.OrdinalIgnoreCase);
+
     private string _skuSearch = string.Empty;
     private IReadOnlyList<MaterialDto> _skuResults = [];
     private MaterialDto? _selectedMaterial;
+    private readonly SemaphoreSlim _skuSearchGate = new(1, 1);
+    private int _skuSearchSequence;
 
     private IReadOnlyList<MaterialStockLineDto>? _stockRecords;
     private List<LineDraft> _lines = [];
@@ -307,39 +332,82 @@
     protected override async Task OnInitializedAsync()
     {
         _reasons = await Mediator.Send(new GetMovementReasonsQuery());
+        if (MaterialId > 0)
+        {
+            var material = await Mediator.Send(new GetMaterialByIdQuery(MaterialId));
+            await SelectMaterialAsync(material);
+            var requestedLine = _lines.FirstOrDefault(line =>
+                line.Record.PalletPositionId == SourcePositionId && line.Record.MfgMonth == MfgMonth);
+            if (requestedLine is not null) requestedLine.IsSelected = true;
+        }
     }
 
     private bool CanConfirm => _selectedReasonId.HasValue && _validatedLines is not null && _validatedLines.All(l => l.Validation.Valid);
 
     private async Task SearchSkuAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(_skuSearch))
+        var sequence = Interlocked.Increment(ref _skuSearchSequence);
+        var search = _skuSearch.Trim();
+
+        if (search.Length == 0)
         {
             _skuResults = [];
             return;
         }
 
-        var page = await Mediator.Send(new GetMaterialsQuery(Search: _skuSearch, PageSize: 10));
-        _skuResults = page.Items;
+        // Blazor Server components use a scoped DbContext. Fast key events can overlap, so keep
+        // material queries serial and discard results that were superseded while waiting.
+        await _skuSearchGate.WaitAsync();
+        try
+        {
+            if (sequence != Volatile.Read(ref _skuSearchSequence) ||
+                !string.Equals(search, _skuSearch.Trim(), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var page = await Mediator.Send(new GetMaterialsQuery(Search: search, PageSize: 10));
+
+            if (sequence == Volatile.Read(ref _skuSearchSequence) &&
+                string.Equals(search, _skuSearch.Trim(), StringComparison.Ordinal))
+            {
+                _skuResults = page.Items;
+            }
+        }
+        finally
+        {
+            _skuSearchGate.Release();
+        }
     }
 
     private async Task SelectMaterialAsync(MaterialDto material)
     {
+        // Invalidate any queued autocomplete request before loading the selected SKU.
+        Interlocked.Increment(ref _skuSearchSequence);
         _selectedMaterial = material;
         _skuResults = [];
         _stockRecords = null;
         _validatedLines = null;
         _confirmResults = null;
 
-        var records = await Mediator.Send(new GetStockByMaterialQuery(material.Id));
-        _stockRecords = records;
-        _lines = records.Select(r => new LineDraft(r)).ToList();
-        _sortColumn = "location";
-        _sortDescending = false;
+        await _skuSearchGate.WaitAsync();
+        try
+        {
+            var records = await Mediator.Send(new GetStockByMaterialQuery(material.Id));
+            _stockRecords = records;
+            _lines = records.Select(r => new LineDraft(r)).ToList();
+            _sortColumn = "location";
+            _sortDescending = false;
+        }
+        finally
+        {
+            _skuSearchGate.Release();
+        }
     }
 
     private void ClearMaterial()
     {
+        Interlocked.Increment(ref _skuSearchSequence);
         _selectedMaterial = null;
         _stockRecords = null;
         _lines = [];
@@ -435,6 +503,7 @@
 
     private void ResetAll()
     {
+        Interlocked.Increment(ref _skuSearchSequence);
         _skuSearch = string.Empty;
         _skuResults = [];
         _selectedMaterial = null;

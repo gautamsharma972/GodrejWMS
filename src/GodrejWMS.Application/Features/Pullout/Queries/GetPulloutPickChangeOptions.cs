@@ -52,11 +52,15 @@ public sealed class GetPulloutPickChangeOptionsHandler(IApplicationDbContext db)
         var pick = matchingPicks[0];
         var matchingPickIds = matchingPicks.Select(p => p.Id).ToHashSet();
         var materialId = line.MaterialId;
-        var otherQuantities = transaction.Lines
-            .SelectMany(l => l.Picks)
-            .Where(p => !matchingPickIds.Contains(p.Id) && p.PulloutTransactionLine.MaterialId == materialId)
-            .GroupBy(p => (p.PalletPositionId, p.MfgMonth))
-            .ToDictionary(g => g.Key, g => g.Sum(p => p.QuantityBoxes));
+        var otherQuantities = await db.PulloutPicks.AsNoTracking()
+            .Where(p => !matchingPickIds.Contains(p.Id)
+                && p.PulloutTransactionLine.MaterialId == materialId
+                && p.PulloutTransactionLine.PulloutTransaction.WarehouseId == transaction.WarehouseId
+                && !p.PulloutTransactionLine.PulloutTransaction.IsConfirmed
+                && !p.PulloutTransactionLine.PulloutTransaction.IsRejected)
+            .GroupBy(p => new { p.PalletPositionId, p.MfgMonth })
+            .Select(g => new { g.Key.PalletPositionId, g.Key.MfgMonth, Quantity = g.Sum(p => p.QuantityBoxes) })
+            .ToDictionaryAsync(x => (x.PalletPositionId, x.MfgMonth), x => x.Quantity, cancellationToken);
 
         var batches = await db.StockBatches
             .AsNoTracking()
@@ -64,7 +68,8 @@ public sealed class GetPulloutPickChangeOptionsHandler(IApplicationDbContext db)
                 && b.StockSubtypeId == LocationSubtypeIds.Good
                 && b.QuantityBoxes > 0
                 && b.PalletPosition.IsActive
-                && b.PalletPosition.LocationSubtypeId == LocationSubtypeIds.Good)
+                && b.PalletPosition.LocationSubtypeId == LocationSubtypeIds.Good
+                && b.PalletPosition.Rack.WarehouseId == transaction.WarehouseId)
             .Select(b => new
             {
                 b.PalletPositionId,
