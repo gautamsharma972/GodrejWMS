@@ -41,6 +41,9 @@ public class AppDbContext(
     //       || UserRegions.Any(r => r.UserId == AccessUserId &&
     //           Warehouses.Any(w => w.Id == X && w.City != null && w.City.State.RegionId == r.RegionId))
     public DbSet<Material> Materials => Set<Material>();
+    public DbSet<Brand> Brands => Set<Brand>();
+    public DbSet<BrandLocationPreference> BrandLocationPreferences => Set<BrandLocationPreference>();
+    public DbSet<AopDescription> AopDescriptions => Set<AopDescription>();
 
     public DbSet<DesignType> DesignTypes => Set<DesignType>();
 
@@ -102,6 +105,9 @@ public class AppDbContext(
         builder.Entity<PalletPosition>().HasQueryFilter(p => HasAllWarehouses
             || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == p.Rack.WarehouseId)
             || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == p.Rack.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<BrandLocationPreference>().HasQueryFilter(p => HasAllWarehouses
+            || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == p.FromPalletPosition.Rack.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == p.FromPalletPosition.Rack.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
         builder.Entity<StockBatch>().HasQueryFilter(b => HasAllWarehouses
             || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == b.PalletPosition.Rack.WarehouseId)
             || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == b.PalletPosition.Rack.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));

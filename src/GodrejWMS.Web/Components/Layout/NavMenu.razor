@@ -19,8 +19,8 @@
     <nav class="nav flex-column">
         <AuthorizeView>
             <Authorized>
-                <div class="nav-section-label">Operate</div>
-                <div class="nav-item">
+                <div class="nav-section-label operate-nav-heading">Operate</div>
+                <div class="nav-item dashboard-nav-item">
                     <NavLink class="nav-link" href="" Match="NavLinkMatch.All" aria-label="Dashboard" data-tour="nav-dashboard"data-bs-title="Dashboard" data-bs-toggle="tooltip" data-bs-placement="right">
                         <i class="bi bi-speedometer2" aria-hidden="true"></i> <span class="nav-link-text">Dashboard</span>
                     </NavLink>
@@ -82,6 +82,21 @@
                 <div class="nav-item">
                     <NavLink class="nav-link" href="design-types" aria-label="Design Types" data-tour="nav-master-data"data-bs-title="Design Types" data-bs-toggle="tooltip" data-bs-placement="right">
                         <i class="bi bi-tags" aria-hidden="true"></i> <span class="nav-link-text">Design Types</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="brands" aria-label="Brand Master" data-bs-title="Brand Master" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-bookmark" aria-hidden="true"></i> <span class="nav-link-text">Brand Master</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="aop-descriptions" aria-label="AOP Description Master" data-bs-title="AOP Description Master" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-card-text" aria-hidden="true"></i> <span class="nav-link-text">AOP Description Master</span>
+                    </NavLink>
+                </div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="brand-location-preferences" aria-label="Brand Location Preferences" data-bs-title="Brand Location Preferences" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-signpost-split" aria-hidden="true"></i> <span class="nav-link-text">Brand Location Preferences</span>
                     </NavLink>
                 </div>
                 <div class="nav-item">
@@ -148,6 +163,7 @@
                     </div>
                 </PermissionAuthorize>
 
+                <div class="transactions-nav-group">
                 <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward">
                     <div class="nav-section-label">Transactions</div>
                 </PermissionAuthorize>
@@ -270,6 +286,7 @@
                         </div>
                     }
                 </PermissionAuthorize>
+                </div>
 
                 <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewReports">
                     <div class="nav-section-label">Reports</div>

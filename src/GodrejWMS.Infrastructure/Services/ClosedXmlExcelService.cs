@@ -150,22 +150,24 @@ public class ClosedXmlExcelService : IExcelService
                 break;
             }
 
-            var seasonCode = ParseSeasonCode(ws.Cell(row, 15).GetString());
-            var movementTypeCode = ParseMovementTypeCode(ws.Cell(row, 16).GetString());
+            var seasonCode = ParseSeasonCode(ws.Cell(row, 17).GetString());
+            var movementTypeCode = ParseMovementTypeCode(ws.Cell(row, 18).GetString());
 
             rows.Add(new MaterialImportRow(
                 MaterialNumber: materialNumber,
                 Description: ws.Cell(row, 2).GetString().Trim(),
-                DesignType: ws.Cell(row, 3).GetString().Trim(),
-                CharacteristicValue: NullIfEmpty(ws.Cell(row, 6).GetString()),
-                PackSize: (int)ReadDecimal(ws.Cell(row, 4)),
-                MrpPrice: ReadDecimal(ws.Cell(row, 5)),
-                LengthMm: ReadDecimal(ws.Cell(row, 7)),
-                WidthMm: ReadDecimal(ws.Cell(row, 8)),
-                HeightMm: ReadDecimal(ws.Cell(row, 9)),
-                NetWeightKg: ReadDecimal(ws.Cell(row, 11)),
-                GrossWeightKg: ReadDecimal(ws.Cell(row, 12)),
-                PalletCapacityBoxes: (int)ReadDecimal(ws.Cell(row, 13)),
+                BrandCode: ws.Cell(row, 3).GetString().Trim(),
+                AopCode: ws.Cell(row, 4).GetString().Trim(),
+                DesignType: ws.Cell(row, 5).GetString().Trim(),
+                CharacteristicValue: NullIfEmpty(ws.Cell(row, 8).GetString()),
+                PackSize: (int)ReadDecimal(ws.Cell(row, 6)),
+                MrpPrice: ReadDecimal(ws.Cell(row, 7)),
+                LengthMm: ReadDecimal(ws.Cell(row, 9)),
+                WidthMm: ReadDecimal(ws.Cell(row, 10)),
+                HeightMm: ReadDecimal(ws.Cell(row, 11)),
+                NetWeightKg: ReadDecimal(ws.Cell(row, 13)),
+                GrossWeightKg: ReadDecimal(ws.Cell(row, 14)),
+                PalletCapacityBoxes: (int)ReadDecimal(ws.Cell(row, 15)),
                 MovementTypeCode: movementTypeCode,
                 SeasonCode: seasonCode,
                 RowNumber: row));
@@ -182,6 +184,8 @@ public class ClosedXmlExcelService : IExcelService
         [
             "Material Number",
             "Material Description",
+            "Brand Code",
+            "AOP Code",
             "Design Type",
             "PK Size",
             "MRP Price",
@@ -212,9 +216,9 @@ public class ClosedXmlExcelService : IExcelService
 
         var samples = new object[][]
         {
-            [40034354, "HIT CIK 125ML MRP75 P90", "XOLDH", 90, 75, "SHAC1", 50, 29.3, 34, 49810, 0.08, 0.152, 40, 6.08, "Rainy", "FastMoving"],
-            [40063045, "HIT FIK 200ML M125P60 CAN .18MM MFT NEW", "XOLDI", 90, 125, "SHAF2", 55.5, 33.5, 23.7, 44040.225, 0.124, 0.207, 40, 8.28, "Summer", "SlowMoving"],
-            [50010001, "GODREJ SOAP 100G CARTON", "SOAPBOX", 72, 45, "SOAP100", 42, 31, 26, 33852, 0.09, 0.12, 40, 4.8, "Winter", "SlowMoving"]
+            [40019311, "GK ADV FAST CARD PO10 P480 M10 CSD", "GK", "FAST CARD", "GGAF1", 480, 10, "GGAF1", 41.7, 23.9, 22.4, 22325, 0.08, 0.152, 20, 3.04, "Rainy", "FastMoving"],
+            [40031422, "GodprotektMagicHwNEEM 99.9%9gCombiM40P48", "Magic", "PROTEKT COMBI", "MPHRCN", 48, 40, "MPHRCN", 54, 24, 33, 42768, 0.08, 0.152, 20, 3.04, "Summer", "FastMoving"],
+            [40034354, "HIT CIK 125ML MRP75 P90", "Hit", "HIT CIK SMALL PACK", "SHAC1", 90, 75, "SHAC1", 50, 29.3, 34, 49810, 0.08, 0.152, 40, 6.08, "Rainy", "FastMoving"]
         };
 
         for (var r = 0; r < samples.Length; r++)
@@ -236,7 +240,7 @@ public class ClosedXmlExcelService : IExcelService
     {
         string[] headers =
         [
-            "Material Code", "Description", "Design Type", "Characteristic Value", "Pack Size",
+            "Material Code", "Description", "Brand Code", "AOP Code", "Design Type", "Characteristic Value", "Pack Size",
             "MRP", "Velocity", "Length (mm)", "Width (mm)", "Height (mm)", "Volume (mm3)",
             "Net Weight (kg)", "Gross Weight (kg)", "Box Weight (kg)", "Pallet Size",
             "Pallet Weight (kg)", "Preferred Zone", "Season", "Status"
@@ -251,32 +255,34 @@ public class ClosedXmlExcelService : IExcelService
         {
             ws.Cell(rowNumber, 1).Value = item.MaterialNumber;
             ws.Cell(rowNumber, 2).Value = item.Description;
-            ws.Cell(rowNumber, 3).Value = item.DesignType;
-            ws.Cell(rowNumber, 4).Value = item.CharacteristicValue ?? string.Empty;
-            ws.Cell(rowNumber, 5).Value = item.PackSize;
-            ws.Cell(rowNumber, 6).Value = item.MrpPrice;
-            ws.Cell(rowNumber, 7).Value = item.MovementTypeName;
-            ws.Cell(rowNumber, 8).Value = item.LengthMm;
-            ws.Cell(rowNumber, 9).Value = item.WidthMm;
-            ws.Cell(rowNumber, 10).Value = item.HeightMm;
-            ws.Cell(rowNumber, 11).Value = item.VolumeMm3;
-            ws.Cell(rowNumber, 12).Value = item.NetWeightKg;
-            ws.Cell(rowNumber, 13).Value = item.GrossWeightKg;
-            ws.Cell(rowNumber, 14).Value = item.BoxWeightKg;
-            ws.Cell(rowNumber, 15).Value = item.PalletCapacityBoxes;
-            ws.Cell(rowNumber, 16).Value = item.PalletWeightKg;
-            ws.Cell(rowNumber, 17).Value = item.PreferredZoneTypeName is null
+            ws.Cell(rowNumber, 3).Value = item.BrandCode ?? string.Empty;
+            ws.Cell(rowNumber, 4).Value = item.AopCode ?? string.Empty;
+            ws.Cell(rowNumber, 5).Value = item.DesignType;
+            ws.Cell(rowNumber, 6).Value = item.CharacteristicValue ?? string.Empty;
+            ws.Cell(rowNumber, 7).Value = item.PackSize;
+            ws.Cell(rowNumber, 8).Value = item.MrpPrice;
+            ws.Cell(rowNumber, 9).Value = item.MovementTypeName;
+            ws.Cell(rowNumber, 10).Value = item.LengthMm;
+            ws.Cell(rowNumber, 11).Value = item.WidthMm;
+            ws.Cell(rowNumber, 12).Value = item.HeightMm;
+            ws.Cell(rowNumber, 13).Value = item.VolumeMm3;
+            ws.Cell(rowNumber, 14).Value = item.NetWeightKg;
+            ws.Cell(rowNumber, 15).Value = item.GrossWeightKg;
+            ws.Cell(rowNumber, 16).Value = item.BoxWeightKg;
+            ws.Cell(rowNumber, 17).Value = item.PalletCapacityBoxes;
+            ws.Cell(rowNumber, 18).Value = item.PalletWeightKg;
+            ws.Cell(rowNumber, 19).Value = item.PreferredZoneTypeName is null
                 ? "No preference"
                 : item.PreferredZoneTypeName + (item.RequirePreferredZone ? " (required)" : string.Empty);
-            ws.Cell(rowNumber, 18).Value = item.SeasonName;
-            ws.Cell(rowNumber, 19).Value = item.IsActive ? "Active" : "Inactive";
+            ws.Cell(rowNumber, 20).Value = item.SeasonName;
+            ws.Cell(rowNumber, 21).Value = item.IsActive ? "Active" : "Inactive";
             rowNumber++;
         }
 
         ws.Column(1).Style.NumberFormat.Format = "0";
-        ws.Column(6).Style.NumberFormat.Format = "0.00";
-        ws.Columns(8, 14).Style.NumberFormat.Format = "0.000";
-        ws.Column(16).Style.NumberFormat.Format = "0.000";
+        ws.Column(8).Style.NumberFormat.Format = "0.00";
+        ws.Columns(10, 16).Style.NumberFormat.Format = "0.000";
+        ws.Column(18).Style.NumberFormat.Format = "0.000";
         ws.SheetView.FreezeRows(1);
         ws.RangeUsed()?.SetAutoFilter();
         ws.Columns().AdjustToContents(8, 45);

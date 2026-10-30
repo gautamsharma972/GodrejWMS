@@ -83,6 +83,20 @@
     text-transform: uppercase;
 }
 
+/* Keep the day-to-day transaction workflows directly below Dashboard while preserving
+   the existing permission gates, routes, and expandable menu behavior. */
+.operate-nav-heading {
+    order: -3;
+}
+
+.dashboard-nav-item {
+    order: -2;
+}
+
+.transactions-nav-group {
+    order: -1;
+}
+
 .nav-item {
     margin-bottom: 0.25rem;
 }

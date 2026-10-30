@@ -3,6 +3,7 @@
 @using GodrejWMS.Application.Features.Reports.Queries
 @using GodrejWMS.Application.Common.Exceptions
 @inject IMediator Mediator
+@inject ILogger<GodrejWMS.Web.Components.Pages.Reports.AiAssistant> Logger
 
 <PageTitle>AI Assistant - Godrej WMS</PageTitle>
 
@@ -214,7 +215,8 @@
         }
         catch (Exception ex)
         {
-            _error = $"Something went wrong: {ex.Message}";
+            Logger.LogError(ex, "AI Assistant report execution failed for question {Question}", _question);
+            _error = "The requested report could not be loaded. Please try again or use the matching report page.";
         }
         finally
         {

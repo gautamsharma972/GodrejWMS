@@ -1,0 +1,27 @@
+.searchable-brand-select {
+    position: relative;
+    width: 100%;
+}
+
+.searchable-brand-select:focus-within {
+    z-index: 1080;
+}
+
+.searchable-brand-select .location-suggestions {
+    z-index: 1090;
+}
+
+.searchable-brand-select .location-suggestion-item.selected {
+    background: #eff6ff;
+}
+
+.selected-brand-check {
+    color: #15803d;
+    background: #f0fdf4;
+}
+
+.searchable-brand-empty {
+    padding: 0.7rem 0.75rem;
+    color: var(--wms-muted);
+    font-size: 0.84rem;
+}

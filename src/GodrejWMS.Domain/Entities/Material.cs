@@ -13,6 +13,12 @@ public class Material : AuditableEntity
 
     public string Description { get; set; } = string.Empty;
 
+    public int? BrandId { get; set; }
+    public Brand? Brand { get; set; }
+
+    public int? AopDescriptionId { get; set; }
+    public AopDescription? AopDescription { get; set; }
+
     /// <summary>Mould/design code, e.g. "XOLDH".</summary>
     public string DesignType { get; set; } = string.Empty;
 

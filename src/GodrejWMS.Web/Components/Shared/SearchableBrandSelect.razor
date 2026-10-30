@@ -1,0 +1,99 @@
+@using GodrejWMS.Application.Features.Brands.Dtos
+
+<div class="input-group search-control searchable-brand-select" @onfocusout="OnBlur">
+    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+    <input class="form-control" value="@_searchText" @oninput="OnInputAsync" @onfocus="OnFocus"
+           placeholder="@Placeholder" autocomplete="off" aria-label="Search and select Brand Code" />
+    @if (Value != 0)
+    {
+        <span class="input-group-text selected-brand-check"><i class="bi bi-check-circle-fill" aria-hidden="true"></i></span>
+    }
+    @if (_showSuggestions)
+    {
+        <div class="location-suggestions">
+            @if (FilteredOptions.Count == 0)
+            {
+                <div class="searchable-brand-empty">No matching active Brand Code.</div>
+            }
+            else
+            {
+                @foreach (var option in FilteredOptions)
+                {
+                    <button type="button" class="location-suggestion-item @(option.Id == Value ? "selected" : null)"
+                            @onmousedown="() => SelectAsync(option)" @onmousedown:preventDefault="true">
+                        <span class="record-code">@option.Code</span>
+                        @if (!string.IsNullOrWhiteSpace(option.Description))
+                        {
+                            <span class="location-suggestion-meta">@option.Description</span>
+                        }
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<BrandDto> Options { get; set; } = [];
+    [Parameter] public int Value { get; set; }
+    [Parameter] public EventCallback<int> ValueChanged { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Search Brand Code or description";
+
+    private string _searchText = string.Empty;
+    private bool _showSuggestions;
+    private int _lastValue = -1;
+
+    private List<BrandDto> FilteredOptions =>
+        (string.IsNullOrWhiteSpace(_searchText)
+            ? Options
+            : Options.Where(x =>
+                x.Code.Contains(_searchText.Trim(), StringComparison.OrdinalIgnoreCase)
+                || (x.Description?.Contains(_searchText.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)).ToList())
+        .Take(100)
+        .ToList();
+
+    protected override void OnParametersSet()
+    {
+        if (Value == _lastValue)
+        {
+            return;
+        }
+
+        _lastValue = Value;
+        var selected = Options.FirstOrDefault(x => x.Id == Value);
+        _searchText = selected is null
+            ? string.Empty
+            : string.IsNullOrWhiteSpace(selected.Description) ? selected.Code : $"{selected.Code} — {selected.Description}";
+    }
+
+    private async Task OnInputAsync(ChangeEventArgs args)
+    {
+        _searchText = args.Value?.ToString() ?? string.Empty;
+        _showSuggestions = true;
+
+        if (Value != 0)
+        {
+            Value = 0;
+            _lastValue = 0;
+            await ValueChanged.InvokeAsync(0);
+        }
+    }
+
+    private void OnFocus() => _showSuggestions = true;
+
+    private async Task SelectAsync(BrandDto option)
+    {
+        Value = option.Id;
+        _lastValue = option.Id;
+        _searchText = string.IsNullOrWhiteSpace(option.Description) ? option.Code : $"{option.Code} — {option.Description}";
+        _showSuggestions = false;
+        await ValueChanged.InvokeAsync(option.Id);
+    }
+
+    private async Task OnBlur()
+    {
+        await Task.Delay(120);
+        _showSuggestions = false;
+        StateHasChanged();
+    }
+}

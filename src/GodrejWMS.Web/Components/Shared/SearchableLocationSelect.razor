@@ -1,0 +1,100 @@
+@using GodrejWMS.Application.Features.BrandLocationPreferences.Dtos
+
+<div class="input-group search-control searchable-location-select" @onfocusout="OnBlur">
+    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+    <input class="form-control" value="@_searchText" @oninput="OnInputAsync" @onfocus="OnFocus"
+           placeholder="@Placeholder" autocomplete="off" aria-label="@AriaLabel" />
+    @if (Value != 0)
+    {
+        <span class="input-group-text selected-location-check"><i class="bi bi-check-circle-fill" aria-hidden="true"></i></span>
+    }
+    @if (_showSuggestions)
+    {
+        <div class="location-suggestions">
+            @if (FilteredOptions.Count == 0)
+            {
+                <div class="searchable-location-empty">No matching locations in this rack.</div>
+            }
+            else
+            {
+                @foreach (var option in FilteredOptions)
+                {
+                    <button type="button" class="location-suggestion-item @(option.Id == Value ? "selected" : null)"
+                            @onmousedown="() => SelectAsync(option)" @onmousedown:preventDefault="true">
+                        <span class="record-code">@option.LocationCode</span>
+                        <span class="location-suggestion-meta">Rack @option.RackCode &middot; Column @option.Column.ToString("00") &middot; Level @option.Level.ToString("00")</span>
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<BrandLocationOptionDto> Options { get; set; } = [];
+    [Parameter] public int Value { get; set; }
+    [Parameter] public EventCallback<int> ValueChanged { get; set; }
+    [Parameter] public int ContextKey { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Search location...";
+    [Parameter] public string AriaLabel { get; set; } = "Search and select location";
+
+    private string _searchText = string.Empty;
+    private bool _showSuggestions;
+    private int _lastValue = -1;
+    private int _lastContextKey = -1;
+
+    private List<BrandLocationOptionDto> FilteredOptions =>
+        (string.IsNullOrWhiteSpace(_searchText)
+            ? Options
+            : Options.Where(x => x.LocationCode.Contains(_searchText.Trim(), StringComparison.OrdinalIgnoreCase)).ToList())
+        .Take(100)
+        .ToList();
+
+    protected override void OnParametersSet()
+    {
+        if (ContextKey != _lastContextKey)
+        {
+            _lastContextKey = ContextKey;
+            _searchText = string.Empty;
+            _showSuggestions = false;
+        }
+
+        if (Value != _lastValue)
+        {
+            _lastValue = Value;
+            _searchText = Options.FirstOrDefault(x => x.Id == Value)?.LocationCode ?? string.Empty;
+        }
+    }
+
+    private async Task OnInputAsync(ChangeEventArgs args)
+    {
+        _searchText = args.Value?.ToString() ?? string.Empty;
+        _showSuggestions = true;
+
+        var selected = Options.FirstOrDefault(x => x.Id == Value);
+        if (Value != 0 && !string.Equals(selected?.LocationCode, _searchText, StringComparison.OrdinalIgnoreCase))
+        {
+            Value = 0;
+            _lastValue = 0;
+            await ValueChanged.InvokeAsync(0);
+        }
+    }
+
+    private void OnFocus() => _showSuggestions = true;
+
+    private async Task SelectAsync(BrandLocationOptionDto option)
+    {
+        Value = option.Id;
+        _lastValue = option.Id;
+        _searchText = option.LocationCode;
+        _showSuggestions = false;
+        await ValueChanged.InvokeAsync(option.Id);
+    }
+
+    private async Task OnBlur()
+    {
+        await Task.Delay(120);
+        _showSuggestions = false;
+        StateHasChanged();
+    }
+}

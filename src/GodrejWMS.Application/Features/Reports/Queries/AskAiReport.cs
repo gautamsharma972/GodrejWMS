@@ -19,12 +19,17 @@ public sealed class AskAiReportHandler(IAiAssistantService ai, ISender mediator,
 {
     public async Task<AiReportAnswer> Handle(AskAiReportQuery request, CancellationToken cancellationToken)
     {
-        var plan = await ai.PlanReportQueryAsync(request.Question, clock.UtcNow, cancellationToken);
+        // Brand-count/list questions are common master-data questions. Route these deterministically
+        // so a small local model cannot misclassify "brands" as a Current Stock reference filter.
+        var plan = IsBrandMasterQuestion(request.Question)
+            ? new AiReportPlan("BrandMaster", new ReportFilter(), "The question asks about Brand Master data.")
+            : await ai.PlanReportQueryAsync(request.Question, clock.UtcNow, cancellationToken);
 
         if (Enum.TryParse<ReportKind>(plan.Name, ignoreCase: true, out var kind) && Enum.IsDefined(kind))
         {
+            var filter = NormalizeOperationalFilter(kind, plan.Filter);
             var page = await mediator.Send(
-                new GetOperationalReportQuery(kind, plan.Filter, 1, 50, "reference", false), cancellationToken);
+                new GetOperationalReportQuery(kind, filter, 1, 50, "reference", false), cancellationToken);
             var (columns, rows) = AiResultFlattener.FlattenReportRows(page.Items);
             var summary = await ai.SummarizeAsync(request.Question, kind.ToString(), rows, page.TotalCount, null, cancellationToken);
             return new AiReportAnswer(kind.ToString(), plan.Reasoning, summary, columns, rows, page.TotalCount);
@@ -43,5 +48,38 @@ public sealed class AskAiReportHandler(IAiAssistantService ai, ISender mediator,
         var toolSummary = await ai.SummarizeAsync(request.Question, tool.Name, toolRows, toolRows.Count, extraContext, cancellationToken);
 
         return new AiReportAnswer(tool.Name, plan.Reasoning, toolSummary, toolColumns, toolRows, toolRows.Count);
+    }
+
+    private static bool IsBrandMasterQuestion(string question)
+    {
+        var normalized = question.Trim().ToLowerInvariant();
+        return normalized.Contains("brand")
+            && (normalized.Contains("how many")
+                || normalized.Contains("count")
+                || normalized.Contains("list")
+                || normalized.Contains("configured")
+                || normalized.Contains("brand master")
+                || normalized is "brands" or "brand");
+    }
+
+    private static ReportFilter NormalizeOperationalFilter(ReportKind kind, ReportFilter filter)
+    {
+        if (kind is not (ReportKind.Capacity or ReportKind.AvailableLocations or ReportKind.RackStock
+            or ReportKind.RackLevel or ReportKind.ZoneStock))
+        {
+            return filter;
+        }
+
+        // Capacity/location reports have no transaction date, status, user, reference, SKU or PKM.
+        // Small local models occasionally populate those fields despite being told not to, and EF
+        // then attempts to filter projected constant/null columns. Retain only meaningful filters.
+        return new ReportFilter(
+            WarehouseId: filter.WarehouseId,
+            Search: filter.Search,
+            Location: filter.Location,
+            Zone: filter.Zone,
+            Rack: filter.Rack,
+            Column: filter.Column,
+            Level: filter.Level);
     }
 }

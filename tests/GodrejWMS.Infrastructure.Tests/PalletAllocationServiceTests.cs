@@ -152,6 +152,37 @@ public class PalletAllocationServiceTests
     }
 
     [Fact]
+    public async Task AllocateAsync_UsesBrandPreferredRange_BeforeLegacyTopUpOutsideRange()
+    {
+        var (db, material, rackA, rackB) = SeedTwoRackWarehouse(capacityBoxes: 40, levels: 1);
+        var brand = new Brand { Code = "HIT", Description = "Hit", IsActive = true };
+        db.Brands.Add(brand);
+        material.Brand = brand;
+        await db.SaveChangesAsync();
+
+        var outsidePreferredRange = rackA.PalletPositions.Single();
+        var preferredPosition = rackB.PalletPositions.Single();
+        AddStock(db, material, outsidePreferredRange, 202610, 10);
+        db.BrandLocationPreferences.Add(new BrandLocationPreference
+        {
+            BrandId = brand.Id,
+            FromPalletPositionId = preferredPosition.Id,
+            ToPalletPositionId = preferredPosition.Id,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new PalletAllocationService(db, new TestClock());
+        var result = await sut.AllocateAsync(material.Id, 5, 202610, warehouseId: 1);
+
+        Assert.Equal(AllocationStatus.Fulfilled, result.Status);
+        var allocation = Assert.Single(result.Lines);
+        Assert.Equal(preferredPosition.LocationCode, allocation.LocationCode);
+        Assert.StartsWith("Brand-preferred range", allocation.Reason);
+        Assert.DoesNotContain(result.Lines, x => x.LocationCode == outsidePreferredRange.LocationCode);
+    }
+
+    [Fact]
     public async Task AllocateAsync_ReturnsPartial_WhenWarehouseCapacityIsExceeded()
     {
         var (db, material, _) = SeedWarehouse(capacityBoxes: 40);

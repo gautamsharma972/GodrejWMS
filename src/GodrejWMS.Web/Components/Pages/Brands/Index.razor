@@ -1,0 +1,44 @@
+@page "/brands"
+@attribute [Authorize]
+@using GodrejWMS.Application.Features.Brands.Commands
+@using GodrejWMS.Application.Features.Brands.Dtos
+@using GodrejWMS.Application.Features.Brands.Queries
+@inject IMediator Mediator
+@inject ILogger<Index> Logger
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Brand Master - Godrej WMS</PageTitle>
+<div class="page-shell">
+    <div class="page-header">
+        <div><div class="eyebrow">Master Data</div><h1>Brand Master</h1><p class="page-kicker">Maintain brand codes used by the Material Master.</p></div>
+        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Create">
+            <button class="btn btn-primary" @onclick="() => ShowForm(null)"><i class="bi bi-plus-lg"></i> New Brand</button>
+        </PermissionAuthorize>
+    </div>
+    @if (_showForm)
+    {
+        <div class="slide-over-backdrop" @onclick="CloseForm"><section class="slide-over-panel" role="dialog" aria-modal="true" @onclick:stopPropagation="true">
+            <div class="slide-over-header"><div><div class="eyebrow">@(_editingId is null ? "New code" : "Edit code")</div><h2 class="slide-over-title">@(_editingId is null ? "Create Brand" : $"Edit Brand {_form.Code}")</h2><p class="slide-over-subtitle">Active brands are available when maintaining materials.</p></div><button class="slide-over-close" aria-label="Close" @onclick="CloseForm"><i class="bi bi-x-lg"></i></button></div>
+            <EditForm Model="_form" FormName="brand-form" OnValidSubmit="SaveAsync" class="slide-over-form"><div class="slide-over-body"><div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Brand Code <span class="text-danger">*</span></label><InputText class="form-control" @bind-Value="_form.Code" /></div>
+                <div class="col-12"><label class="form-label">Description</label><InputText class="form-control" @bind-Value="_form.Description" /></div>
+                @if (_editingId is not null) { <div class="col-12"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_form.IsActive" /><span class="form-check-label">Active</span></div></div> }
+            </div>@if (_error is not null) { <div class="alert alert-danger mt-3 mb-0">@_error</div> }</div><div class="slide-over-footer"><button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button><button type="submit" class="btn btn-primary">Save Brand</button></div></EditForm>
+        </section></div>
+    }
+    <div class="toolbar-panel"><div class="toolbar-group"><div class="input-group search-control"><span class="input-group-text"><i class="bi bi-search"></i></span><input class="form-control" placeholder="Search code or description" @bind="_search" @bind:event="oninput" /></div></div><span class="sync-chip">@Filtered.Count() brands</span></div>
+    @if (_items is null) { <div class="loading-panel">Loading brands...</div> }
+    else if (!Filtered.Any()) { <div class="empty-state">No brands configured yet.</div> }
+    else { <div class="table-responsive panel-table"><table class="table table-hover align-middle mb-0"><thead><tr><th>Brand Code</th><th>Description</th><th>Active</th><th class="table-actions"></th></tr></thead><tbody>@foreach (var item in Filtered) { <tr><td><span class="record-code">@item.Code</span></td><td>@item.Description</td><td><span class="status-pill @(item.IsActive ? "success" : "inactive")">@(item.IsActive ? "Active" : "Inactive")</span></td><td class="table-actions"><PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Edit"><button class="btn btn-sm btn-outline-secondary" @onclick="() => ShowForm(item)" aria-label="Edit"><i class="bi bi-pencil-square"></i></button></PermissionAuthorize></td></tr> }</tbody></table></div> }
+</div>
+
+@code {
+    private IReadOnlyList<BrandDto>? _items; private string _search = ""; private bool _showForm; private int? _editingId; private FormModel _form = new(); private string? _error;
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync() => _items = await Mediator.Send(new GetBrandsQuery());
+    private IEnumerable<BrandDto> Filtered => (_items ?? []).Where(x => string.IsNullOrWhiteSpace(_search) || x.Code.Contains(_search, StringComparison.OrdinalIgnoreCase) || (x.Description?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false));
+    private void ShowForm(BrandDto? item) { _error = null; _editingId = item?.Id; _form = item is null ? new() : new() { Code = item.Code, Description = item.Description, IsActive = item.IsActive }; _showForm = true; }
+    private void CloseForm() { _showForm = false; _error = null; }
+    private async Task SaveAsync() { try { if (_editingId is null) await Mediator.Send(new CreateBrandCommand(_form.Code, _form.Description)); else await Mediator.Send(new UpdateBrandCommand(_editingId.Value, _form.Code, _form.Description, _form.IsActive)); CloseForm(); await LoadAsync(); await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Brand saved."); } catch (Exception ex) { Logger.LogWarning(ex, "Failed to save brand"); _error = ex.Message; } }
+    private sealed class FormModel { public string Code { get; set; } = ""; public string? Description { get; set; } public bool IsActive { get; set; } = true; }
+}

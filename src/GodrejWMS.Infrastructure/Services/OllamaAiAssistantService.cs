@@ -88,6 +88,8 @@ public sealed class OllamaAiAssistantService(HttpClient httpClient, IOptions<AiO
           rack/level breakdown: use the Capacity report.
         - "FIFO compliance" or "how old was stock when picked": use PulloutStockAgeAtPick.
         - "How fast do we put stock away" / GRN turnaround time: use InwardPutawayTurnaround.
+        - Questions asking how many brands exist, listing brand codes, or Brand Master details: use
+          BrandMaster, not CurrentStock or SkuStock.
         """;
 
     private const string FewShotExamples =
@@ -109,6 +111,8 @@ public sealed class OllamaAiAssistantService(HttpClient httpClient, IOptions<AiO
         - "Why are GRNs getting rejected?" -> target: InwardRejectionReasons, no filters unless a date
           range is mentioned.
         - "Show me everything for SKU 40058047" -> target: SkuHistory, sku = 40058047.
+        - "How many brands are there?" -> target: BrandMaster, no filters.
+        - "List all configured brand codes" -> target: BrandMaster, no filters.
         """;
 
     public async Task<AiReportPlan> PlanReportQueryAsync(string question, DateTimeOffset now, CancellationToken cancellationToken)

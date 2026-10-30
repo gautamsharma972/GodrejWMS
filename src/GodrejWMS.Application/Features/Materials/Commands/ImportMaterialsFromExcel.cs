@@ -37,6 +37,10 @@ public sealed class ImportMaterialsFromExcelHandler(
             .Select(d => d.Code)
             .ToListAsync(cancellationToken);
         var activeDesignTypes = activeDesignTypeCodes.ToDictionary(c => c, StringComparer.OrdinalIgnoreCase);
+        var activeBrandIds = await db.Brands.Where(x => x.IsActive)
+            .ToDictionaryAsync(x => x.Code, x => x.Id, StringComparer.OrdinalIgnoreCase, cancellationToken);
+        var activeAopIds = await db.AopDescriptions.Where(x => x.IsActive)
+            .ToDictionaryAsync(x => x.Code, x => x.Id, StringComparer.OrdinalIgnoreCase, cancellationToken);
         var movementTypeIdsByCode = await db.SkuMovementTypes
             .ToDictionaryAsync(s => s.Code, s => s.Id, StringComparer.OrdinalIgnoreCase, cancellationToken);
         var seasonIdsByCode = await db.Seasons
@@ -53,6 +57,18 @@ public sealed class ImportMaterialsFromExcelHandler(
             if (!activeDesignTypes.TryGetValue(row.DesignType, out var designTypeCode))
             {
                 errors.Add($"Row {row.RowNumber}: Design Type '{row.DesignType}' is not active in the Design Type master.");
+                continue;
+            }
+
+            if (!activeBrandIds.TryGetValue(row.BrandCode, out var brandId))
+            {
+                errors.Add($"Row {row.RowNumber}: Brand Code '{row.BrandCode}' is not active in the Brand master.");
+                continue;
+            }
+
+            if (!activeAopIds.TryGetValue(row.AopCode, out var aopDescriptionId))
+            {
+                errors.Add($"Row {row.RowNumber}: AOP Code '{row.AopCode}' is not active in the AOP Description master.");
                 continue;
             }
 
@@ -74,6 +90,8 @@ public sealed class ImportMaterialsFromExcelHandler(
             if (existing.TryGetValue(row.MaterialNumber, out var material))
             {
                 material.Description = row.Description;
+                material.BrandId = brandId;
+                material.AopDescriptionId = aopDescriptionId;
                 material.DesignType = designTypeCode;
                 material.CharacteristicValue = row.CharacteristicValue;
                 material.PackSize = row.PackSize;
@@ -97,6 +115,8 @@ public sealed class ImportMaterialsFromExcelHandler(
                 {
                     MaterialNumber = row.MaterialNumber,
                     Description = row.Description,
+                    BrandId = brandId,
+                    AopDescriptionId = aopDescriptionId,
                     DesignType = designTypeCode,
                     CharacteristicValue = row.CharacteristicValue,
                     PackSize = row.PackSize,

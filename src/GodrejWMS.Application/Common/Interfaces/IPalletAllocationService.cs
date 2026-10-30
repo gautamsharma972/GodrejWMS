@@ -21,6 +21,7 @@ public interface IPalletAllocationService
         int mfgMonth,
         int warehouseId,
         int stockSubtypeId = LocationSubtypeIds.Good,
+        int? excludeInwardTransactionLineId = null,
         CancellationToken cancellationToken = default);
 }
 

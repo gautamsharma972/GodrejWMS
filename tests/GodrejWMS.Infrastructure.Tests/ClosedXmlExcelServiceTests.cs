@@ -41,7 +41,7 @@ public class ClosedXmlExcelServiceTests
     public void WriteMaterialMaster_WritesCompleteExportWithTypedValues()
     {
         var material = new MaterialDto(
-            1, 40019311, "Test material", "GGAF1", "CHAR", 48, 99.50m,
+            1, 40019311, "Test material", 1, "BR01", "Brand one", 2, "AOP01", "AOP one", "GGAF1", "CHAR", 48, 99.50m,
             41.7m, 23.9m, 22.4m, 22325m, 0.1m, 0.2m, 9.6m, 40, 8m,
             1, "FastMoving", "Fast-moving", 1, "Summer", "Summer", 2, "Fast zone", true, true);
 
@@ -51,10 +51,29 @@ public class ClosedXmlExcelServiceTests
         var sheet = workbook.Worksheet("Material Master");
         Assert.Equal("Material Code", sheet.Cell("A1").GetString());
         Assert.Equal(40019311L, sheet.Cell("A2").GetValue<long>());
-        Assert.Equal(99.50m, sheet.Cell("F2").GetValue<decimal>());
-        Assert.Equal("Fast zone (required)", sheet.Cell("Q2").GetString());
-        Assert.Equal("Active", sheet.Cell("S2").GetString());
+        Assert.Equal("BR01", sheet.Cell("C2").GetString());
+        Assert.Equal("AOP01", sheet.Cell("D2").GetString());
+        Assert.Equal(99.50m, sheet.Cell("H2").GetValue<decimal>());
+        Assert.Equal("Fast zone (required)", sheet.Cell("S2").GetString());
+        Assert.Equal("Active", sheet.Cell("U2").GetString());
         Assert.True(sheet.AutoFilter.IsEnabled);
+    }
+
+    [Fact]
+    public void MaterialMasterTemplate_IncludesAndReadsRequiredBrandAndAopCodes()
+    {
+        var service = new ClosedXmlExcelService();
+        var bytes = service.WriteMaterialMasterTemplate();
+
+        using var workbook = new ClosedXML.Excel.XLWorkbook(new MemoryStream(bytes));
+        var sheet = workbook.Worksheet("MaterialMaster");
+        Assert.Equal("Brand Code", sheet.Cell("C1").GetString());
+        Assert.Equal("AOP Code", sheet.Cell("D1").GetString());
+
+        using var stream = new MemoryStream(bytes);
+        var first = service.ReadMaterialMaster(stream).First();
+        Assert.Equal("GK", first.BrandCode);
+        Assert.Equal("FAST CARD", first.AopCode);
     }
 
     [Fact]

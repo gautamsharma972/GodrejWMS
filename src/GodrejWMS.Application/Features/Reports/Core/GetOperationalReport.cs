@@ -123,6 +123,30 @@ public sealed class GetOperationalReportHandler(
         SkuCount = p.StockBatches.Select(b => b.MaterialId).Distinct().Count()
     });
 
+    // Keep the empty-location predicate on the entity query. Filtering on ReportRow.Available
+    // after Positions() projects several correlated aggregates produces a nested SQL expression
+    // that Pomelo/MySQL cannot translate once warehouse-access query filters are applied.
+    private IQueryable<ReportRow> AvailablePositions() => db.PalletPositions.AsNoTracking()
+        .Where(p => p.IsActive
+            && !p.StockBatches.Any(b => b.QuantityBoxes > 0)
+            && !db.InwardPutaways.Any(a => a.PalletPositionId == p.Id
+                && !a.IsConfirmed
+                && !a.InwardTransactionLine.InwardTransaction.IsRejected))
+        .Select(p => new ReportRow
+        {
+            Id = p.Id,
+            WarehouseId = p.Rack.WarehouseId,
+            Warehouse = p.Rack.Warehouse.Code,
+            Location = p.LocationCode,
+            Zone = p.ZoneType.Code,
+            Rack = p.Rack.Code,
+            Column = p.Column,
+            Level = p.Level,
+            Status = "Empty",
+            Locations = 1,
+            OccupiedLocations = 0
+        });
+
     private IQueryable<ReportRow> Inward() => db.InwardTransactionLines.AsNoTracking().Select(l => new ReportRow
     {
         Id = l.Id, WarehouseId = l.InwardTransaction.WarehouseId, Warehouse = l.InwardTransaction.Warehouse.Code,
@@ -204,8 +228,8 @@ public sealed class GetOperationalReportHandler(
         }
         if (kind is ReportKind.Capacity or ReportKind.AvailableLocations or ReportKind.RackStock or ReportKind.RackLevel or ReportKind.ZoneStock)
         {
+            if (kind == ReportKind.AvailableLocations) return Apply(AvailablePositions(), filter);
             var positions = Apply(Positions(), filter);
-            if (kind == ReportKind.AvailableLocations) return positions.Where(r => r.Available > 0);
             return positions.GroupBy(r => new { r.WarehouseId, r.Warehouse,
                 Zone = kind == ReportKind.ZoneStock ? r.Zone : "",
                 Rack = kind == ReportKind.RackStock || kind == ReportKind.RackLevel ? r.Rack : "",

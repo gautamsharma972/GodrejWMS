@@ -1,0 +1,166 @@
+@page "/brand-location-preferences"
+@attribute [Authorize]
+@using GodrejWMS.Application.Features.BrandLocationPreferences.Commands
+@using GodrejWMS.Application.Features.BrandLocationPreferences.Dtos
+@using GodrejWMS.Application.Features.BrandLocationPreferences.Queries
+@using GodrejWMS.Application.Features.Brands.Dtos
+@using GodrejWMS.Application.Features.Brands.Queries
+@inject IMediator Mediator
+@inject ILogger<Index> Logger
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Brand Location Preference Master - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Master Data</div>
+            <h1>Brand Location Preferences</h1>
+            <p class="page-kicker">Prioritize inward put-away within one or more location ranges for each Brand Code.</p>
+        </div>
+        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Create">
+            <button class="btn btn-primary" @onclick="() => ShowForm(null)"><i class="bi bi-plus-lg"></i> New Mapping</button>
+        </PermissionAuthorize>
+    </div>
+
+    <div class="feedback-bar info" role="note">
+        <div class="feedback-bar-icon"><i class="bi bi-info-circle" aria-hidden="true"></i></div>
+        <div class="feedback-bar-content"><strong>How ranges work</strong><span>Each mapping covers all columns and levels between two positions on the same rack. Add another mapping when a Brand spans another rack.</span></div>
+    </div>
+
+    @if (_showForm)
+    {
+        <div class="slide-over-backdrop" @onclick="CloseForm">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div><div class="eyebrow">@(_editingId is null ? "New preference" : "Edit preference")</div><h2 class="slide-over-title">Brand and location range</h2><p class="slide-over-subtitle">The existing put-away logic runs inside this range before considering other locations.</p></div>
+                    <button class="slide-over-close" aria-label="Close" @onclick="CloseForm"><i class="bi bi-x-lg"></i></button>
+                </div>
+                <EditForm Model="_form" FormName="brand-location-preference-form" OnValidSubmit="SaveAsync" class="slide-over-form">
+                    <div class="slide-over-body">
+                        <div class="row g-3">
+                            <div class="col-12"><label class="form-label">Brand Code <span class="text-danger">*</span></label><SearchableBrandSelect Options="@ActiveBrandOptions" @bind-Value="_form.BrandId" /></div>
+                            <div class="col-12"><label class="form-label">Warehouse <span class="text-danger">*</span></label><InputSelect class="form-select" @bind-Value="_form.WarehouseId" @bind-Value:after="OnWarehouseChanged"><option value="0">Select warehouse</option>@foreach (var warehouse in WarehouseOptions) { <option value="@warehouse.Id">@warehouse.Code</option> }</InputSelect></div>
+                            <div class="col-12"><label class="form-label">Rack <span class="text-danger">*</span></label><InputSelect class="form-select" @bind-Value="_form.RackId" @bind-Value:after="OnRackChanged"><option value="0">Select rack</option>@foreach (var rack in RackOptions) { <option value="@rack.Id">@rack.Code</option> }</InputSelect></div>
+                            <div class="col-md-6"><label class="form-label">Location Preference From <span class="text-danger">*</span></label><SearchableLocationSelect Options="@LocationOptionsList" ContextKey="@_form.RackId" Placeholder="Search start location" AriaLabel="Search Location Preference From" @bind-Value="_form.FromPalletPositionId" /></div>
+                            <div class="col-md-6"><label class="form-label">Location Preference To <span class="text-danger">*</span></label><SearchableLocationSelect Options="@LocationOptionsList" ContextKey="@_form.RackId" Placeholder="Search end location" AriaLabel="Search Location Preference To" @bind-Value="_form.ToPalletPositionId" /></div>
+                            @if (_editingId is not null) { <div class="col-12"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_form.IsActive" /><span class="form-check-label">Active mapping</span></div></div> }
+                        </div>
+                        @if (_error is not null) { <div class="alert alert-danger mt-3 mb-0">@_error</div> }
+                    </div>
+                    <div class="slide-over-footer"><button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button><button type="submit" class="btn btn-primary" disabled="@_saving">@(_saving ? "Saving..." : "Save Mapping")</button></div>
+                </EditForm>
+            </section>
+        </div>
+    }
+
+    <div class="toolbar-panel">
+        <div class="toolbar-group"><div class="input-group search-control"><span class="input-group-text"><i class="bi bi-search"></i></span><input class="form-control" placeholder="Search brand, warehouse, rack, or location" @bind="_search" @bind:event="oninput" /></div></div>
+        <span class="sync-chip">@Filtered.Count().ToString("N0") mappings</span>
+    </div>
+
+    @if (_items is null)
+    {
+        <div class="loading-panel">Loading brand location preferences...</div>
+    }
+    else if (!Filtered.Any())
+    {
+        <div class="empty-state"><i class="bi bi-signpost-split"></i><strong>No mappings configured</strong><span>Without a mapping, inward put-away continues to use the existing allocation logic.</span></div>
+    }
+    else
+    {
+        <div class="table-responsive panel-table">
+            <table class="table table-hover align-middle mb-0">
+                <thead><tr><th>Brand Code</th><th>Warehouse</th><th>Rack</th><th>Location From</th><th>Location To</th><th>Status</th><th class="table-actions">Actions</th></tr></thead>
+                <tbody>
+                    @foreach (var item in Filtered)
+                    {
+                        <tr>
+                            <td><span class="record-code">@item.BrandCode</span></td>
+                            <td>@item.WarehouseCode</td>
+                            <td>@item.RackCode</td>
+                            <td><span class="location-pill"><i class="bi bi-geo-alt"></i>@item.FromLocationCode</span></td>
+                            <td><span class="location-pill"><i class="bi bi-geo-alt"></i>@item.ToLocationCode</span></td>
+                            <td><span class="status-pill @(item.IsActive ? "success" : "inactive")">@(item.IsActive ? "Active" : "Inactive")</span></td>
+                            <td class="table-actions"><div class="d-flex justify-content-end gap-2">
+                                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Edit"><button class="btn btn-sm btn-outline-secondary" @onclick="() => ShowForm(item)" aria-label="Edit mapping"><i class="bi bi-pencil-square"></i></button></PermissionAuthorize>
+                                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Delete"><button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAsync(item)" aria-label="Delete mapping"><i class="bi bi-trash"></i></button></PermissionAuthorize>
+                            </div></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<BrandLocationPreferenceDto>? _items;
+    private IReadOnlyList<BrandDto> _brands = [];
+    private IReadOnlyList<BrandLocationOptionDto> _locations = [];
+    private string _search = "";
+    private bool _showForm;
+    private bool _saving;
+    private int? _editingId;
+    private FormModel _form = new();
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _brands = await Mediator.Send(new GetBrandsQuery());
+        _locations = await Mediator.Send(new GetBrandLocationOptionsQuery());
+        await LoadAsync();
+    }
+
+    private Task LoadAsync() => LoadCoreAsync();
+    private async Task LoadCoreAsync() => _items = await Mediator.Send(new GetBrandLocationPreferencesQuery());
+    private IEnumerable<BrandDto> ActiveBrands => _brands.Where(x => x.IsActive || x.Id == _form.BrandId).OrderBy(x => x.Code);
+    private IReadOnlyList<BrandDto> ActiveBrandOptions => ActiveBrands.ToList();
+    private IEnumerable<(int Id, string Code)> WarehouseOptions => _locations.GroupBy(x => new { x.WarehouseId, x.WarehouseCode }).Select(x => (Id: x.Key.WarehouseId, Code: x.Key.WarehouseCode)).OrderBy(x => x.Code);
+    private IEnumerable<(int Id, string Code)> RackOptions => _locations.Where(x => x.WarehouseId == _form.WarehouseId).GroupBy(x => new { x.RackId, x.RackCode }).Select(x => (Id: x.Key.RackId, Code: x.Key.RackCode)).OrderBy(x => x.Code);
+    private IEnumerable<BrandLocationOptionDto> LocationOptions => _locations.Where(x => x.RackId == _form.RackId).OrderBy(x => x.Column).ThenBy(x => x.Level);
+    private IReadOnlyList<BrandLocationOptionDto> LocationOptionsList => LocationOptions.ToList();
+    private IEnumerable<BrandLocationPreferenceDto> Filtered => (_items ?? []).Where(x => string.IsNullOrWhiteSpace(_search) || new[] { x.BrandCode, x.WarehouseCode, x.RackCode, x.FromLocationCode, x.ToLocationCode }.Any(v => v.Contains(_search, StringComparison.OrdinalIgnoreCase)));
+
+    private void ShowForm(BrandLocationPreferenceDto? item)
+    {
+        _error = null;
+        _editingId = item?.Id;
+        _form = item is null ? new() : new FormModel { BrandId = item.BrandId, WarehouseId = item.WarehouseId, RackId = item.RackId, FromPalletPositionId = item.FromPalletPositionId, ToPalletPositionId = item.ToPalletPositionId, IsActive = item.IsActive };
+        _showForm = true;
+    }
+    private void OnWarehouseChanged()
+    {
+        if (!_locations.Any(x => x.WarehouseId == _form.WarehouseId && x.RackId == _form.RackId))
+        {
+            _form.RackId = 0;
+            _form.FromPalletPositionId = 0;
+            _form.ToPalletPositionId = 0;
+        }
+    }
+    private void OnRackChanged()
+    {
+        if (!_locations.Any(x => x.RackId == _form.RackId && x.Id == _form.FromPalletPositionId)) _form.FromPalletPositionId = 0;
+        if (!_locations.Any(x => x.RackId == _form.RackId && x.Id == _form.ToPalletPositionId)) _form.ToPalletPositionId = 0;
+    }
+    private void CloseForm() { _showForm = false; _error = null; }
+    private async Task SaveAsync()
+    {
+        _saving = true; _error = null;
+        try
+        {
+            if (_editingId is null) await Mediator.Send(new CreateBrandLocationPreferenceCommand(_form.BrandId, _form.FromPalletPositionId, _form.ToPalletPositionId));
+            else await Mediator.Send(new UpdateBrandLocationPreferenceCommand(_editingId.Value, _form.BrandId, _form.FromPalletPositionId, _form.ToPalletPositionId, _form.IsActive));
+            CloseForm(); await LoadAsync(); await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Brand location preference saved.");
+        }
+        catch (Exception ex) { Logger.LogWarning(ex, "Failed to save brand location preference"); _error = ex.Message; }
+        finally { _saving = false; }
+    }
+    private async Task DeleteAsync(BrandLocationPreferenceDto item)
+    {
+        if (!await JsRuntime.InvokeAsync<bool>("confirm", $"Delete the {item.BrandCode} mapping from {item.FromLocationCode} to {item.ToLocationCode}?")) return;
+        try { await Mediator.Send(new DeleteBrandLocationPreferenceCommand(item.Id)); await LoadAsync(); await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Mapping deleted."); }
+        catch (Exception ex) { Logger.LogWarning(ex, "Failed to delete brand location preference"); _error = ex.Message; }
+    }
+    private sealed class FormModel { public int BrandId { get; set; } public int WarehouseId { get; set; } public int RackId { get; set; } public int FromPalletPositionId { get; set; } public int ToPalletPositionId { get; set; } public bool IsActive { get; set; } = true; }
+}

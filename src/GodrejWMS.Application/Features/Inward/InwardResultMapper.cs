@@ -23,7 +23,10 @@ public static class InwardResultMapper
                     .OrderBy(p => p.PalletPosition.LocationCode)
                     .Select(p => new InwardAllocationLineDto(p.PalletPosition.LocationCode, p.QuantityBoxes, p.AllocationReason, p.IsConfirmed, p.Id))
                     .ToList(),
-                IsConfirmed: l.Putaways.All(p => p.IsConfirmed)))
+                // Putaways.All(...) is vacuously true for a line with zero putaways (a totally
+                // failed allocation, or one cleared out by rejection) - Any() guards that so an
+                // unconfirmed/rejected GRN never reports as confirmed.
+                IsConfirmed: l.Putaways.Count > 0 && l.Putaways.All(p => p.IsConfirmed)))
             .ToList();
 
         return new InwardResultDto(
@@ -31,7 +34,7 @@ public static class InwardResultMapper
             transaction.ReferenceNumber,
             transaction.CreatedAt,
             lines,
-            IsConfirmed: lines.All(l => l.IsConfirmed),
+            IsConfirmed: lines.Count > 0 && lines.All(l => l.IsConfirmed),
             IsRejected: transaction.IsRejected);
     }
 }

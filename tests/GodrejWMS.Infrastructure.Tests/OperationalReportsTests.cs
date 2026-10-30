@@ -58,6 +58,36 @@ public class OperationalReportsTests
         Assert.Equal(0, result.TotalCount);
     }
 
+    [Fact]
+    public async Task AvailableLocations_ReturnsOnlyActiveLocationsWithoutStockOrPendingPutaway()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using var db = Create(new User("admin", true), dbName);
+        SeedStock(db);
+        var rack = db.Racks.Single(r => r.WarehouseId == 1);
+        rack.PalletPositions.Add(new PalletPosition
+        {
+            LocationCode = "A-03-01",
+            Column = 3,
+            Level = 1,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new GetOperationalReportHandler(
+            db,
+            new DisplayNames(),
+            WarehouseAccess(new User("admin", true), dbName),
+            new AlwaysGrantedPermissions());
+
+        var result = await handler.Handle(
+            new(ReportKind.AvailableLocations, new(), Sort: "location"), default);
+
+        var location = Assert.Single(result.Items);
+        Assert.Equal("A-03-01", location.Location);
+        Assert.Equal("Empty", location.Status);
+    }
+
     private static AppDbContext Create(User user, string dbName)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(dbName).Options;

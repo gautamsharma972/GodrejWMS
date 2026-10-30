@@ -11,6 +11,8 @@ public sealed record UpdateMaterialCommand(
     int Id,
     long MaterialNumber,
     string Description,
+    int BrandId,
+    int AopDescriptionId,
     string DesignType,
     string? CharacteristicValue,
     int PackSize,
@@ -38,6 +40,12 @@ public sealed class UpdateMaterialValidator : AbstractValidator<UpdateMaterialCo
                 !await db.Materials.AnyAsync(m => m.Id != command.Id && m.MaterialNumber == materialNumber, ct))
             .WithMessage("A material with this Material Number already exists.");
         RuleFor(x => x.Description).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.BrandId)
+            .MustAsync(async (id, ct) => await db.Brands.AnyAsync(x => x.Id == id && x.IsActive, ct))
+            .WithMessage("Select an active Brand from the master.");
+        RuleFor(x => x.AopDescriptionId)
+            .MustAsync(async (id, ct) => await db.AopDescriptions.AnyAsync(x => x.Id == id && x.IsActive, ct))
+            .WithMessage("Select an active AOP Code from the master.");
         RuleFor(x => x.DesignType)
             .NotEmpty()
             .MaximumLength(20)
@@ -75,6 +83,8 @@ public sealed class UpdateMaterialHandler(IApplicationDbContext db, IDateTimePro
 
         material.MaterialNumber = request.MaterialNumber;
         material.Description = request.Description;
+        material.BrandId = request.BrandId;
+        material.AopDescriptionId = request.AopDescriptionId;
         material.DesignType = request.DesignType;
         material.CharacteristicValue = request.CharacteristicValue;
         material.PackSize = request.PackSize;

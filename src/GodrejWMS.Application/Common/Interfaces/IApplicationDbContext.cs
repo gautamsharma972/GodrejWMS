@@ -16,6 +16,9 @@ public interface IApplicationDbContext : IAsyncDisposable
     DbSet<RolePermission> RolePermissions { get; }
     DbSet<OrganizationSettings> OrganizationSettings { get; }
     DbSet<Material> Materials { get; }
+    DbSet<Brand> Brands { get; }
+    DbSet<BrandLocationPreference> BrandLocationPreferences { get; }
+    DbSet<AopDescription> AopDescriptions { get; }
 
     DbSet<DesignType> DesignTypes { get; }
 

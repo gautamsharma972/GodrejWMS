@@ -9,6 +9,8 @@ namespace GodrejWMS.Application.Features.Materials.Commands;
 public sealed record CreateMaterialCommand(
     long MaterialNumber,
     string Description,
+    int BrandId,
+    int AopDescriptionId,
     string DesignType,
     string? CharacteristicValue,
     int PackSize,
@@ -34,6 +36,12 @@ public sealed class CreateMaterialValidator : AbstractValidator<CreateMaterialCo
                 !await db.Materials.AnyAsync(m => m.MaterialNumber == materialNumber, ct))
             .WithMessage("A material with this Material Number already exists.");
         RuleFor(x => x.Description).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.BrandId)
+            .MustAsync(async (id, ct) => await db.Brands.AnyAsync(x => x.Id == id && x.IsActive, ct))
+            .WithMessage("Select an active Brand from the master.");
+        RuleFor(x => x.AopDescriptionId)
+            .MustAsync(async (id, ct) => await db.AopDescriptions.AnyAsync(x => x.Id == id && x.IsActive, ct))
+            .WithMessage("Select an active AOP Code from the master.");
         RuleFor(x => x.DesignType)
             .NotEmpty()
             .MaximumLength(20)
@@ -70,6 +78,8 @@ public sealed class CreateMaterialHandler(IApplicationDbContext db, IDateTimePro
         {
             MaterialNumber = request.MaterialNumber,
             Description = request.Description,
+            BrandId = request.BrandId,
+            AopDescriptionId = request.AopDescriptionId,
             DesignType = request.DesignType,
             CharacteristicValue = request.CharacteristicValue,
             PackSize = request.PackSize,

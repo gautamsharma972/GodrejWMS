@@ -78,7 +78,10 @@ public sealed class GetInwardHistoryHandler(IApplicationDbContext db)
                 t.Lines.Count,
                 t.Lines.Sum(l => (decimal?)l.AllocatedQuantityBoxes) ?? 0m,
                 (AllocationStatus)(t.Lines.Max(l => (int?)l.Status) ?? (int)AllocationStatus.Failed),
-                t.Lines.SelectMany(l => l.Putaways).All(p => p.IsConfirmed),
+                // All(...) is vacuously true for zero putaways (a totally failed allocation, or a
+                // rejected GRN whose putaways RejectInwardHandler deletes) - Any() guards that so
+                // a rejected/unconfirmed GRN never also shows as Confirmed in this list.
+                t.Lines.SelectMany(l => l.Putaways).Any() && t.Lines.SelectMany(l => l.Putaways).All(p => p.IsConfirmed),
                 t.IsRejected));
 
         return PaginatedList<InwardHistoryDto>.CreateAsync(query, request.PageNumber, request.PageSize);

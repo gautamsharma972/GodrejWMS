@@ -16,6 +16,16 @@ public class MaterialConfiguration : IEntityTypeConfiguration<Material>
         builder.Property(m => m.DesignType).HasMaxLength(20).IsRequired();
         builder.Property(m => m.CharacteristicValue).HasMaxLength(20);
 
+        builder.HasOne(m => m.Brand)
+            .WithMany(b => b.Materials)
+            .HasForeignKey(m => m.BrandId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(m => m.AopDescription)
+            .WithMany(a => a.Materials)
+            .HasForeignKey(m => m.AopDescriptionId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.Property(m => m.MrpPrice).HasPrecision(12, 2);
         builder.Property(m => m.LengthMm).HasPrecision(12, 3);
         builder.Property(m => m.WidthMm).HasPrecision(12, 3);

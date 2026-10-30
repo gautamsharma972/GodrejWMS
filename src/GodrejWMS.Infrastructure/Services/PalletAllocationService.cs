@@ -7,7 +7,10 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Infrastructure.Services;
 
 /// <summary>
-/// Put-away engine for FMCG pallet storage. Three tiers, in order: (1) top up positions already
+/// Put-away engine for FMCG pallet storage. Brand location preferences are the outermost tier:
+/// the complete allocation sequence runs inside the material's configured brand ranges first,
+/// then repeats outside those ranges only for any quantity that remains. Within each phase the
+/// three existing tiers remain, in order: (1) top up positions already
 /// holding the exact same SKU + PKM + subtype; (2) for a SKU that already has stock/reservations
 /// somewhere, consolidate into that rack first (ranked by existing concentration, then by other
 /// racks in Code order), across every level, so the same SKU doesn't scatter needlessly; (3) fall
@@ -42,6 +45,7 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
         int mfgMonth,
         int warehouseId,
         int stockSubtypeId = LocationSubtypeIds.Good,
+        int? excludeInwardTransactionLineId = null,
         CancellationToken cancellationToken = default)
     {
         var material = await db.Materials
@@ -67,7 +71,8 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
 
         var pendingReservations = await db.InwardPutaways
             .AsNoTracking()
-            .Where(p => !p.IsConfirmed)
+            .Where(p => !p.IsConfirmed
+                && (excludeInwardTransactionLineId == null || p.InwardTransactionLineId != excludeInwardTransactionLineId))
             .Select(p => new PendingReservation(
                 p.PalletPositionId,
                 p.PalletPosition.RackId,
@@ -90,76 +95,36 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
             .Include(p => p.StockBatches)
             .ToListAsync(cancellationToken);
 
-        var topUpPositions = candidatePositions
-            .Where(p => (HasSameSkuPkmStock(p, materialId, mfgMonth, stockSubtypeId)
-                    || HasSameSkuPkmReservation(p.Id, pendingReservations, materialId, mfgMonth, stockSubtypeId))
-                && (allowPkmMixing || !HasDifferentPkmForMaterial(p, materialId, mfgMonth, pendingReservations)))
-            .OrderBy(p => ScoreLocation(p, material, activeSeasonId, mfgMonth, oldestMfgMonth: null));
+        var preferredPositionIds = await GetBrandPreferredPositionIdsAsync(
+            material.BrandId, warehouseId, candidatePositions, cancellationToken);
+        var oldestMfgMonth = await db.StockBatches
+            .Where(b => b.MaterialId == materialId && b.StockSubtypeId == stockSubtypeId && b.QuantityBoxes > 0
+                && b.PalletPosition.Rack.WarehouseId == warehouseId)
+            .MinAsync(b => (int?)b.MfgMonth, cancellationToken);
+        var racksWithSameDesignType = await GetRacksWithSameDesignTypeAsync(
+            candidatePositions, pendingReservations, material, cancellationToken);
+        var hasAnchor = candidatePositions.Any(p => p.StockBatches.Any(b => b.MaterialId == materialId && b.QuantityBoxes > 0))
+            || pendingReservations.Any(r => r.MaterialId == materialId && r.StockSubtypeId == stockSubtypeId && r.QuantityBoxes > 0);
 
-        foreach (var position in topUpPositions)
+        // A configured brand range outranks every legacy preference. Run the unchanged allocation
+        // tiers over the union of preferred ranges first, then use all remaining locations as the
+        // fallback. This lets a brand span multiple racks without making the mapping a hard gate.
+        if (preferredPositionIds.Count > 0)
         {
-            if (remaining <= 0)
-            {
-                break;
-            }
-
-            var spare = SpareCapacity(position, material, pendingReservations, reservedByPosition);
-            if (spare <= 0)
-            {
-                continue;
-            }
-
-            var take = Math.Min(remaining, spare);
-            AddReservation(reservedByPosition, position.Id, take);
-            remaining -= take;
-            lines.Add(new InwardAllocationLine(position.LocationCode, take, "Same SKU + PKM top-up"));
+            remaining = AllocateCandidatePhase(
+                candidatePositions.Where(p => preferredPositionIds.Contains(p.Id)).ToList(),
+                pendingReservations, reservedByPosition, lines, materialId, stockSubtypeId, material,
+                activeSeasonId, mfgMonth, oldestMfgMonth, allowPkmMixing, racksWithSameDesignType,
+                hasAnchor, remaining, isBrandPreferredPhase: true);
         }
 
         if (remaining > 0)
         {
-            var oldestMfgMonth = await db.StockBatches
-                .Where(b => b.MaterialId == materialId && b.StockSubtypeId == stockSubtypeId && b.QuantityBoxes > 0
-                    && b.PalletPosition.Rack.WarehouseId == warehouseId)
-                .MinAsync(b => (int?)b.MfgMonth, cancellationToken);
-
-            var racksWithSameDesignType = await GetRacksWithSameDesignTypeAsync(candidatePositions, pendingReservations, material, cancellationToken);
-
-            var hasAnchor = candidatePositions.Any(p => p.StockBatches.Any(b => b.MaterialId == materialId && b.QuantityBoxes > 0))
-                || pendingReservations.Any(r => r.MaterialId == materialId && r.StockSubtypeId == stockSubtypeId && r.QuantityBoxes > 0);
-
-            if (hasAnchor)
-            {
-                remaining = FillSameRackConsolidation(
-                    candidatePositions, pendingReservations, reservedByPosition, lines,
-                    materialId, stockSubtypeId, material, activeSeasonId, mfgMonth, oldestMfgMonth,
-                    allowPkmMixing, remaining);
-            }
-
-            foreach (var position in candidatePositions
-                .Where(p => !p.StockBatches.Any() && !HasAnyReservation(p.Id, pendingReservations) && !reservedByPosition.ContainsKey(p.Id))
-                .OrderBy(p => ScoreLocation(p, material, activeSeasonId, mfgMonth, oldestMfgMonth))
-                .ThenByDescending(p => racksWithSameDesignType.Contains(p.RackId))
-                .ThenBy(p => p.Rack.Code)
-                .ThenBy(p => p.Column)
-                .ThenBy(p => p.Level))
-            {
-                if (remaining <= 0)
-                {
-                    break;
-                }
-
-                var spare = SpareCapacity(position, material, pendingReservations, reservedByPosition);
-                if (spare <= 0)
-                {
-                    continue;
-                }
-
-                var take = Math.Min(remaining, spare);
-                AddReservation(reservedByPosition, position.Id, take);
-                remaining -= take;
-                lines.Add(new InwardAllocationLine(position.LocationCode, take,
-                    AllocationReason(position, material, activeSeasonId, mfgMonth, oldestMfgMonth, racksWithSameDesignType.Contains(position.RackId))));
-            }
+            remaining = AllocateCandidatePhase(
+                candidatePositions.Where(p => !preferredPositionIds.Contains(p.Id)).ToList(),
+                pendingReservations, reservedByPosition, lines, materialId, stockSubtypeId, material,
+                activeSeasonId, mfgMonth, oldestMfgMonth, allowPkmMixing, racksWithSameDesignType,
+                hasAnchor, remaining, isBrandPreferredPhase: false);
         }
 
         var allocated = quantityBoxes - remaining;
@@ -176,6 +141,90 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
                 : $"Warehouse at capacity - {remaining:0.###} box(es) could not be reserved in a matching {stockSubtypeCode} location.";
 
         return new InwardAllocationResult(status, allocated, lines, remarks);
+    }
+
+    private static decimal AllocateCandidatePhase(
+        List<PalletPosition> positions,
+        IReadOnlyList<PendingReservation> pendingReservations,
+        Dictionary<int, decimal> reservedByPosition,
+        List<InwardAllocationLine> lines,
+        int materialId,
+        int stockSubtypeId,
+        Material material,
+        int activeSeasonId,
+        int incomingMfgMonth,
+        int? oldestMfgMonth,
+        bool allowPkmMixing,
+        HashSet<int> racksWithSameDesignType,
+        bool hasAnchor,
+        decimal remaining,
+        bool isBrandPreferredPhase)
+    {
+        foreach (var position in positions
+            .Where(p => (HasSameSkuPkmStock(p, materialId, incomingMfgMonth, stockSubtypeId)
+                    || HasSameSkuPkmReservation(p.Id, pendingReservations, materialId, incomingMfgMonth, stockSubtypeId))
+                && (allowPkmMixing || !HasDifferentPkmForMaterial(p, materialId, incomingMfgMonth, pendingReservations)))
+            .OrderBy(p => ScoreLocation(p, material, activeSeasonId, incomingMfgMonth, oldestMfgMonth: null))
+            .ThenBy(p => p.Rack.Code)
+            .ThenBy(p => p.Column)
+            .ThenBy(p => p.Level))
+        {
+            remaining = ReserveAtPosition(position, material, pendingReservations, reservedByPosition, lines,
+                remaining, isBrandPreferredPhase ? "Brand-preferred range · Same SKU + PKM top-up" : "Same SKU + PKM top-up");
+            if (remaining <= 0)
+            {
+                return 0;
+            }
+        }
+
+        if (hasAnchor)
+        {
+            remaining = FillSameRackConsolidation(
+                positions, pendingReservations, reservedByPosition, lines,
+                materialId, stockSubtypeId, material, activeSeasonId, incomingMfgMonth, oldestMfgMonth,
+                allowPkmMixing, remaining, isBrandPreferredPhase);
+        }
+
+        foreach (var position in positions
+            .Where(p => !p.StockBatches.Any() && !HasAnyReservation(p.Id, pendingReservations) && !reservedByPosition.ContainsKey(p.Id))
+            .OrderBy(p => ScoreLocation(p, material, activeSeasonId, incomingMfgMonth, oldestMfgMonth))
+            .ThenByDescending(p => racksWithSameDesignType.Contains(p.RackId))
+            .ThenBy(p => p.Rack.Code)
+            .ThenBy(p => p.Column)
+            .ThenBy(p => p.Level))
+        {
+            var reason = AllocationReason(position, material, activeSeasonId, incomingMfgMonth,
+                oldestMfgMonth, racksWithSameDesignType.Contains(position.RackId));
+            remaining = ReserveAtPosition(position, material, pendingReservations, reservedByPosition, lines,
+                remaining, isBrandPreferredPhase ? $"Brand-preferred range · {reason}" : reason);
+            if (remaining <= 0)
+            {
+                return 0;
+            }
+        }
+
+        return remaining;
+    }
+
+    private static decimal ReserveAtPosition(
+        PalletPosition position,
+        Material material,
+        IReadOnlyList<PendingReservation> pendingReservations,
+        Dictionary<int, decimal> reservedByPosition,
+        List<InwardAllocationLine> lines,
+        decimal remaining,
+        string reason)
+    {
+        var spare = SpareCapacity(position, material, pendingReservations, reservedByPosition);
+        if (spare <= 0 || remaining <= 0)
+        {
+            return remaining;
+        }
+
+        var take = Math.Min(remaining, spare);
+        AddReservation(reservedByPosition, position.Id, take);
+        lines.Add(new InwardAllocationLine(position.LocationCode, take, reason));
+        return remaining - take;
     }
 
     /// <summary>
@@ -197,7 +246,8 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
         int incomingMfgMonth,
         int? oldestMfgMonth,
         bool allowPkmMixing,
-        decimal remaining)
+        decimal remaining,
+        bool isBrandPreferredPhase)
     {
         var rackQuantities = new Dictionary<int, decimal>();
         foreach (var position in candidatePositions)
@@ -257,7 +307,8 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
                 var take = Math.Min(remaining, spare);
                 AddReservation(reservedByPosition, position.Id, take);
                 remaining -= take;
-                lines.Add(new InwardAllocationLine(position.LocationCode, take, "Same-rack consolidation"));
+                lines.Add(new InwardAllocationLine(position.LocationCode, take,
+                    isBrandPreferredPhase ? "Brand-preferred range · Same-rack consolidation" : "Same-rack consolidation"));
             }
         }
 
@@ -470,6 +521,41 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
             .Concat(pendingReservations
                 .Where(r => r.QuantityBoxes > 0 && designTypeByMaterialId.GetValueOrDefault(r.MaterialId) == material.DesignType)
                 .Select(r => r.RackId))
+            .ToHashSet();
+    }
+
+    private async Task<HashSet<int>> GetBrandPreferredPositionIdsAsync(
+        int? brandId,
+        int warehouseId,
+        IReadOnlyCollection<PalletPosition> candidates,
+        CancellationToken cancellationToken)
+    {
+        if (!brandId.HasValue)
+        {
+            return [];
+        }
+
+        var ranges = await db.BrandLocationPreferences
+            .AsNoTracking()
+            .Where(x => x.IsActive && x.BrandId == brandId.Value
+                && x.FromPalletPosition.Rack.WarehouseId == warehouseId
+                && x.ToPalletPosition.Rack.WarehouseId == warehouseId)
+            .Select(x => new
+            {
+                RackId = x.FromPalletPosition.RackId,
+                FromColumn = x.FromPalletPosition.Column,
+                ToColumn = x.ToPalletPosition.Column,
+                FromLevel = x.FromPalletPosition.Level,
+                ToLevel = x.ToPalletPosition.Level
+            })
+            .ToListAsync(cancellationToken);
+
+        return candidates
+            .Where(position => ranges.Any(range =>
+                position.RackId == range.RackId
+                && position.Column >= range.FromColumn && position.Column <= range.ToColumn
+                && position.Level >= range.FromLevel && position.Level <= range.ToLevel))
+            .Select(position => position.Id)
             .ToHashSet();
     }
 

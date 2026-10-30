@@ -48,7 +48,15 @@
                             <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
                             Putaway
                         </a>
-                        <button type="button" class="btn btn-primary" @onclick="ConfirmPutawayAsync" disabled="@_confirming"
+                        @if (CanRefreshPutaway)
+                        {
+                            <button type="button" class="btn btn-outline-primary" @onclick="RefreshPutawayAsync" disabled="@(_refreshingPutaway || _confirming)"
+                                    title="Release unconfirmed reservations and allocate again using the latest Brand and location preferences">
+                                <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+                                @(_refreshingPutaway ? "Refreshing..." : "Refresh Put-away")
+                            </button>
+                        }
+                        <button type="button" class="btn btn-primary" @onclick="ConfirmPutawayAsync" disabled="@(_confirming || _refreshingPutaway)"
                                 title="Confirm all reserved put-away locations">
                             <i class="bi bi-check2-circle" aria-hidden="true"></i>
                             @(_confirming ? "Confirming..." : "Confirm")
@@ -120,6 +128,16 @@
         @if (!string.IsNullOrWhiteSpace(_reallocationError))
         {
             <div class="alert alert-danger">@_reallocationError</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_refreshPutawayMessage))
+        {
+            <div class="feedback-bar success" role="status"><div class="feedback-bar-icon"><i class="bi bi-check2-circle"></i></div><div class="feedback-bar-content"><strong>Put-away refreshed</strong><span>@_refreshPutawayMessage</span></div></div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_refreshPutawayError))
+        {
+            <div class="feedback-bar danger" role="alert"><div class="feedback-bar-icon"><i class="bi bi-exclamation-triangle"></i></div><div class="feedback-bar-content"><strong>Unable to refresh put-away</strong><span>@_refreshPutawayError</span></div></div>
         }
 
         @if (_detail.IsRejected)
@@ -747,6 +765,9 @@
     private bool _reallocating;
     private string? _reallocationMessage;
     private string? _reallocationError;
+    private bool _refreshingPutaway;
+    private string? _refreshPutawayMessage;
+    private string? _refreshPutawayError;
     private PalletPositionDto? _selectedPalletPosition;
     private string? _palletDetailsError;
     private bool _isChangeLocationOpen;
@@ -1215,6 +1236,42 @@
     private bool CanReallocate =>
         _detail is not null && !_detail.IsRejected &&
         _detail.Lines.Any(l => l.Status != AllocationStatus.Fulfilled);
+
+    private bool CanRefreshPutaway =>
+        _detail is not null && !_detail.IsRejected &&
+        (_detail.Lines.Any(l => l.Putaways.Any(p => !p.IsConfirmed))
+         || _detail.Lines.Any(l => l.AllocatedQuantityBoxes < l.RequestedQuantityBoxes));
+
+    private async Task RefreshPutawayAsync()
+    {
+        if (_detail is null || !CanRefreshPutaway || _refreshingPutaway)
+        {
+            return;
+        }
+
+        _refreshingPutaway = true;
+        _refreshPutawayMessage = null;
+        _refreshPutawayError = null;
+        try
+        {
+            await Mediator.Send(new RefreshInwardPutawayCommand(_detail.Id));
+            _detail = await Mediator.Send(new GetInwardDetailQuery(TransactionId));
+            var reserved = _detail.Lines.SelectMany(x => x.Putaways).Where(x => !x.IsConfirmed).Sum(x => x.QuantityBoxes);
+            var locations = _detail.Lines.SelectMany(x => x.Putaways).Where(x => !x.IsConfirmed).Select(x => x.LocationCode).Distinct().Count();
+            _refreshPutawayMessage = $"Latest preferences applied: {reserved:0.###} box(es) reserved across {locations} location(s).";
+            _selectedPutawayIds.Clear();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Put-away refreshed using the latest location preferences.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to refresh put-away for GRN {TransactionId}", _detail.Id);
+            _refreshPutawayError = ex.Message;
+        }
+        finally
+        {
+            _refreshingPutaway = false;
+        }
+    }
 
     private async Task ReallocateAsync()
     {

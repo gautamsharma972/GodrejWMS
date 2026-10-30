@@ -49,7 +49,11 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
             transaction.ReferenceNumber,
             transaction.CreatedAt,
             lines,
-            IsConfirmed: transaction.Lines.SelectMany(l => l.Putaways).All(p => p.IsConfirmed),
+            // All(...) is vacuously true for zero putaways (a totally failed allocation, or a
+            // rejected GRN whose putaways RejectInwardHandler deletes) - Any() guards that so a
+            // rejected/unconfirmed GRN never also reports as confirmed.
+            IsConfirmed: transaction.Lines.SelectMany(l => l.Putaways).Any() &&
+                transaction.Lines.SelectMany(l => l.Putaways).All(p => p.IsConfirmed),
             IsRejected: transaction.IsRejected,
             RejectedAt: transaction.RejectedAt,
             RejectedByUserName: transaction.RejectedByUserName,

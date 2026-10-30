@@ -13,11 +13,14 @@ public sealed class GetMaterialByIdHandler(IApplicationDbContext db) : IRequestH
 {
     public async Task<MaterialDto> Handle(GetMaterialByIdQuery request, CancellationToken cancellationToken)
     {
-        var m = await db.Materials.AsNoTracking().Include(x => x.MovementType).Include(x => x.Season).Include(x => x.PreferredZoneType).FirstOrDefaultAsync(x => x.Id == request.Id, cancellationToken)
+        var m = await db.Materials.AsNoTracking().Include(x => x.Brand).Include(x => x.AopDescription).Include(x => x.MovementType).Include(x => x.Season).Include(x => x.PreferredZoneType).FirstOrDefaultAsync(x => x.Id == request.Id, cancellationToken)
             ?? throw new NotFoundException(nameof(Material), request.Id);
 
         return new MaterialDto(
-            m.Id, m.MaterialNumber, m.Description, m.DesignType, m.CharacteristicValue,
+            m.Id, m.MaterialNumber, m.Description,
+            m.BrandId, m.Brand?.Code, m.Brand?.Description,
+            m.AopDescriptionId, m.AopDescription?.Code, m.AopDescription?.Description,
+            m.DesignType, m.CharacteristicValue,
             m.PackSize, m.MrpPrice, m.LengthMm, m.WidthMm, m.HeightMm, m.VolumeMm3,
             m.NetWeightKg, m.GrossWeightKg, m.BoxWeightKg, m.PalletCapacityBoxes,
             m.PalletWeightKg, m.MovementTypeId, m.MovementType.Code, m.MovementType.DisplayName,

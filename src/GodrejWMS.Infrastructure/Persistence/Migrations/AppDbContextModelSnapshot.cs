@@ -84,6 +84,136 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.ToTable("ActivityLogs", (string)null);
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.AopDescription", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("AopDescriptions", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.Brand", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Brands", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.BrandLocationPreference", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BrandId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<int>("FromPalletPositionId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<int>("ToPalletPositionId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromPalletPositionId");
+
+                    b.HasIndex("ToPalletPositionId");
+
+                    b.HasIndex("BrandId", "FromPalletPositionId", "ToPalletPositionId")
+                        .IsUnique();
+
+                    b.ToTable("BrandLocationPreferences", (string)null);
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.City", b =>
                 {
                     b.Property<int>("Id")
@@ -600,9 +730,15 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("AopDescriptionId")
+                        .HasColumnType("int");
+
                     b.Property<decimal>("BoxWeightKg")
                         .HasPrecision(12, 4)
                         .HasColumnType("decimal(12,4)");
+
+                    b.Property<int?>("BrandId")
+                        .HasColumnType("int");
 
                     b.Property<string>("CharacteristicValue")
                         .HasMaxLength(20)
@@ -691,6 +827,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(12,3)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AopDescriptionId");
+
+                    b.HasIndex("BrandId");
 
                     b.HasIndex("MaterialNumber")
                         .IsUnique();
@@ -1997,6 +2137,33 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.BrandLocationPreference", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.Brand", "Brand")
+                        .WithMany("LocationPreferences")
+                        .HasForeignKey("BrandId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GodrejWMS.Domain.Entities.PalletPosition", "FromPalletPosition")
+                        .WithMany()
+                        .HasForeignKey("FromPalletPositionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GodrejWMS.Domain.Entities.PalletPosition", "ToPalletPosition")
+                        .WithMany()
+                        .HasForeignKey("ToPalletPositionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Brand");
+
+                    b.Navigation("FromPalletPosition");
+
+                    b.Navigation("ToPalletPosition");
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.City", b =>
                 {
                     b.HasOne("GodrejWMS.Domain.Entities.State", "State")
@@ -2112,6 +2279,16 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.Material", b =>
                 {
+                    b.HasOne("GodrejWMS.Domain.Entities.AopDescription", "AopDescription")
+                        .WithMany("Materials")
+                        .HasForeignKey("AopDescriptionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GodrejWMS.Domain.Entities.Brand", "Brand")
+                        .WithMany("Materials")
+                        .HasForeignKey("BrandId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("GodrejWMS.Domain.Entities.SkuMovementType", "MovementType")
                         .WithMany()
                         .HasForeignKey("MovementTypeId")
@@ -2128,6 +2305,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasForeignKey("SeasonId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("AopDescription");
+
+                    b.Navigation("Brand");
 
                     b.Navigation("MovementType");
 
@@ -2427,6 +2608,18 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.AopDescription", b =>
+                {
+                    b.Navigation("Materials");
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.Brand", b =>
+                {
+                    b.Navigation("LocationPreferences");
+
+                    b.Navigation("Materials");
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.InventoryAdjustment", b =>

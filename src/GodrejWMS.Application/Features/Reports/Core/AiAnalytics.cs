@@ -1,5 +1,7 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
+using GodrejWMS.Application.Features.Brands.Dtos;
+using GodrejWMS.Application.Features.Brands.Queries;
 using GodrejWMS.Application.Features.Reports.Dtos;
 using GodrejWMS.Application.Features.Reports.Queries;
 using MediatR;
@@ -27,6 +29,17 @@ public static class AnalyticsToolCatalog
 {
     public static readonly IReadOnlyList<AnalyticsToolDescriptor> Tools =
     [
+        new("BrandMaster",
+            "The configured Brand Master list. Use this for brand counts, active/inactive brand totals, or requests to list brand codes and descriptions.",
+            AnalyticsParamShape.None,
+            (_, _, _) => new GetBrandsQuery(),
+            raw => [.. ((IReadOnlyList<BrandDto>)raw)],
+            raw =>
+            {
+                var brands = (IReadOnlyList<BrandDto>)raw;
+                return $"TotalBrands={brands.Count}, ActiveBrands={brands.Count(x => x.IsActive)}, InactiveBrands={brands.Count(x => !x.IsActive)}";
+            }),
+
         new("InventoryAging",
             "Current stock bucketed by age since manufacture (0-30 / 31-60 / 61-90 / 90+ days), crossed with fast/slow-mover velocity - finds slow-moving stock that has sat too long.",
             AnalyticsParamShape.None,

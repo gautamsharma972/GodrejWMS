@@ -2,6 +2,10 @@
 @attribute [Authorize]
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Features.Brands.Dtos
+@using GodrejWMS.Application.Features.Brands.Queries
+@using GodrejWMS.Application.Features.AopDescriptions.Dtos
+@using GodrejWMS.Application.Features.AopDescriptions.Queries
 @using GodrejWMS.Application.Features.DesignTypes.Dtos
 @using GodrejWMS.Application.Features.DesignTypes.Queries
 @using GodrejWMS.Application.Features.Materials.Commands
@@ -154,6 +158,26 @@
                                 <InputText class="form-control" @bind-Value="_form.Description" />
                             </div>
                             <div class="col-md-4">
+                                <label class="form-label">Brand Code <span class="text-danger">*</span></label>
+                                <InputSelect class="form-select" @bind-Value="_form.BrandId">
+                                    <option value="0">Select brand</option>
+                                    @foreach (var brand in BrandOptions(_form.BrandId))
+                                    {
+                                        <option value="@brand.Id">@OptionText(brand.Code, brand.Description)</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">AOP Code <span class="text-danger">*</span></label>
+                                <InputSelect class="form-select" @bind-Value="_form.AopDescriptionId">
+                                    <option value="0">Select AOP code</option>
+                                    @foreach (var aop in AopOptions(_form.AopDescriptionId))
+                                    {
+                                        <option value="@aop.Id">@OptionText(aop.Code, aop.Description)</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-4">
                                 <label class="form-label">Design Type</label>
                                 <InputSelect class="form-select" @bind-Value="_form.DesignType">
                                     <option value="">Select design type</option>
@@ -275,6 +299,8 @@
                     <tr>
                         <th><button class="sort-button" @onclick='@(() => SortBy("material"))'>Material Code <i class='bi @SortIcon("material")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("description"))'>Description <i class='bi @SortIcon("description")'></i></button></th>
+                        <th>Brand Code</th>
+                        <th>AOP Code</th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("design"))'>Design Type <i class='bi @SortIcon("design")'></i></button></th>
                         <th>Characteristic Value</th>
                         <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("pack"))'>Pack <i class='bi @SortIcon("pack")'></i></button></th>
@@ -301,6 +327,8 @@
                         <tr>
                             <td><span class="record-code">@m.MaterialNumber</span></td>
                             <td>@m.Description</td>
+                            <td><span class="status-pill info">@(m.BrandCode ?? "Not assigned")</span></td>
+                            <td><span class="status-pill slate">@(m.AopCode ?? "Not assigned")</span></td>
                             <td><span class="status-pill @DesignTypeClass(m.DesignType)">@m.DesignType</span></td>
                             <td>@(m.CharacteristicValue ?? "-")</td>
                             <td class="text-end">@m.PackSize</td>
@@ -348,6 +376,8 @@
 @code {
     private PaginatedList<MaterialDto>? _page;
     private IReadOnlyList<DesignTypeDto> _designTypes = [];
+    private IReadOnlyList<BrandDto> _brands = [];
+    private IReadOnlyList<AopDescriptionDto> _aopDescriptions = [];
     private IReadOnlyList<SkuMovementTypeDto> _movementTypes = [];
     private IReadOnlyList<SeasonDto> _seasons = [];
     private IReadOnlyList<ZoneTypeDto> _zoneTypes = [];
@@ -376,6 +406,8 @@
     private int _loadSequence;
 
     private IEnumerable<DesignTypeDto> ActiveDesignTypes => _designTypes.Where(d => d.IsActive);
+    private IEnumerable<BrandDto> BrandOptions(int currentId = 0) => _brands.Where(x => x.IsActive || x.Id == currentId).OrderBy(x => x.Code);
+    private IEnumerable<AopDescriptionDto> AopOptions(int currentId = 0) => _aopDescriptions.Where(x => x.IsActive || x.Id == currentId).OrderBy(x => x.Code);
 
     private IEnumerable<SkuMovementTypeDto> MovementTypeOptions(int? currentId = null) =>
         _movementTypes
@@ -402,6 +434,8 @@ protected override async Task OnInitializedAsync()
     private async Task LoadReferenceDataAsync()
     {
         _designTypes = await Mediator.Send(new GetDesignTypesQuery());
+        _brands = await Mediator.Send(new GetBrandsQuery());
+        _aopDescriptions = await Mediator.Send(new GetAopDescriptionsQuery());
         _movementTypes = await Mediator.Send(new GetSkuMovementTypesQuery());
         _seasons = await Mediator.Send(new GetSeasonsQuery());
         _zoneTypes = await Mediator.Send(new GetZoneTypesQuery());
@@ -489,6 +523,8 @@ protected override async Task OnInitializedAsync()
             _form = new MaterialFormModel
             {
                 DesignType = ActiveDesignTypes.FirstOrDefault()?.Code ?? string.Empty,
+                BrandId = BrandOptions().FirstOrDefault()?.Id ?? 0,
+                AopDescriptionId = AopOptions().FirstOrDefault()?.Id ?? 0,
                 SeasonId = DefaultSeasonId()
             };
         }
@@ -500,6 +536,8 @@ protected override async Task OnInitializedAsync()
             {
                 MaterialNumber = material.MaterialNumber,
                 Description = material.Description,
+                BrandId = material.BrandId ?? 0,
+                AopDescriptionId = material.AopDescriptionId ?? 0,
                 DesignType = material.DesignType,
                 CharacteristicValue = material.CharacteristicValue,
                 PackSize = material.PackSize,
@@ -533,7 +571,7 @@ protected override async Task OnInitializedAsync()
             if (_editingId is null)
             {
                 await Mediator.Send(new CreateMaterialCommand(
-                    _form.MaterialNumber, _form.Description, _form.DesignType, _form.CharacteristicValue,
+                    _form.MaterialNumber, _form.Description, _form.BrandId, _form.AopDescriptionId, _form.DesignType, _form.CharacteristicValue,
                     _form.PackSize, _form.MrpPrice, _form.LengthMm, _form.WidthMm, _form.HeightMm,
                     _form.NetWeightKg, _form.GrossWeightKg, _form.PalletCapacityBoxes, _form.MovementTypeId, _form.SeasonId,
                     _form.PreferredZoneTypeId, _form.RequirePreferredZone));
@@ -541,7 +579,7 @@ protected override async Task OnInitializedAsync()
             else
             {
                 await Mediator.Send(new UpdateMaterialCommand(
-                    _editingId.Value, _form.MaterialNumber, _form.Description, _form.DesignType, _form.CharacteristicValue,
+                    _editingId.Value, _form.MaterialNumber, _form.Description, _form.BrandId, _form.AopDescriptionId, _form.DesignType, _form.CharacteristicValue,
                     _form.PackSize, _form.MrpPrice, _form.LengthMm, _form.WidthMm, _form.HeightMm,
                     _form.NetWeightKg, _form.GrossWeightKg, _form.PalletCapacityBoxes, _form.MovementTypeId, _form.SeasonId, _form.IsActive,
                     _form.PreferredZoneTypeId, _form.RequirePreferredZone));
@@ -648,10 +686,15 @@ protected override async Task OnInitializedAsync()
             ? designType.Code
             : $"{designType.Code} - {designType.Description}";
 
+    private static string OptionText(string code, string? description) =>
+        string.IsNullOrWhiteSpace(description) ? code : $"{code} - {description}";
+
     private class MaterialFormModel
     {
         public long MaterialNumber { get; set; }
         public string Description { get; set; } = string.Empty;
+        public int BrandId { get; set; }
+        public int AopDescriptionId { get; set; }
         public string DesignType { get; set; } = string.Empty;
         public string? CharacteristicValue { get; set; }
         public int PackSize { get; set; } = 1;
