@@ -1,6 +1,7 @@
 @page "/inventory-master"
 @page "/stock-master"
 @attribute [Authorize]
+@implements IDisposable
 @using GodrejWMS.Application.Common.Interfaces
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Features.DesignTypes.Dtos
@@ -9,7 +10,10 @@
 @using GodrejWMS.Application.Features.StockMaster.Dtos
 @using GodrejWMS.Application.Features.StockMaster.Queries
 @using GodrejWMS.Application.Features.InventoryAdjustments.Commands
+@using GodrejWMS.Application.Features.Materials.Dtos
+@using GodrejWMS.Application.Features.Materials.Queries
 @using GodrejWMS.Domain.Entities
+@using GodrejWMS.Domain.Enums
 @using GodrejWMS.Application.Features.Seasons.Dtos
 @using GodrejWMS.Application.Features.Seasons.Queries
 @using GodrejWMS.Application.Features.SkuMovementTypes.Dtos
@@ -18,6 +22,8 @@
 @inject IJSRuntime JsRuntime
 @inject GodrejWMS.Application.Common.Interfaces.IExcelService ExcelService
 @inject ILogger<Index> Logger
+@inject IRealtimeNotificationService Notifications
+@inject ICurrentUserService CurrentUser
 
 <PageTitle>Inventory Master - Godrej WMS</PageTitle>
 
@@ -187,60 +193,88 @@
     @if (_adjustmentRow is not null)
     {
         <div class="slide-over-backdrop" role="presentation" @onclick="CloseAdjustment">
-            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="adjustment-title" @onclick:stopPropagation="true">
+            <div class="slide-over-panel inventory-adjustment-panel" role="dialog" aria-modal="true" aria-labelledby="adjustment-title" @onclick:stopPropagation="true">
                 <div class="slide-over-header">
                     <div>
                         <div class="eyebrow">Inventory Control</div>
-                        <h2 id="adjustment-title" class="slide-over-title">Request Quantity Adjustment</h2>
+                        <h2 id="adjustment-title" class="slide-over-title">Request Inventory Adjustment</h2>
                         <p class="slide-over-subtitle">Approval is required before live inventory changes.</p>
                     </div>
                     <button type="button" class="slide-over-close" aria-label="Close adjustment" @onclick="CloseAdjustment">
                         <i class="bi bi-x-lg" aria-hidden="true"></i>
                     </button>
                 </div>
-                <div class="slide-over-body">
+                <div class="slide-over-body inventory-adjustment-body">
                     @if (!string.IsNullOrWhiteSpace(_adjustmentError))
                     {
                         <div class="alert alert-danger">@_adjustmentError</div>
                     }
-                    <div class="putaway-summary-grid mb-4">
-                        <div><span>SKU</span><strong>@_adjustmentRow.MaterialNumber</strong></div>
-                        <div><span>Location</span><strong>@_adjustmentRow.PalletPositionCode</strong></div>
-                        <div><span>PKM</span><strong>@_adjustmentRow.MfgMonthLabel</strong></div>
-                        <div><span>Stock type</span><strong>@_adjustmentRow.StockSubtypeName</strong></div>
+                    <div class="adjustment-context-card">
+                        <div class="adjustment-context-primary">
+                            <span class="adjustment-context-icon"><i class="bi bi-box-seam" aria-hidden="true"></i></span>
+                            <div>
+                                <span>System inventory record</span>
+                                <strong>@_adjustmentRow.MaterialNumber</strong>
+                                <small>@_adjustmentRow.MaterialDescription</small>
+                            </div>
+                        </div>
+                        <div class="adjustment-context-meta">
+                            <div><span>Location</span><strong>@_adjustmentRow.PalletPositionCode</strong></div>
+                            <div><span>PKM</span><strong>@_adjustmentRow.MfgMonthLabel</strong></div>
+                            <div><span>Stock type</span><strong>@_adjustmentRow.StockSubtypeName</strong></div>
+                        </div>
                     </div>
-                    <div class="adjustment-quantity-comparison mb-4">
+                    <div class="adjustment-material-toggle">
+                        <div>
+                            <strong>Different SKU found at this location?</strong>
+                            <span>Use this when the physical material does not match the system record.</span>
+                        </div>
+                        <div class="form-check form-switch mb-0">
+                            <input id="adjustment-change-material" class="form-check-input" type="checkbox"
+                                   role="switch" checked="@_changeMaterial" @onchange="OnChangeMaterialToggle" />
+                            <label class="form-check-label" for="adjustment-change-material">@(_changeMaterial ? "Yes" : "No")</label>
+                        </div>
+                    </div>
+                    @if (_changeMaterial)
+                    {
+                        <div class="adjustment-physical-sku-field">
+                            <label class="form-label">Physically found SKU <span class="text-danger">*</span></label>
+                            <SearchableMaterialSelect Options="@PhysicalMaterialOptions" @bind-Value="_physicalMaterialId"
+                                                      Placeholder="Search the material physically found" />
+                            <div class="form-text">The system SKU will be replaced only after this request is approved.</div>
+                        </div>
+                    }
+                    <div class="adjustment-quantity-comparison">
                         <div>
                             <span>System quantity</span>
                             <strong>@_adjustmentRow.QuantityBoxes.ToString("0")</strong>
                         </div>
                         <i class="bi bi-arrow-right" aria-hidden="true"></i>
                         <div>
-                            <span>Physical quantity</span>
-                            <strong>@_countedQuantity</strong>
+                            <label for="adjustment-physical-quantity">Physical quantity <span class="text-danger">*</span></label>
+                            <InputNumber id="adjustment-physical-quantity" class="form-control adjustment-quantity-input"
+                                         min="0" step="1" @bind-Value="_countedQuantity" />
+                            <small>Enter total boxes counted</small>
                         </div>
                         <div class="adjustment-variance @VarianceClass">
                             <span>Variance</span>
                             <strong>@VarianceText</strong>
                         </div>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Physical quantity <span class="text-danger">*</span></label>
-                        <InputNumber class="form-control" min="0" step="1" @bind-Value="_countedQuantity" />
-                        <div class="form-text">Enter the total number of whole boxes counted, not the difference.</div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Reason <span class="text-danger">*</span></label>
-                        <select class="form-select" @bind="_adjustmentReasonCode">
-                            @foreach (var reason in InventoryAdjustmentReasonCodes.All)
-                            {
-                                <option value="@reason.Key">@reason.Value</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Notes @(_adjustmentReasonCode == InventoryAdjustmentReasonCodes.Other ? "*" : string.Empty)</label>
-                        <textarea class="form-control" rows="3" maxlength="500" placeholder="Describe what was physically verified" @bind="_adjustmentNotes"></textarea>
+                    <div class="adjustment-form-grid">
+                        <div>
+                            <label class="form-label">Reason <span class="text-danger">*</span></label>
+                            <select class="form-select" @bind="_adjustmentReasonCode">
+                                @foreach (var reason in InventoryAdjustmentReasonCodes.All)
+                                {
+                                    <option value="@reason.Key">@reason.Value</option>
+                                }
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label">Notes @(_adjustmentReasonCode == InventoryAdjustmentReasonCodes.Other ? "*" : "(optional)")</label>
+                            <textarea class="form-control" rows="2" maxlength="500" placeholder="Describe what was physically verified" @bind="_adjustmentNotes"></textarea>
+                        </div>
                     </div>
                     <div class="putaway-info-bar transaction-status-bar" role="note">
                         <div class="info-bar-icon"><i class="bi bi-shield-check" aria-hidden="true"></i></div>
@@ -267,6 +301,7 @@
     private IReadOnlyList<DesignTypeDto> _designTypes = [];
     private IReadOnlyList<SeasonDto> _seasons = [];
     private IReadOnlyList<SkuMovementTypeDto> _movementTypes = [];
+    private IReadOnlyList<MaterialDto> _materials = [];
     private int _pageNumber = 1;
     private string _search = string.Empty;
     private int? _warehouseFilter;
@@ -284,22 +319,31 @@
     private string _adjustmentNotes = string.Empty;
     private string? _adjustmentError;
     private bool _submittingAdjustment;
+    private bool _changeMaterial;
+    private int _physicalMaterialId;
 
     // Search/filter/sort/paging all funnel through LoadPage, and the page shares a single
     // DbContext, so overlapping calls (e.g. fast typing in the search box) would otherwise
     // collide. This serializes them and drops the result of any call superseded by a newer one.
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private int _loadSequence;
+    private IDisposable? _realtimeSubscription;
 
     private decimal AdjustmentVariance => _adjustmentRow is null ? 0 : _countedQuantity - _adjustmentRow.QuantityBoxes;
     private string VarianceText => $"{(AdjustmentVariance > 0 ? "+" : string.Empty)}{AdjustmentVariance:0}";
     private string VarianceClass => AdjustmentVariance < 0 ? "negative" : AdjustmentVariance > 0 ? "positive" : "neutral";
     private bool CanSubmitAdjustment =>
-        _adjustmentRow is not null && _countedQuantity >= 0 && AdjustmentVariance != 0 &&
+        _adjustmentRow is not null && _countedQuantity >= 0 &&
+        (AdjustmentVariance != 0 || (_changeMaterial && _physicalMaterialId > 0)) &&
+        (!_changeMaterial || (_physicalMaterialId > 0 && _countedQuantity > 0)) &&
         !string.IsNullOrWhiteSpace(_adjustmentReasonCode) &&
         (_adjustmentReasonCode != InventoryAdjustmentReasonCodes.Other || !string.IsNullOrWhiteSpace(_adjustmentNotes));
 
     private IEnumerable<DesignTypeDto> ActiveDesignTypes => _designTypes.Where(d => d.IsActive);
+    private IReadOnlyList<MaterialDto> PhysicalMaterialOptions => _materials
+        .Where(x => x.IsActive && (_adjustmentRow is null || x.MaterialNumber != _adjustmentRow.MaterialNumber))
+        .OrderBy(x => x.MaterialNumber)
+        .ToList();
 
     private IEnumerable<SeasonDto> SeasonOptions() =>
         _seasons
@@ -315,15 +359,33 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _realtimeSubscription = Notifications.Subscribe(CurrentUser.UserId, CurrentUser.Roles, ReceiveRealtimeAsync);
         await LoadReferenceDataAsync();
         await LoadPage(1);
     }
+
+    private Task ReceiveRealtimeAsync(RealtimeNotification notification)
+    {
+        if (notification.Topic != RealtimeTopics.InventoryChanged)
+        {
+            return Task.CompletedTask;
+        }
+
+        return InvokeAsync(async () =>
+        {
+            await LoadPage(_pageNumber);
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => _realtimeSubscription?.Dispose();
 
     private async Task LoadReferenceDataAsync()
     {
         _designTypes = await Mediator.Send(new GetDesignTypesQuery());
         _movementTypes = await Mediator.Send(new GetSkuMovementTypesQuery());
         _seasons = await Mediator.Send(new GetSeasonsQuery());
+        _materials = (await Mediator.Send(new GetMaterialsQuery(IsActive: true, PageSize: 5000))).Items;
     }
 
     private async Task LoadPage(int page)
@@ -420,6 +482,8 @@
         _adjustmentReasonCode = InventoryAdjustmentReasonCodes.PhysicalCountVariance;
         _adjustmentNotes = string.Empty;
         _adjustmentError = null;
+        _changeMaterial = false;
+        _physicalMaterialId = 0;
     }
 
     private void CloseAdjustment()
@@ -427,6 +491,21 @@
         if (_submittingAdjustment) return;
         _adjustmentRow = null;
         _adjustmentError = null;
+        _changeMaterial = false;
+        _physicalMaterialId = 0;
+    }
+
+    private void OnChangeMaterialToggle(ChangeEventArgs args)
+    {
+        _changeMaterial = args.Value is true || string.Equals(args.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        if (_changeMaterial)
+        {
+            _adjustmentReasonCode = InventoryAdjustmentReasonCodes.DataEntryCorrection;
+        }
+        else
+        {
+            _physicalMaterialId = 0;
+        }
     }
 
     private async Task SubmitAdjustmentAsync()
@@ -438,8 +517,12 @@
         try
         {
             var result = await Mediator.Send(new SubmitInventoryAdjustmentCommand(
-                stockBatchId, _countedQuantity, _adjustmentReasonCode, _adjustmentNotes));
-            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Adjustment {result.AdjustmentNumber} submitted for approval.");
+                stockBatchId, _countedQuantity, _adjustmentReasonCode, _adjustmentNotes,
+                _changeMaterial ? _physicalMaterialId : null));
+            var message = result.Status == InventoryAdjustmentStatus.Approved
+                ? $"Adjustment {result.AdjustmentNumber} approved and inventory updated."
+                : $"Adjustment {result.AdjustmentNumber} submitted for approval.";
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", message);
             _adjustmentRow = null;
         }
         catch (Exception ex)

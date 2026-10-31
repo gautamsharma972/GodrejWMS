@@ -59,7 +59,7 @@ public class InventoryMovementService(IApplicationDbContext db, IDateTimeProvide
 
         var movement = new StockMovement
         {
-            MovementNumber = $"IMV-{clock.UtcNow:yyyyMMdd-HHmmssfff}",
+            MovementNumber = $"IMV-{clock.UtcNow:yyyyMMdd-HHmmssfff}-{Guid.NewGuid().ToString("N")[..8]}",
             MaterialId = request.MaterialId,
             MfgMonth = request.MfgMonth,
             StockSubtypeId = sourceBatch.StockSubtypeId,
@@ -83,6 +83,10 @@ public class InventoryMovementService(IApplicationDbContext db, IDateTimeProvide
             // when two concurrent movements both try to create the destination's first batch row
             // at once - the second insert fails at the database level, not via a version mismatch,
             // so DbUpdateConcurrencyException alone would miss it and leak a raw SQL error instead.
+            // A failed SaveChanges leaves Modified/Added entities in EF's shared scoped change
+            // tracker. Clear them so a following independently processed line does not retry this
+            // failed line and cascade the failure across the upload/batch.
+            db.ChangeTracker.Clear();
             return new InventoryMovementLineResult(
                 false, "This inventory was changed by another user since you loaded this screen. Please refresh and try again.", null);
         }

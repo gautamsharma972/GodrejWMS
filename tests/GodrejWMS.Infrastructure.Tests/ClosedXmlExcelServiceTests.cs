@@ -198,4 +198,78 @@ public class ClosedXmlExcelServiceTests
         Assert.Contains("Unable to read this Excel file", ex.Message);
         Assert.NotNull(ex.InnerException);
     }
+
+    [Fact]
+    public void ReadPulloutUpload_BlankDelQtyCell_DoesNotThrow_DegradesToZero()
+    {
+        // A client who deletes the "Del Qty" column from the sample template (shifting every later
+        // column left) ends up with a blank cell where Del Qty used to be. GetValue<double>() on a
+        // blank cell throws a raw ClosedXML InvalidCastException ("Cannot convert ...'s value to
+        // System.Double") straight out to the user; ReadDecimal degrades to 0 instead, which the
+        // caller's own QuantityBoxes > 0 validation then reports as a normal, readable error.
+        using var workbook = new ClosedXML.Excel.XLWorkbook();
+        var sheet = workbook.Worksheets.Add("Loading Sheet");
+        sheet.Cell(1, 1).Value = "Code";
+        sheet.Cell(1, 2).Value = "Description";
+        sheet.Cell(1, 3).Value = "Priority"; // Del Qty column missing - shifted left
+        sheet.Cell(2, 1).Value = 40019311;
+        sheet.Cell(2, 2).Value = "Test Material";
+        // Cell(2, 3) left blank - this is what used to crash.
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        stream.Position = 0;
+
+        var (rows, _, _) = new ClosedXmlExcelService().ReadPulloutUpload(stream);
+
+        var row = Assert.Single(rows);
+        Assert.Equal(0m, row.QuantityBoxes);
+    }
+
+    [Fact]
+    public void ReadPulloutUpload_IndentValueOneRowBelowLabel_ClientsNativeSheetFormat_IsStillRead()
+    {
+        // Real client sheets (unlike our own download) put the Indent value one row below the
+        // "Indent" label, same column - the same layout "GATE NO" uses.
+        using var workbook = new ClosedXML.Excel.XLWorkbook();
+        var sheet = workbook.Worksheets.Add("Loading Sheet");
+        sheet.Cell(10, 6).Value = "Indent";
+        sheet.Cell(11, 6).Value = "GCPL-C121-O-12950";
+        sheet.Cell(12, 1).Value = "Code";
+        sheet.Cell(12, 2).Value = "Description";
+        sheet.Cell(12, 3).Value = "Del Qty";
+        sheet.Cell(13, 1).Value = 40063045;
+        sheet.Cell(13, 2).Value = "Test Material";
+        sheet.Cell(13, 3).Value = 10;
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        stream.Position = 0;
+
+        var (rows, _, indentText) = new ClosedXmlExcelService().ReadPulloutUpload(stream);
+
+        Assert.Equal("GCPL-C121-O-12950", indentText);
+        Assert.Single(rows);
+    }
+
+    [Fact]
+    public void ReadPulloutUpload_IndentValueSameRowAsLabel_OurOwnDownloadFormat_StillWorks()
+    {
+        using var workbook = new ClosedXML.Excel.XLWorkbook();
+        var sheet = workbook.Worksheets.Add("Loading Sheet");
+        sheet.Cell(10, 6).Value = "Indent";
+        sheet.Cell(10, 7).Value = "PICK-20261031-000009";
+        sheet.Cell(11, 1).Value = "Code";
+        sheet.Cell(11, 2).Value = "Description";
+        sheet.Cell(11, 3).Value = "Del Qty";
+        sheet.Cell(12, 1).Value = 40063045;
+        sheet.Cell(12, 2).Value = "Test Material";
+        sheet.Cell(12, 3).Value = 10;
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        stream.Position = 0;
+
+        var (rows, _, indentText) = new ClosedXmlExcelService().ReadPulloutUpload(stream);
+
+        Assert.Equal("PICK-20261031-000009", indentText);
+        Assert.Single(rows);
+    }
 }

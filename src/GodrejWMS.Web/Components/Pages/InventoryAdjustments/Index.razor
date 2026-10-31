@@ -1,5 +1,6 @@
 @page "/inventory-adjustments"
 @attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInventoryAdjustments)]
+@implements IDisposable
 @using GodrejWMS.Application.Common.Interfaces
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Features.InventoryAdjustments.Commands
@@ -11,6 +12,7 @@
 @inject ICurrentUserService CurrentUser
 @inject IJSRuntime JsRuntime
 @inject ILogger<Index> Logger
+@inject IRealtimeNotificationService Notifications
 
 <PageTitle>Inventory Adjustments - Godrej WMS</PageTitle>
 
@@ -167,7 +169,16 @@
                             </td>
                             <td><span class="record-code">@row.AdjustmentNumber</span></td>
                             <td>@row.RequestedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
-                            <td><div class="adjustment-sku-cell"><span class="record-code">@row.MaterialNumber</span><span class="text-muted">@row.MaterialDescription</span></div></td>
+                            <td>
+                                <div class="adjustment-sku-cell">
+                                    <span class="record-code">@row.MaterialNumber</span>
+                                    <span class="text-muted">@row.MaterialDescription</span>
+                                    @if (row.PhysicalMaterialNumber.HasValue)
+                                    {
+                                        <span class="status-pill warning"><i class="bi bi-arrow-right"></i> @row.PhysicalMaterialNumber</span>
+                                    }
+                                </div>
+                            </td>
                             <td><span class="status-pill neutral">@row.LocationCode</span></td>
                             <td>@row.MfgMonthLabel</td>
                             <td class="text-end">@row.SystemQuantity.ToString("0")</td>
@@ -217,11 +228,25 @@
                         <div class="alert alert-danger">@_actionError</div>
                     }
                     <div class="putaway-summary-grid mb-4">
-                        <div><span>SKU</span><strong>@_selected.MaterialNumber</strong></div>
+                        <div><span>System SKU</span><strong>@_selected.MaterialNumber</strong></div>
                         <div><span>Location</span><strong>@_selected.LocationCode</strong></div>
                         <div><span>PKM</span><strong>@_selected.MfgMonthLabel</strong></div>
                         <div><span>Stock type</span><strong>@_selected.StockSubtypeName</strong></div>
                     </div>
+                    @if (_selected.PhysicalMaterialNumber.HasValue)
+                    {
+                        <div class="putaway-info-bar transaction-status-bar mb-4" role="note">
+                            <div class="info-bar-icon"><i class="bi bi-arrow-left-right" aria-hidden="true"></i></div>
+                            <div class="info-bar-content">
+                                <h2>SKU correction requested</h2>
+                                <p>
+                                    Replace <strong>@_selected.MaterialNumber — @_selected.MaterialDescription</strong>
+                                    with <strong>@_selected.PhysicalMaterialNumber — @_selected.PhysicalMaterialDescription</strong>
+                                    at @_selected.LocationCode after approval.
+                                </p>
+                            </div>
+                        </div>
+                    }
                     <div class="adjustment-quantity-comparison mb-4">
                         <div><span>System quantity</span><strong>@_selected.SystemQuantity.ToString("0")</strong></div>
                         <i class="bi bi-arrow-right" aria-hidden="true"></i>
@@ -255,9 +280,12 @@
                         <button type="button" class="btn btn-outline-danger" disabled="@_processing" @onclick="CancelAsync">Cancel Request</button>
                     }
                     <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.ApproveAdjustment">
-                        @if (_selected.Status == InventoryAdjustmentStatus.PendingApproval && _selected.RequestedByUserId != CurrentUser.UserId)
+                        @if (_selected.Status == InventoryAdjustmentStatus.PendingApproval)
                         {
-                            <button type="button" class="btn btn-outline-danger" disabled="@(_processing || (_rejectMode && string.IsNullOrWhiteSpace(_reviewComment)))" @onclick="RejectAsync">Reject</button>
+                            @if (_selected.RequestedByUserId != CurrentUser.UserId)
+                            {
+                                <button type="button" class="btn btn-outline-danger" disabled="@(_processing || (_rejectMode && string.IsNullOrWhiteSpace(_reviewComment)))" @onclick="RejectAsync">Reject</button>
+                            }
                             <button type="button" class="btn btn-primary" disabled="@_processing" @onclick="ApproveAsync">
                                 <i class="bi bi-check2-circle" aria-hidden="true"></i>
                                 @(_processing ? "Processing..." : "Approve Adjustment")
@@ -294,6 +322,7 @@
     private bool _bulkRejectMode;
     private string _bulkComment = string.Empty;
     private string? _bulkError;
+    private IDisposable? _realtimeSubscription;
 
     private IReadOnlyList<int> VisibleSelectableIds => _page?.Items
         .Where(row => row.Status == InventoryAdjustmentStatus.PendingApproval)
@@ -317,7 +346,27 @@
     private bool AreAllVisibleRowsSelected =>
         VisibleSelectableIds.Count > 0 && VisibleSelectableIds.All(_selectedIds.Contains);
 
-    protected override async Task OnInitializedAsync() => await LoadPageAsync(1);
+    protected override async Task OnInitializedAsync()
+    {
+        _realtimeSubscription = Notifications.Subscribe(CurrentUser.UserId, CurrentUser.Roles, ReceiveRealtimeAsync);
+        await LoadPageAsync(1);
+    }
+
+    private Task ReceiveRealtimeAsync(RealtimeNotification notification)
+    {
+        if (notification.Topic != RealtimeTopics.InventoryAdjustmentsChanged)
+        {
+            return Task.CompletedTask;
+        }
+
+        return InvokeAsync(async () =>
+        {
+            await LoadPageAsync(_pageNumber);
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => _realtimeSubscription?.Dispose();
 
     private async Task LoadPageAsync(int page)
     {

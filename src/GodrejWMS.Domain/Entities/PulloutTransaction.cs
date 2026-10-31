@@ -17,6 +17,14 @@ public class PulloutTransaction : AuditableEntity
     public string ReferenceNumber { get; set; } = string.Empty;
     public bool IsConfirmed { get; set; } = true;
 
+    /// <summary>The client's own order/indent number, read from the uploaded Loading Sheet's
+    /// "Indent" field (when it isn't one of our own <see cref="ReferenceNumber"/>s) - lets a later
+    /// upload of the same order (e.g. a growing same-day workbook re-uploaded with more sheets
+    /// added) be recognized and rejected as a duplicate instead of creating a second pullout.
+    /// Null when the uploaded sheet had no Indent value, or the pullout wasn't created from an
+    /// upload at all.</summary>
+    public string? ClientIndentNumber { get; set; }
+
     /// <summary>
     /// True when a saved (not yet confirmed) pullout was rejected instead. A rejected pullout never
     /// touched inventory and can no longer be refreshed or confirmed.

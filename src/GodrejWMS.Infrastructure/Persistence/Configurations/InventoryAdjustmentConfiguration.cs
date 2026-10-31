@@ -41,11 +41,14 @@ public sealed class InventoryAdjustmentLineConfiguration : IEntityTypeConfigurat
         builder.Property(l => l.VarianceQuantity).HasPrecision(14, 3);
         builder.Property(l => l.ActualQuantityBeforePosting).HasPrecision(14, 3);
         builder.Property(l => l.ActualQuantityAfterPosting).HasPrecision(14, 3);
+        builder.Property(l => l.PhysicalSystemQuantityAtCount).HasPrecision(14, 3);
+        builder.Property(l => l.ActualPhysicalQuantityBeforePosting).HasPrecision(14, 3);
         builder.Property(l => l.CreatedByUserId).HasMaxLength(450);
         builder.Property(l => l.UpdatedByUserId).HasMaxLength(450);
 
         builder.HasOne(l => l.StockBatch).WithMany().HasForeignKey(l => l.StockBatchId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(l => l.Material).WithMany().HasForeignKey(l => l.MaterialId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(l => l.PhysicalMaterial).WithMany().HasForeignKey(l => l.PhysicalMaterialId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(l => l.PalletPosition).WithMany().HasForeignKey(l => l.PalletPositionId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(l => l.StockSubtype).WithMany().HasForeignKey(l => l.StockSubtypeId).OnDelete(DeleteBehavior.Restrict);
     }

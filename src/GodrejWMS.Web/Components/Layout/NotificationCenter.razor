@@ -74,6 +74,11 @@
 
     private Task ReceiveAsync(RealtimeNotification notification) => InvokeAsync(async () =>
     {
+        if (notification.Silent)
+        {
+            return;
+        }
+
         _items.Insert(0, notification);
         if (_items.Count > 40)
         {

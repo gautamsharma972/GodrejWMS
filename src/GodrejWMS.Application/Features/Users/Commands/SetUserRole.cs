@@ -13,7 +13,7 @@ public sealed record SetUserRoleCommand(string UserId, string Role) : IRequest;
 
 public sealed class SetUserRoleValidator : AbstractValidator<SetUserRoleCommand>
 {
-    public SetUserRoleValidator(ICurrentUserService currentUser, IRoleManagementService roles)
+    public SetUserRoleValidator(ICurrentUserService currentUser, IRoleManagementService roles, IUserManagementService users)
     {
         RuleFor(x => x)
             .Must(_ => currentUser.IsPlatformLevel())
@@ -25,6 +25,18 @@ public sealed class SetUserRoleValidator : AbstractValidator<SetUserRoleCommand>
         RuleFor(x => x.Role)
             .MustAsync(async (r, ct) => (await roles.GetAllRoleNamesAsync(ct)).Contains(r))
             .WithMessage("Unknown role.");
+        RuleFor(x => x).CustomAsync(async (command, context, ct) =>
+        {
+            var target = await users.GetUserAsync(command.UserId, ct);
+            if (target is null)
+            {
+                context.AddFailure(nameof(command.UserId), "User not found.");
+            }
+            else if (UserRoleHierarchy.ValidateTarget(currentUser, target.Roles) is { } hierarchyError)
+            {
+                context.AddFailure(nameof(command.UserId), hierarchyError);
+            }
+        });
     }
 }
 

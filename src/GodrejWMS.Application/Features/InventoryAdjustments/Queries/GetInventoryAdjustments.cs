@@ -33,6 +33,8 @@ public sealed class GetInventoryAdjustmentsHandler(IApplicationDbContext db, ICu
             Line = l,
             l.Material.MaterialNumber,
             MaterialDescription = l.Material.Description,
+            PhysicalMaterialNumber = (long?)l.PhysicalMaterial!.MaterialNumber,
+            PhysicalMaterialDescription = l.PhysicalMaterial == null ? null : l.PhysicalMaterial.Description,
             LocationCode = l.PalletPosition.LocationCode
         }));
 
@@ -58,6 +60,8 @@ public sealed class GetInventoryAdjustmentsHandler(IApplicationDbContext db, ICu
                 x.Adjustment.AdjustmentNumber.Contains(term) ||
                 x.MaterialNumber.ToString().Contains(term) ||
                 x.MaterialDescription.Contains(term) ||
+                (x.PhysicalMaterialNumber.HasValue && x.PhysicalMaterialNumber.Value.ToString().Contains(term)) ||
+                (x.PhysicalMaterialDescription != null && x.PhysicalMaterialDescription.Contains(term)) ||
                 x.LocationCode.Contains(term));
         }
 
@@ -74,6 +78,8 @@ public sealed class GetInventoryAdjustmentsHandler(IApplicationDbContext db, ICu
                 x.Adjustment.Status,
                 x.MaterialNumber,
                 x.MaterialDescription,
+                x.PhysicalMaterialNumber,
+                x.PhysicalMaterialDescription,
                 x.LocationCode,
                 x.Line.MfgMonth,
                 x.Line.SystemQuantityAtCount,
@@ -90,7 +96,8 @@ public sealed class GetInventoryAdjustmentsHandler(IApplicationDbContext db, ICu
 
         var items = rows.Select(x => new InventoryAdjustmentListDto(
             x.Id, x.AdjustmentNumber, x.RequestedAt, x.Status, x.MaterialNumber,
-            x.MaterialDescription, x.LocationCode, MfgMonthParser.Format(x.MfgMonth),
+            x.MaterialDescription, x.PhysicalMaterialNumber, x.PhysicalMaterialDescription,
+            x.LocationCode, MfgMonthParser.Format(x.MfgMonth),
             x.SystemQuantityAtCount, x.CountedQuantity, x.VarianceQuantity, x.ReasonCode,
             x.ReasonText, x.RequestedByUserId, x.RequestedByUserName, x.ReviewedByUserName, x.ReviewedAt)).ToList();
 

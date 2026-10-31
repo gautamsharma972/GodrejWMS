@@ -33,9 +33,9 @@ public sealed class DeleteUserValidator : AbstractValidator<DeleteUserCommand>
             {
                 context.AddFailure(nameof(command.UserId), "User not found.");
             }
-            else if (target.Roles.Contains(KnownRoles.PlatformAdmin))
+            else if (UserRoleHierarchy.ValidateTarget(currentUser, target.Roles) is { } hierarchyError)
             {
-                context.AddFailure(nameof(command.UserId), "Platform Admin accounts cannot be deleted here.");
+                context.AddFailure(nameof(command.UserId), hierarchyError);
             }
         });
     }
@@ -60,9 +60,6 @@ public sealed class DeleteUserHandler(
             .ToListAsync(cancellationToken);
         db.UserWarehouses.RemoveRange(warehouseScopes);
         db.UserRegions.RemoveRange(regionScopes);
-        await db.SaveChangesAsync(cancellationToken);
-
-        await users.DeleteUserAsync(request.UserId, cancellationToken);
 
         db.ActivityLogs.Add(new Domain.Entities.ActivityLog
         {
@@ -74,6 +71,10 @@ public sealed class DeleteUserHandler(
             EntityId = request.UserId,
             Summary = $"User {target.Email} deleted by {currentUser.UserName}."
         });
-        await db.SaveChangesAsync(cancellationToken);
+
+        // UserManager and IApplicationDbContext resolve to the same scoped AppDbContext. Its
+        // DeleteAsync save therefore commits the Identity deletion, scope removals and audit row
+        // together instead of leaving a half-deleted account if a second save fails.
+        await users.DeleteUserAsync(request.UserId, cancellationToken);
     }
 }

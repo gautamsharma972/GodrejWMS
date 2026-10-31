@@ -405,6 +405,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<decimal?>("ActualPhysicalQuantityBeforePosting")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
                     b.Property<decimal?>("ActualQuantityAfterPosting")
                         .HasPrecision(14, 3)
                         .HasColumnType("decimal(14,3)");
@@ -439,6 +443,19 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Property<int>("PalletPositionId")
                         .HasColumnType("int");
 
+                    b.Property<uint?>("PhysicalBatchRowVersionAtCount")
+                        .HasColumnType("int unsigned");
+
+                    b.Property<int?>("PhysicalMaterialId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("PhysicalStockBatchIdAtCount")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("PhysicalSystemQuantityAtCount")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
                     b.Property<int?>("StockBatchId")
                         .HasColumnType("int");
 
@@ -465,6 +482,8 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.HasIndex("InventoryAdjustmentId");
 
                     b.HasIndex("PalletPositionId");
+
+                    b.HasIndex("PhysicalMaterialId");
 
                     b.HasIndex("StockBatchId");
 
@@ -1141,6 +1160,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("ClientIndentNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
                     b.Property<DateTimeOffset?>("ConfirmedAt")
                         .HasColumnType("datetime(6)");
 
@@ -1241,6 +1264,8 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasColumnType("varchar(100)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ClientIndentNumber");
 
                     b.HasIndex("ReferenceNumber")
                         .IsUnique();
@@ -2216,6 +2241,11 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("GodrejWMS.Domain.Entities.Material", "PhysicalMaterial")
+                        .WithMany()
+                        .HasForeignKey("PhysicalMaterialId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("GodrejWMS.Domain.Entities.StockBatch", "StockBatch")
                         .WithMany()
                         .HasForeignKey("StockBatchId")
@@ -2232,6 +2262,8 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Navigation("Material");
 
                     b.Navigation("PalletPosition");
+
+                    b.Navigation("PhysicalMaterial");
 
                     b.Navigation("StockBatch");
 

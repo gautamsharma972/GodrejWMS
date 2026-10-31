@@ -9,7 +9,7 @@ public sealed record SetUserActiveCommand(string UserId, bool IsActive) : IReque
 
 public sealed class SetUserActiveValidator : AbstractValidator<SetUserActiveCommand>
 {
-    public SetUserActiveValidator(ICurrentUserService currentUser)
+    public SetUserActiveValidator(ICurrentUserService currentUser, IUserManagementService users)
     {
         RuleFor(x => x)
             .Must(_ => currentUser.IsPlatformLevel())
@@ -18,6 +18,18 @@ public sealed class SetUserActiveValidator : AbstractValidator<SetUserActiveComm
             .NotEmpty()
             .Must(id => id != currentUser.UserId)
             .WithMessage("You cannot deactivate your own account.");
+        RuleFor(x => x).CustomAsync(async (command, context, ct) =>
+        {
+            var target = await users.GetUserAsync(command.UserId, ct);
+            if (target is null)
+            {
+                context.AddFailure(nameof(command.UserId), "User not found.");
+            }
+            else if (UserRoleHierarchy.ValidateTarget(currentUser, target.Roles) is { } hierarchyError)
+            {
+                context.AddFailure(nameof(command.UserId), hierarchyError);
+            }
+        });
     }
 }
 

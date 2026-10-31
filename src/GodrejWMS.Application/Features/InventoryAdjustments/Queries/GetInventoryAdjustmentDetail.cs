@@ -22,6 +22,7 @@ public sealed class GetInventoryAdjustmentDetailHandler(IApplicationDbContext db
 
         IQueryable<InventoryAdjustment> query = db.InventoryAdjustments.AsNoTracking()
             .Include(a => a.Lines).ThenInclude(l => l.Material)
+            .Include(a => a.Lines).ThenInclude(l => l.PhysicalMaterial)
             .Include(a => a.Lines).ThenInclude(l => l.PalletPosition)
             .Include(a => a.Lines).ThenInclude(l => l.StockSubtype);
 

@@ -9,17 +9,34 @@ namespace GodrejWMS.Application.Common.Permissions;
 /// shared scoped DbContext. Querying through <see cref="IApplicationDbContextFactory"/> instead of
 /// the shared IApplicationDbContext gives this its own short-lived context, so it never races a
 /// concurrent operation on the page's DbContext (EF Core forbids two operations on one context at
-/// once). The cache then means at most one such query per request/circuit; it also means a live
-/// Superadmin matrix edit only takes effect for a user on their next circuit (reload/reconnect) -
-/// the same staleness tradeoff role changes already have via the security stamp.</summary>
-public sealed class PermissionService(IApplicationDbContextFactory dbFactory, ICurrentUserService currentUser) : IPermissionService
+/// once). The cache means at most one such query per permission-matrix revision; a successful
+/// matrix edit increments the shared revision so existing circuits reload their grants on their
+/// next permission check.</summary>
+public sealed class PermissionService(
+    IApplicationDbContextFactory dbFactory,
+    ICurrentUserService currentUser,
+    PermissionRevision revision) : IPermissionService
 {
     private Task<HashSet<string>>? _grantedKeysTask;
+    private long _loadedRevision = -1;
+    private readonly object _cacheLock = new();
 
     public async Task<bool> HasPermissionAsync(string permissionKey, CancellationToken cancellationToken = default)
     {
-        _grantedKeysTask ??= LoadGrantedKeysAsync(cancellationToken);
-        var granted = await _grantedKeysTask;
+        Task<HashSet<string>> grantedKeysTask;
+        lock (_cacheLock)
+        {
+            var currentRevision = revision.Value;
+            if (_grantedKeysTask is null || _loadedRevision != currentRevision)
+            {
+                _loadedRevision = currentRevision;
+                _grantedKeysTask = LoadGrantedKeysAsync(CancellationToken.None);
+            }
+
+            grantedKeysTask = _grantedKeysTask;
+        }
+
+        var granted = await grantedKeysTask.WaitAsync(cancellationToken);
         return granted.Contains(permissionKey);
     }
 

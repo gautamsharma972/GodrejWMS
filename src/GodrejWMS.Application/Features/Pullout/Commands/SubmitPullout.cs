@@ -17,7 +17,8 @@ namespace GodrejWMS.Application.Features.Pullout.Commands;
 /// aren't) re-sent.</summary>
 public sealed record SubmitPulloutCommand(IReadOnlyList<SubmitPulloutLine> Lines,
     PulloutResultDto? ConfirmedPreview = null, string? RefreshReference = null,
-    PulloutLoadingSheetFieldsDto? HeaderFields = null, int? WarehouseId = null) : IRequest<PulloutResultDto>;
+    PulloutLoadingSheetFieldsDto? HeaderFields = null, int? WarehouseId = null,
+    string? ClientIndentNumber = null) : IRequest<PulloutResultDto>;
 
 public sealed record SubmitPulloutLine(long MaterialCode, decimal QuantityBoxes, string? PlantName = null, string? Priority = null, string? MaterialDescription = null);
 
@@ -76,7 +77,8 @@ public sealed class SubmitPulloutHandler(
             {
                 WarehouseId = request.WarehouseId!.Value,
                 ReferenceNumber = await NextReferenceAsync(createdAt, cancellationToken), CreatedAt = createdAt,
-                CreatedByUserId = currentUser.UserId, IsConfirmed = false
+                CreatedByUserId = currentUser.UserId, IsConfirmed = false,
+                ClientIndentNumber = request.ClientIndentNumber
             };
             if (request.HeaderFields is { } fields)
             {

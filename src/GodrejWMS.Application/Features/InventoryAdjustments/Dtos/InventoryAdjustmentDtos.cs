@@ -9,6 +9,8 @@ public sealed record InventoryAdjustmentListDto(
     InventoryAdjustmentStatus Status,
     long MaterialNumber,
     string MaterialDescription,
+    long? PhysicalMaterialNumber,
+    string? PhysicalMaterialDescription,
     string LocationCode,
     string MfgMonthLabel,
     decimal SystemQuantity,
@@ -28,6 +30,8 @@ public sealed record InventoryAdjustmentDetailDto(
     InventoryAdjustmentStatus Status,
     long MaterialNumber,
     string MaterialDescription,
+    long? PhysicalMaterialNumber,
+    string? PhysicalMaterialDescription,
     string LocationCode,
     string MfgMonthLabel,
     string StockSubtypeName,
@@ -42,4 +46,5 @@ public sealed record InventoryAdjustmentDetailDto(
     DateTimeOffset? ReviewedAt,
     string? ReviewComment,
     decimal? ActualQuantityBeforePosting,
-    decimal? ActualQuantityAfterPosting);
+    decimal? ActualQuantityAfterPosting,
+    decimal? ActualPhysicalQuantityBeforePosting);

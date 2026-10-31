@@ -120,6 +120,27 @@
                         Generate Pick Result
                     </button>
                 </div>
+
+                <div class="paste-upload-section paste-upload-workspace">
+                    <div class="paste-upload-copy">
+                        <span class="paste-upload-icon" aria-hidden="true">
+                            <i class="bi bi-clipboard2-data"></i>
+                        </span>
+                        <div>
+                            <label class="form-label" for="pullout-paste-area">Paste from Excel</label>
+                            <p>Copy the Loading Sheet header and data rows, including the Code column.</p>
+                        </div>
+                    </div>
+                    <div class="paste-upload-controls">
+                        <textarea id="pullout-paste-area" class="form-control paste-textarea" rows="3"
+                                  placeholder="Paste the copied Loading Sheet rows here (Ctrl+V)"
+                                  @bind="_pasteText" @bind:event="oninput"></textarea>
+                        <button type="button" class="btn btn-outline-primary paste-import-button" disabled="@(_submitting || string.IsNullOrWhiteSpace(_pasteText))" @onclick="OnImportPasteAsync">
+                            <i class="bi bi-clipboard-check" aria-hidden="true"></i>
+                            Import Pasted Sheet
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -146,6 +167,7 @@
                     <i class="bi bi-info-circle" aria-hidden="true"></i>
                     <span>GCPL Loading Sheet format - Code, Del Qty from the data table, and Destination from the header (optional). Maximum file size: 10 MB.</span>
                 </div>
+
             </div>
         </div>
     </div>
@@ -394,6 +416,7 @@
     private PulloutResultDto? _result;
     private string _statusFilter = string.Empty;
     private bool _isResultModalOpen;
+    private string _pasteText = string.Empty;
     private DotNetObjectReference<Index>? _outsideClickReference;
     private string? _outsideClickHandlerId;
     private string _sortBy = "material";
@@ -535,6 +558,39 @@
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Pullout import failed");
+            _error = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private async Task OnImportPasteAsync()
+    {
+        if (_submitting || string.IsNullOrWhiteSpace(_pasteText)) return;
+        _confirmed = false;
+        _rejected = false;
+        _showRejectPanel = false;
+        _error = null;
+        _result = null;
+
+        if (_warehouseId is null)
+        {
+            _error = "Select a warehouse before importing.";
+            return;
+        }
+
+        _submitting = true;
+        try
+        {
+            _result = await Mediator.Send(new ImportPulloutFromPasteCommand(_pasteText, _warehouseId.Value));
+            _isResultModalOpen = true;
+            _pasteText = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Pullout paste import failed");
             _error = ex.Message;
         }
         finally

@@ -9,7 +9,16 @@ public sealed record RealtimeNotification(
     DateTimeOffset CreatedAt,
     string? RecipientUserId = null,
     IReadOnlyCollection<string>? AudienceRoles = null,
-    string? ExcludeUserId = null);
+    string? ExcludeUserId = null,
+    string? Topic = null,
+    bool Silent = false,
+    bool Broadcast = false);
+
+public static class RealtimeTopics
+{
+    public const string InventoryChanged = "inventory.changed";
+    public const string InventoryAdjustmentsChanged = "inventory-adjustments.changed";
+}
 
 public interface IRealtimeNotificationService
 {

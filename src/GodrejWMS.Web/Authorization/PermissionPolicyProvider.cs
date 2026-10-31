@@ -6,7 +6,7 @@ namespace GodrejWMS.Web.Authorization;
 /// <summary>Recognizes policy names of the form "Permission:&lt;key&gt;" (e.g.
 /// "Permission:Menu.ViewInward") and builds a one-off policy requiring that permission key on
 /// demand, instead of needing a named AddPolicy(...) call per key up front. Every other policy
-/// name (e.g. the existing "RequireAdmin") falls back to the default provider unchanged.</summary>
+/// name falls back to the default provider unchanged.</summary>
 public sealed class PermissionPolicyProvider(IOptions<AuthorizationOptions> options) : IAuthorizationPolicyProvider
 {
     private const string Prefix = "Permission:";
