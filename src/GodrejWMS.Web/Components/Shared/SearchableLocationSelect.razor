@@ -1,4 +1,4 @@
-@using GodrejWMS.Application.Features.BrandLocationPreferences.Dtos
+@using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Dtos
 
 <div class="input-group search-control searchable-location-select" @onfocusout="OnBlur">
     <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
@@ -31,7 +31,7 @@
 </div>
 
 @code {
-    [Parameter, EditorRequired] public IReadOnlyList<BrandLocationOptionDto> Options { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<AopLocationOptionDto> Options { get; set; } = [];
     [Parameter] public int Value { get; set; }
     [Parameter] public EventCallback<int> ValueChanged { get; set; }
     [Parameter] public int ContextKey { get; set; }
@@ -43,7 +43,7 @@
     private int _lastValue = -1;
     private int _lastContextKey = -1;
 
-    private List<BrandLocationOptionDto> FilteredOptions =>
+    private List<AopLocationOptionDto> FilteredOptions =>
         (string.IsNullOrWhiteSpace(_searchText)
             ? Options
             : Options.Where(x => x.LocationCode.Contains(_searchText.Trim(), StringComparison.OrdinalIgnoreCase)).ToList())
@@ -82,7 +82,7 @@
 
     private void OnFocus() => _showSuggestions = true;
 
-    private async Task SelectAsync(BrandLocationOptionDto option)
+    private async Task SelectAsync(AopLocationOptionDto option)
     {
         Value = option.Id;
         _lastValue = option.Id;

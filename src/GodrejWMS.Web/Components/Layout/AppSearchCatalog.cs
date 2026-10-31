@@ -22,7 +22,7 @@ public static class AppSearchCatalog
         new("Design Types", "design-types", "Master Data", "bi-tags", ["design"]),
         new("Brand Master", "brands", "Master Data", "bi-bookmark", ["brand", "brand code"]),
         new("AOP Description Master", "aop-descriptions", "Master Data", "bi-card-text", ["aop", "aop code"]),
-        new("Brand Location Preferences", "brand-location-preferences", "Master Data", "bi-signpost-split", ["brand location", "putaway preference", "location mapping"]),
+        new("AOP Description Location Preferences", "brand-location-preferences", "Master Data", "bi-signpost-split", ["aop location", "aop description location", "putaway preference", "location mapping", "brand location"]),
         new("Season Mapping", "season-mapping", "Master Data", "bi-calendar-range", ["season", "month"]),
         new("Location Subtypes", "location-subtypes", "Master Data", "bi-tags", ["good", "damage", "expire", "hold"]),
         new("SKU Movement Types", "sku-movement-types", "Master Data", "bi-speedometer2", ["velocity", "fast moving", "slow moving"]),

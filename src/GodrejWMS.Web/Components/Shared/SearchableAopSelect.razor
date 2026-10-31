@@ -1,19 +1,19 @@
-@using GodrejWMS.Application.Features.Brands.Dtos
+@using GodrejWMS.Application.Features.AopDescriptions.Dtos
 
-<div class="input-group search-control searchable-brand-select" @onfocusout="OnBlur">
+<div class="input-group search-control searchable-aop-select" @onfocusout="OnBlur">
     <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
     <input class="form-control" value="@_searchText" @oninput="OnInputAsync" @onfocus="OnFocus"
-           placeholder="@Placeholder" autocomplete="off" aria-label="Search and select Brand Code" />
+           placeholder="@Placeholder" autocomplete="off" aria-label="Search and select AOP Description" />
     @if (Value != 0)
     {
-        <span class="input-group-text selected-brand-check"><i class="bi bi-check-circle-fill" aria-hidden="true"></i></span>
+        <span class="input-group-text selected-aop-check"><i class="bi bi-check-circle-fill" aria-hidden="true"></i></span>
     }
     @if (_showSuggestions)
     {
         <div class="location-suggestions">
             @if (FilteredOptions.Count == 0)
             {
-                <div class="searchable-brand-empty">No matching active Brand Code.</div>
+                <div class="searchable-aop-empty">No matching active AOP Description.</div>
             }
             else
             {
@@ -34,16 +34,16 @@
 </div>
 
 @code {
-    [Parameter, EditorRequired] public IReadOnlyList<BrandDto> Options { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<AopDescriptionDto> Options { get; set; } = [];
     [Parameter] public int Value { get; set; }
     [Parameter] public EventCallback<int> ValueChanged { get; set; }
-    [Parameter] public string Placeholder { get; set; } = "Search Brand Code or description";
+    [Parameter] public string Placeholder { get; set; } = "Search AOP Code or description";
 
     private string _searchText = string.Empty;
     private bool _showSuggestions;
     private int _lastValue = -1;
 
-    private List<BrandDto> FilteredOptions =>
+    private List<AopDescriptionDto> FilteredOptions =>
         (string.IsNullOrWhiteSpace(_searchText)
             ? Options
             : Options.Where(x =>
@@ -81,7 +81,7 @@
 
     private void OnFocus() => _showSuggestions = true;
 
-    private async Task SelectAsync(BrandDto option)
+    private async Task SelectAsync(AopDescriptionDto option)
     {
         Value = option.Id;
         _lastValue = option.Id;

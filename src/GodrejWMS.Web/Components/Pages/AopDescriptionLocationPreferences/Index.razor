@@ -1,22 +1,22 @@
 @page "/brand-location-preferences"
 @attribute [Authorize]
-@using GodrejWMS.Application.Features.BrandLocationPreferences.Commands
-@using GodrejWMS.Application.Features.BrandLocationPreferences.Dtos
-@using GodrejWMS.Application.Features.BrandLocationPreferences.Queries
-@using GodrejWMS.Application.Features.Brands.Dtos
-@using GodrejWMS.Application.Features.Brands.Queries
+@using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Commands
+@using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Dtos
+@using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Queries
+@using GodrejWMS.Application.Features.AopDescriptions.Dtos
+@using GodrejWMS.Application.Features.AopDescriptions.Queries
 @inject IMediator Mediator
 @inject ILogger<Index> Logger
 @inject IJSRuntime JsRuntime
 
-<PageTitle>Brand Location Preference Master - Godrej WMS</PageTitle>
+<PageTitle>AOP Description Location Preferences - Godrej WMS</PageTitle>
 
 <div class="page-shell">
     <div class="page-header">
         <div>
             <div class="eyebrow">Master Data</div>
-            <h1>Brand Location Preferences</h1>
-            <p class="page-kicker">Prioritize inward put-away within one or more location ranges for each Brand Code.</p>
+            <h1>AOP Description Location Preferences</h1>
+            <p class="page-kicker">Prioritize inward put-away within one or more location ranges for each AOP Description.</p>
         </div>
         <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Create">
             <button class="btn btn-primary" @onclick="() => ShowForm(null)"><i class="bi bi-plus-lg"></i> New Mapping</button>
@@ -25,7 +25,7 @@
 
     <div class="feedback-bar info" role="note">
         <div class="feedback-bar-icon"><i class="bi bi-info-circle" aria-hidden="true"></i></div>
-        <div class="feedback-bar-content"><strong>How ranges work</strong><span>Each mapping covers all columns and levels between two positions on the same rack. Add another mapping when a Brand spans another rack.</span></div>
+        <div class="feedback-bar-content"><strong>How ranges work</strong><span>Each mapping covers all columns and levels between two positions on the same rack. Add another mapping when an AOP Description spans another rack. Active ranges for the same AOP Description cannot overlap.</span></div>
     </div>
 
     @if (_showForm)
@@ -33,13 +33,13 @@
         <div class="slide-over-backdrop" @onclick="CloseForm">
             <section class="slide-over-panel" role="dialog" aria-modal="true" @onclick:stopPropagation="true">
                 <div class="slide-over-header">
-                    <div><div class="eyebrow">@(_editingId is null ? "New preference" : "Edit preference")</div><h2 class="slide-over-title">Brand and location range</h2><p class="slide-over-subtitle">The existing put-away logic runs inside this range before considering other locations.</p></div>
+                    <div><div class="eyebrow">@(_editingId is null ? "New preference" : "Edit preference")</div><h2 class="slide-over-title">AOP Description and location range</h2><p class="slide-over-subtitle">The existing put-away logic runs inside this range before considering other locations.</p></div>
                     <button class="slide-over-close" aria-label="Close" @onclick="CloseForm"><i class="bi bi-x-lg"></i></button>
                 </div>
-                <EditForm Model="_form" FormName="brand-location-preference-form" OnValidSubmit="SaveAsync" class="slide-over-form">
+                <EditForm Model="_form" FormName="aop-description-location-preference-form" OnValidSubmit="SaveAsync" class="slide-over-form">
                     <div class="slide-over-body">
                         <div class="row g-3">
-                            <div class="col-12"><label class="form-label">Brand Code <span class="text-danger">*</span></label><SearchableBrandSelect Options="@ActiveBrandOptions" @bind-Value="_form.BrandId" /></div>
+                            <div class="col-12"><label class="form-label">AOP Description <span class="text-danger">*</span></label><SearchableAopSelect Options="@ActiveAopOptions" @bind-Value="_form.AopDescriptionId" /></div>
                             <div class="col-12"><label class="form-label">Warehouse <span class="text-danger">*</span></label><InputSelect class="form-select" @bind-Value="_form.WarehouseId" @bind-Value:after="OnWarehouseChanged"><option value="0">Select warehouse</option>@foreach (var warehouse in WarehouseOptions) { <option value="@warehouse.Id">@warehouse.Code</option> }</InputSelect></div>
                             <div class="col-12"><label class="form-label">Rack <span class="text-danger">*</span></label><InputSelect class="form-select" @bind-Value="_form.RackId" @bind-Value:after="OnRackChanged"><option value="0">Select rack</option>@foreach (var rack in RackOptions) { <option value="@rack.Id">@rack.Code</option> }</InputSelect></div>
                             <div class="col-md-6"><label class="form-label">Location Preference From <span class="text-danger">*</span></label><SearchableLocationSelect Options="@LocationOptionsList" ContextKey="@_form.RackId" Placeholder="Search start location" AriaLabel="Search Location Preference From" @bind-Value="_form.FromPalletPositionId" /></div>
@@ -55,13 +55,13 @@
     }
 
     <div class="toolbar-panel">
-        <div class="toolbar-group"><div class="input-group search-control"><span class="input-group-text"><i class="bi bi-search"></i></span><input class="form-control" placeholder="Search brand, warehouse, rack, or location" @bind="_search" @bind:event="oninput" /></div></div>
+        <div class="toolbar-group"><div class="input-group search-control"><span class="input-group-text"><i class="bi bi-search"></i></span><input class="form-control" placeholder="Search AOP code, description, warehouse, rack, or location" @bind="_search" @bind:event="oninput" /></div></div>
         <span class="sync-chip">@Filtered.Count().ToString("N0") mappings</span>
     </div>
 
     @if (_items is null)
     {
-        <div class="loading-panel">Loading brand location preferences...</div>
+        <div class="loading-panel">Loading AOP description location preferences...</div>
     }
     else if (!Filtered.Any())
     {
@@ -71,12 +71,13 @@
     {
         <div class="table-responsive panel-table">
             <table class="table table-hover align-middle mb-0">
-                <thead><tr><th>Brand Code</th><th>Warehouse</th><th>Rack</th><th>Location From</th><th>Location To</th><th>Status</th><th class="table-actions">Actions</th></tr></thead>
+                <thead><tr><th>AOP Code</th><th>AOP Description</th><th>Warehouse</th><th>Rack</th><th>Location From</th><th>Location To</th><th>Status</th><th class="table-actions">Actions</th></tr></thead>
                 <tbody>
                     @foreach (var item in Filtered)
                     {
                         <tr>
-                            <td><span class="record-code">@item.BrandCode</span></td>
+                            <td><span class="record-code">@item.AopCode</span></td>
+                            <td>@item.AopDescription</td>
                             <td>@item.WarehouseCode</td>
                             <td>@item.RackCode</td>
                             <td><span class="location-pill"><i class="bi bi-geo-alt"></i>@item.FromLocationCode</span></td>
@@ -95,9 +96,9 @@
 </div>
 
 @code {
-    private IReadOnlyList<BrandLocationPreferenceDto>? _items;
-    private IReadOnlyList<BrandDto> _brands = [];
-    private IReadOnlyList<BrandLocationOptionDto> _locations = [];
+    private IReadOnlyList<AopDescriptionLocationPreferenceDto>? _items;
+    private IReadOnlyList<AopDescriptionDto> _aops = [];
+    private IReadOnlyList<AopLocationOptionDto> _locations = [];
     private string _search = "";
     private bool _showForm;
     private bool _saving;
@@ -107,26 +108,26 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _brands = await Mediator.Send(new GetBrandsQuery());
-        _locations = await Mediator.Send(new GetBrandLocationOptionsQuery());
+        _aops = await Mediator.Send(new GetAopDescriptionsQuery());
+        _locations = await Mediator.Send(new GetAopLocationOptionsQuery());
         await LoadAsync();
     }
 
     private Task LoadAsync() => LoadCoreAsync();
-    private async Task LoadCoreAsync() => _items = await Mediator.Send(new GetBrandLocationPreferencesQuery());
-    private IEnumerable<BrandDto> ActiveBrands => _brands.Where(x => x.IsActive || x.Id == _form.BrandId).OrderBy(x => x.Code);
-    private IReadOnlyList<BrandDto> ActiveBrandOptions => ActiveBrands.ToList();
+    private async Task LoadCoreAsync() => _items = await Mediator.Send(new GetAopDescriptionLocationPreferencesQuery());
+    private IEnumerable<AopDescriptionDto> ActiveAops => _aops.Where(x => x.IsActive || x.Id == _form.AopDescriptionId).OrderBy(x => x.Code);
+    private IReadOnlyList<AopDescriptionDto> ActiveAopOptions => ActiveAops.ToList();
     private IEnumerable<(int Id, string Code)> WarehouseOptions => _locations.GroupBy(x => new { x.WarehouseId, x.WarehouseCode }).Select(x => (Id: x.Key.WarehouseId, Code: x.Key.WarehouseCode)).OrderBy(x => x.Code);
     private IEnumerable<(int Id, string Code)> RackOptions => _locations.Where(x => x.WarehouseId == _form.WarehouseId).GroupBy(x => new { x.RackId, x.RackCode }).Select(x => (Id: x.Key.RackId, Code: x.Key.RackCode)).OrderBy(x => x.Code);
-    private IEnumerable<BrandLocationOptionDto> LocationOptions => _locations.Where(x => x.RackId == _form.RackId).OrderBy(x => x.Column).ThenBy(x => x.Level);
-    private IReadOnlyList<BrandLocationOptionDto> LocationOptionsList => LocationOptions.ToList();
-    private IEnumerable<BrandLocationPreferenceDto> Filtered => (_items ?? []).Where(x => string.IsNullOrWhiteSpace(_search) || new[] { x.BrandCode, x.WarehouseCode, x.RackCode, x.FromLocationCode, x.ToLocationCode }.Any(v => v.Contains(_search, StringComparison.OrdinalIgnoreCase)));
+    private IEnumerable<AopLocationOptionDto> LocationOptions => _locations.Where(x => x.RackId == _form.RackId).OrderBy(x => x.Column).ThenBy(x => x.Level);
+    private IReadOnlyList<AopLocationOptionDto> LocationOptionsList => LocationOptions.ToList();
+    private IEnumerable<AopDescriptionLocationPreferenceDto> Filtered => (_items ?? []).Where(x => string.IsNullOrWhiteSpace(_search) || new[] { x.AopCode, x.AopDescription ?? "", x.WarehouseCode, x.RackCode, x.FromLocationCode, x.ToLocationCode }.Any(v => v.Contains(_search, StringComparison.OrdinalIgnoreCase)));
 
-    private void ShowForm(BrandLocationPreferenceDto? item)
+    private void ShowForm(AopDescriptionLocationPreferenceDto? item)
     {
         _error = null;
         _editingId = item?.Id;
-        _form = item is null ? new() : new FormModel { BrandId = item.BrandId, WarehouseId = item.WarehouseId, RackId = item.RackId, FromPalletPositionId = item.FromPalletPositionId, ToPalletPositionId = item.ToPalletPositionId, IsActive = item.IsActive };
+        _form = item is null ? new() : new FormModel { AopDescriptionId = item.AopDescriptionId, WarehouseId = item.WarehouseId, RackId = item.RackId, FromPalletPositionId = item.FromPalletPositionId, ToPalletPositionId = item.ToPalletPositionId, IsActive = item.IsActive };
         _showForm = true;
     }
     private void OnWarehouseChanged()
@@ -149,18 +150,18 @@
         _saving = true; _error = null;
         try
         {
-            if (_editingId is null) await Mediator.Send(new CreateBrandLocationPreferenceCommand(_form.BrandId, _form.FromPalletPositionId, _form.ToPalletPositionId));
-            else await Mediator.Send(new UpdateBrandLocationPreferenceCommand(_editingId.Value, _form.BrandId, _form.FromPalletPositionId, _form.ToPalletPositionId, _form.IsActive));
-            CloseForm(); await LoadAsync(); await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Brand location preference saved.");
+            if (_editingId is null) await Mediator.Send(new CreateAopDescriptionLocationPreferenceCommand(_form.AopDescriptionId, _form.FromPalletPositionId, _form.ToPalletPositionId));
+            else await Mediator.Send(new UpdateAopDescriptionLocationPreferenceCommand(_editingId.Value, _form.AopDescriptionId, _form.FromPalletPositionId, _form.ToPalletPositionId, _form.IsActive));
+            CloseForm(); await LoadAsync(); await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "AOP description location preference saved.");
         }
-        catch (Exception ex) { Logger.LogWarning(ex, "Failed to save brand location preference"); _error = ex.Message; }
+        catch (Exception ex) { Logger.LogWarning(ex, "Failed to save AOP description location preference"); _error = ex.Message; }
         finally { _saving = false; }
     }
-    private async Task DeleteAsync(BrandLocationPreferenceDto item)
+    private async Task DeleteAsync(AopDescriptionLocationPreferenceDto item)
     {
-        if (!await JsRuntime.InvokeAsync<bool>("confirm", $"Delete the {item.BrandCode} mapping from {item.FromLocationCode} to {item.ToLocationCode}?")) return;
-        try { await Mediator.Send(new DeleteBrandLocationPreferenceCommand(item.Id)); await LoadAsync(); await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Mapping deleted."); }
-        catch (Exception ex) { Logger.LogWarning(ex, "Failed to delete brand location preference"); _error = ex.Message; }
+        if (!await JsRuntime.InvokeAsync<bool>("confirm", $"Delete the {item.AopCode} mapping from {item.FromLocationCode} to {item.ToLocationCode}?")) return;
+        try { await Mediator.Send(new DeleteAopDescriptionLocationPreferenceCommand(item.Id)); await LoadAsync(); await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Mapping deleted."); }
+        catch (Exception ex) { Logger.LogWarning(ex, "Failed to delete AOP description location preference"); _error = ex.Message; }
     }
-    private sealed class FormModel { public int BrandId { get; set; } public int WarehouseId { get; set; } public int RackId { get; set; } public int FromPalletPositionId { get; set; } public int ToPalletPositionId { get; set; } public bool IsActive { get; set; } = true; }
+    private sealed class FormModel { public int AopDescriptionId { get; set; } public int WarehouseId { get; set; } public int RackId { get; set; } public int FromPalletPositionId { get; set; } public int ToPalletPositionId { get; set; } public bool IsActive { get; set; } = true; }
 }
