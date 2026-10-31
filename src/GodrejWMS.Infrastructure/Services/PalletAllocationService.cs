@@ -3,12 +3,14 @@ using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
 using GodrejWMS.Domain.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace GodrejWMS.Infrastructure.Services;
 
 /// <summary>
-/// Put-away engine for FMCG pallet storage. Brand location preferences are the outermost tier:
-/// the complete allocation sequence runs inside the material's configured brand ranges first,
+/// Put-away engine for FMCG pallet storage. AOP Description location preferences are the outermost tier:
+/// the complete allocation sequence runs inside the ranges configured for the material's AOP Description first,
 /// then repeats outside those ranges only for any quantity that remains. Within each phase the
 /// three existing tiers remain, in order: (1) top up positions already
 /// holding the exact same SKU + PKM + subtype; (2) for a SKU that already has stock/reservations
@@ -37,8 +39,13 @@ namespace GodrejWMS.Infrastructure.Services;
 /// up the material's own existing stock. This defaults to off, in which case
 /// <see cref="Material.PreferredZoneTypeId"/> stays purely a soft <see cref="ScoreLocation"/> nudge.
 /// </summary>
-public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider clock) : IPalletAllocationService
+public class PalletAllocationService(
+    IApplicationDbContext db,
+    IDateTimeProvider clock,
+    ILogger<PalletAllocationService>? logger = null) : IPalletAllocationService
 {
+    private readonly ILogger _log = logger ?? NullLogger<PalletAllocationService>.Instance;
+
     public async Task<InwardAllocationResult> AllocateAsync(
         int materialId,
         decimal quantityBoxes,
@@ -95,8 +102,8 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
             .Include(p => p.StockBatches)
             .ToListAsync(cancellationToken);
 
-        var preferredPositionIds = await GetBrandPreferredPositionIdsAsync(
-            material.BrandId, warehouseId, candidatePositions, cancellationToken);
+        var preferredPositionIds = await GetAopPreferredPositionIdsAsync(
+            material, warehouseId, candidatePositions, cancellationToken);
         var oldestMfgMonth = await db.StockBatches
             .Where(b => b.MaterialId == materialId && b.StockSubtypeId == stockSubtypeId && b.QuantityBoxes > 0
                 && b.PalletPosition.Rack.WarehouseId == warehouseId)
@@ -106,16 +113,16 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
         var hasAnchor = candidatePositions.Any(p => p.StockBatches.Any(b => b.MaterialId == materialId && b.QuantityBoxes > 0))
             || pendingReservations.Any(r => r.MaterialId == materialId && r.StockSubtypeId == stockSubtypeId && r.QuantityBoxes > 0);
 
-        // A configured brand range outranks every legacy preference. Run the unchanged allocation
+        // A configured AOP Description range outranks every legacy preference. Run the unchanged allocation
         // tiers over the union of preferred ranges first, then use all remaining locations as the
-        // fallback. This lets a brand span multiple racks without making the mapping a hard gate.
+        // fallback. This lets an AOP Description span multiple racks without making the mapping a hard gate.
         if (preferredPositionIds.Count > 0)
         {
             remaining = AllocateCandidatePhase(
                 candidatePositions.Where(p => preferredPositionIds.Contains(p.Id)).ToList(),
                 pendingReservations, reservedByPosition, lines, materialId, stockSubtypeId, material,
                 activeSeasonId, mfgMonth, oldestMfgMonth, allowPkmMixing, racksWithSameDesignType,
-                hasAnchor, remaining, isBrandPreferredPhase: true);
+                hasAnchor, remaining, isAopPreferredPhase: true);
         }
 
         if (remaining > 0)
@@ -124,7 +131,7 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
                 candidatePositions.Where(p => !preferredPositionIds.Contains(p.Id)).ToList(),
                 pendingReservations, reservedByPosition, lines, materialId, stockSubtypeId, material,
                 activeSeasonId, mfgMonth, oldestMfgMonth, allowPkmMixing, racksWithSameDesignType,
-                hasAnchor, remaining, isBrandPreferredPhase: false);
+                hasAnchor, remaining, isAopPreferredPhase: false);
         }
 
         var allocated = quantityBoxes - remaining;
@@ -158,7 +165,7 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
         HashSet<int> racksWithSameDesignType,
         bool hasAnchor,
         decimal remaining,
-        bool isBrandPreferredPhase)
+        bool isAopPreferredPhase)
     {
         foreach (var position in positions
             .Where(p => (HasSameSkuPkmStock(p, materialId, incomingMfgMonth, stockSubtypeId)
@@ -170,7 +177,7 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
             .ThenBy(p => p.Level))
         {
             remaining = ReserveAtPosition(position, material, pendingReservations, reservedByPosition, lines,
-                remaining, isBrandPreferredPhase ? "Brand-preferred range · Same SKU + PKM top-up" : "Same SKU + PKM top-up");
+                remaining, isAopPreferredPhase ? "AOP-preferred range · Same SKU + PKM top-up" : "Same SKU + PKM top-up");
             if (remaining <= 0)
             {
                 return 0;
@@ -182,7 +189,7 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
             remaining = FillSameRackConsolidation(
                 positions, pendingReservations, reservedByPosition, lines,
                 materialId, stockSubtypeId, material, activeSeasonId, incomingMfgMonth, oldestMfgMonth,
-                allowPkmMixing, remaining, isBrandPreferredPhase);
+                allowPkmMixing, remaining, isAopPreferredPhase);
         }
 
         foreach (var position in positions
@@ -196,7 +203,7 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
             var reason = AllocationReason(position, material, activeSeasonId, incomingMfgMonth,
                 oldestMfgMonth, racksWithSameDesignType.Contains(position.RackId));
             remaining = ReserveAtPosition(position, material, pendingReservations, reservedByPosition, lines,
-                remaining, isBrandPreferredPhase ? $"Brand-preferred range · {reason}" : reason);
+                remaining, isAopPreferredPhase ? $"AOP-preferred range · {reason}" : reason);
             if (remaining <= 0)
             {
                 return 0;
@@ -247,7 +254,7 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
         int? oldestMfgMonth,
         bool allowPkmMixing,
         decimal remaining,
-        bool isBrandPreferredPhase)
+        bool isAopPreferredPhase)
     {
         var rackQuantities = new Dictionary<int, decimal>();
         foreach (var position in candidatePositions)
@@ -308,7 +315,7 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
                 AddReservation(reservedByPosition, position.Id, take);
                 remaining -= take;
                 lines.Add(new InwardAllocationLine(position.LocationCode, take,
-                    isBrandPreferredPhase ? "Brand-preferred range · Same-rack consolidation" : "Same-rack consolidation"));
+                    isAopPreferredPhase ? "AOP-preferred range · Same-rack consolidation" : "Same-rack consolidation"));
             }
         }
 
@@ -524,20 +531,24 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
             .ToHashSet();
     }
 
-    private async Task<HashSet<int>> GetBrandPreferredPositionIdsAsync(
-        int? brandId,
+    private async Task<HashSet<int>> GetAopPreferredPositionIdsAsync(
+        Material material,
         int warehouseId,
         IReadOnlyCollection<PalletPosition> candidates,
         CancellationToken cancellationToken)
     {
-        if (!brandId.HasValue)
+        if (!material.AopDescriptionId.HasValue)
         {
+            _log.LogWarning(
+                "Material {MaterialNumber} (id {MaterialId}) has no AOP Description, so no AOP location preference can apply; using the standard put-away logic.",
+                material.MaterialNumber, material.Id);
             return [];
         }
 
-        var ranges = await db.BrandLocationPreferences
+        var aopDescriptionId = material.AopDescriptionId.Value;
+        var ranges = await db.AopDescriptionLocationPreferences
             .AsNoTracking()
-            .Where(x => x.IsActive && x.BrandId == brandId.Value
+            .Where(x => x.IsActive && x.AopDescriptionId == aopDescriptionId
                 && x.FromPalletPosition.Rack.WarehouseId == warehouseId
                 && x.ToPalletPosition.Rack.WarehouseId == warehouseId)
             .Select(x => new
@@ -550,13 +561,28 @@ public class PalletAllocationService(IApplicationDbContext db, IDateTimeProvider
             })
             .ToListAsync(cancellationToken);
 
-        return candidates
+        var preferred = candidates
             .Where(position => ranges.Any(range =>
                 position.RackId == range.RackId
                 && position.Column >= range.FromColumn && position.Column <= range.ToColumn
                 && position.Level >= range.FromLevel && position.Level <= range.ToLevel))
             .Select(position => position.Id)
             .ToHashSet();
+
+        if (ranges.Count == 0)
+        {
+            _log.LogInformation(
+                "No active AOP location preference for AOP Description {AopDescriptionId} in warehouse {WarehouseId} (material {MaterialNumber}); using the standard put-away logic.",
+                aopDescriptionId, warehouseId, material.MaterialNumber);
+        }
+        else if (preferred.Count == 0)
+        {
+            _log.LogInformation(
+                "AOP Description {AopDescriptionId} has {RangeCount} preference range(s) in warehouse {WarehouseId}, but none contain an eligible position for material {MaterialNumber}; using the standard put-away logic.",
+                aopDescriptionId, ranges.Count, warehouseId, material.MaterialNumber);
+        }
+
+        return preferred;
     }
 
     private sealed record PendingReservation(int PalletPositionId, int RackId, int MaterialId, int MfgMonth, int StockSubtypeId, decimal QuantityBoxes);

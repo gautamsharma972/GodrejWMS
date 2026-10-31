@@ -1,9 +1,10 @@
-namespace GodrejWMS.Application.Features.BrandLocationPreferences.Dtos;
+namespace GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Dtos;
 
-public sealed record BrandLocationPreferenceDto(
+public sealed record AopDescriptionLocationPreferenceDto(
     int Id,
-    int BrandId,
-    string BrandCode,
+    int AopDescriptionId,
+    string AopCode,
+    string? AopDescription,
     int WarehouseId,
     string WarehouseCode,
     int RackId,
@@ -14,7 +15,7 @@ public sealed record BrandLocationPreferenceDto(
     string ToLocationCode,
     bool IsActive);
 
-public sealed record BrandLocationOptionDto(
+public sealed record AopLocationOptionDto(
     int Id,
     int WarehouseId,
     string WarehouseCode,

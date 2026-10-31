@@ -152,20 +152,20 @@ public class PalletAllocationServiceTests
     }
 
     [Fact]
-    public async Task AllocateAsync_UsesBrandPreferredRange_BeforeLegacyTopUpOutsideRange()
+    public async Task AllocateAsync_UsesAopPreferredRange_BeforeLegacyTopUpOutsideRange()
     {
         var (db, material, rackA, rackB) = SeedTwoRackWarehouse(capacityBoxes: 40, levels: 1);
-        var brand = new Brand { Code = "HIT", Description = "Hit", IsActive = true };
-        db.Brands.Add(brand);
-        material.Brand = brand;
+        var aop = new AopDescription { Code = "HIT CHALK", Description = "Hit chalk", IsActive = true };
+        db.AopDescriptions.Add(aop);
+        material.AopDescription = aop;
         await db.SaveChangesAsync();
 
         var outsidePreferredRange = rackA.PalletPositions.Single();
         var preferredPosition = rackB.PalletPositions.Single();
         AddStock(db, material, outsidePreferredRange, 202610, 10);
-        db.BrandLocationPreferences.Add(new BrandLocationPreference
+        db.AopDescriptionLocationPreferences.Add(new AopDescriptionLocationPreference
         {
-            BrandId = brand.Id,
+            AopDescriptionId = aop.Id,
             FromPalletPositionId = preferredPosition.Id,
             ToPalletPositionId = preferredPosition.Id,
             IsActive = true
@@ -178,7 +178,7 @@ public class PalletAllocationServiceTests
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         var allocation = Assert.Single(result.Lines);
         Assert.Equal(preferredPosition.LocationCode, allocation.LocationCode);
-        Assert.StartsWith("Brand-preferred range", allocation.Reason);
+        Assert.StartsWith("AOP-preferred range", allocation.Reason);
         Assert.DoesNotContain(result.Lines, x => x.LocationCode == outsidePreferredRange.LocationCode);
     }
 

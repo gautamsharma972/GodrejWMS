@@ -11,7 +11,7 @@ namespace GodrejWMS.Infrastructure.Tests;
 public class RefreshInwardPutawayTests
 {
     [Fact]
-    public async Task Refresh_ReplacesPendingReservation_UsingLatestBrandPreference()
+    public async Task Refresh_ReplacesPendingReservation_UsingLatestAopPreference()
     {
         var (db, transaction, line, oldPosition, preferredPosition) = SeedPendingGrn();
 
@@ -22,7 +22,7 @@ public class RefreshInwardPutawayTests
         Assert.Equal(preferredPosition.Id, putaway.PalletPositionId);
         Assert.Equal(5, putaway.QuantityBoxes);
         Assert.False(putaway.IsConfirmed);
-        Assert.StartsWith("Brand-preferred range", putaway.AllocationReason);
+        Assert.StartsWith("AOP-preferred range", putaway.AllocationReason);
         Assert.DoesNotContain(db.InwardPutaways, x => x.PalletPositionId == oldPosition.Id);
 
         var refreshedLine = db.InwardTransactionLines.Single(x => x.Id == line.Id);
@@ -67,7 +67,7 @@ public class RefreshInwardPutawayTests
         var rackB = BuildRack("B", "B-01-01");
         db.Racks.AddRange(rackA, rackB);
 
-        var brand = new Brand { Code = "HIT", Description = "Hit", IsActive = true };
+        var aop = new AopDescription { Code = "HIT CHALK", Description = "Hit chalk", IsActive = true };
         var material = new Material
         {
             MaterialNumber = 40019311,
@@ -80,16 +80,16 @@ public class RefreshInwardPutawayTests
             HeightMm = 100,
             PalletCapacityBoxes = 20,
             SeasonId = SeasonIds.Rainy,
-            Brand = brand
+            AopDescription = aop
         };
         db.Materials.Add(material);
         db.SaveChanges();
 
         var oldPosition = rackA.PalletPositions.Single();
         var preferredPosition = rackB.PalletPositions.Single();
-        db.BrandLocationPreferences.Add(new BrandLocationPreference
+        db.AopDescriptionLocationPreferences.Add(new AopDescriptionLocationPreference
         {
-            BrandId = brand.Id,
+            AopDescriptionId = aop.Id,
             FromPalletPositionId = preferredPosition.Id,
             ToPalletPositionId = preferredPosition.Id,
             IsActive = true
