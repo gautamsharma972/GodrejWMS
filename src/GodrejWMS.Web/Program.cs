@@ -158,6 +158,15 @@ app.MapAdditionalIdentityEndpoints();
 // role, or user seeders run during startup.
 await DatabaseMigrationRunner.ApplyPendingAsync(app.Services);
 
+// Local development only: opt-in via DevSeed:Enabled (never set in appsettings.json). Needs
+// DevSeed:Password for the seeded logins; see DevelopmentDataSeeder.
+if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("DevSeed:Enabled"))
+{
+    var devPassword = app.Configuration["DevSeed:Password"]
+        ?? throw new InvalidOperationException("DevSeed:Enabled requires DevSeed:Password to be set.");
+    await DevelopmentDataSeeder.SeedAsync(app.Services, devPassword);
+}
+
 app.Run();
 
 // Covers every shape an invalid/stale antiforgery token has been observed to throw as: the
