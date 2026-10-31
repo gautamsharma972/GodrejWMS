@@ -601,7 +601,7 @@ public class ClosedXmlExcelService : IExcelService
 
             rows.Add(new PulloutImportRow(
                 MaterialCode: materialCode,
-                QuantityBoxes: (decimal)ws.Cell(row, 3).GetValue<double>(),
+                QuantityBoxes: ReadDecimal(ws.Cell(row, 3)),
                 RowNumber: row,
                 PlantName: plantName,
                 Priority: NullIfEmpty(ws.Cell(row, 4).GetString()),
@@ -1314,7 +1314,7 @@ public class ClosedXmlExcelService : IExcelService
 
             rows.Add(new StockMasterImportRow(
                 MaterialNumber: materialNumber,
-                QuantityBoxes: (decimal)ws.Cell(row, 3).GetValue<double>(),
+                QuantityBoxes: ReadDecimal(ws.Cell(row, 3)),
                 MfgMonthText: ws.Cell(row, 4).GetString().Trim(),
                 PalletPositionCode: ws.Cell(row, 5).GetString().Trim(),
                 RowNumber: row));
@@ -1432,10 +1432,10 @@ public class ClosedXmlExcelService : IExcelService
                 reference,
                 materialNumber,
                 ws.Cell(row, 4).GetString().Trim(),
-                (decimal)ws.Cell(row, 5).GetValue<double>(),
-                (decimal)ws.Cell(row, 6).GetValue<double>(),
+                ReadDecimal(ws.Cell(row, 5)),
+                ReadDecimal(ws.Cell(row, 6)),
                 ws.Cell(row, 8).GetString().Trim(),
-                (decimal)ws.Cell(row, 9).GetValue<double>(),
+                ReadDecimal(ws.Cell(row, 9)),
                 ws.Cell(row, 10).GetString().Trim(),
                 putawayId,
                 row));

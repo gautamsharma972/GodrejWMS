@@ -200,6 +200,32 @@ public class ClosedXmlExcelServiceTests
     }
 
     [Fact]
+    public void ReadPulloutUpload_BlankDelQtyCell_DoesNotThrow_DegradesToZero()
+    {
+        // A client who deletes the "Del Qty" column from the sample template (shifting every later
+        // column left) ends up with a blank cell where Del Qty used to be. GetValue<double>() on a
+        // blank cell throws a raw ClosedXML InvalidCastException ("Cannot convert ...'s value to
+        // System.Double") straight out to the user; ReadDecimal degrades to 0 instead, which the
+        // caller's own QuantityBoxes > 0 validation then reports as a normal, readable error.
+        using var workbook = new ClosedXML.Excel.XLWorkbook();
+        var sheet = workbook.Worksheets.Add("Loading Sheet");
+        sheet.Cell(1, 1).Value = "Code";
+        sheet.Cell(1, 2).Value = "Description";
+        sheet.Cell(1, 3).Value = "Priority"; // Del Qty column missing - shifted left
+        sheet.Cell(2, 1).Value = 40019311;
+        sheet.Cell(2, 2).Value = "Test Material";
+        // Cell(2, 3) left blank - this is what used to crash.
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        stream.Position = 0;
+
+        var (rows, _, _) = new ClosedXmlExcelService().ReadPulloutUpload(stream);
+
+        var row = Assert.Single(rows);
+        Assert.Equal(0m, row.QuantityBoxes);
+    }
+
+    [Fact]
     public void ReadPulloutUpload_IndentValueOneRowBelowLabel_ClientsNativeSheetFormat_IsStillRead()
     {
         // Real client sheets (unlike our own download) put the Indent value one row below the
