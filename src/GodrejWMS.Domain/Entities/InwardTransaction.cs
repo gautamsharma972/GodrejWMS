@@ -24,6 +24,20 @@ public class InwardTransaction : AuditableEntity
 
     public string? RejectionReason { get; set; }
 
+    // Captured verbatim from a multi-sheet Unloading Sheet workbook upload (D3/D2/F5 respectively)
+    // - free text, never validated. Null for manual entry and the plain single-sheet upload. Used
+    // to recognize a re-uploaded sheet as an order already received today (see
+    // ImportInwardWorkbookHandler), the same role PulloutTransaction's header fields play for Pullout.
+    public string? VehicleNumber { get; set; }
+    public string? LrNumber { get; set; }
+    public string? ReceivedFrom { get; set; }
+
+    /// <summary>True only for a GRN submitted through the Pickers' "Inward without PKM" flow -
+    /// every line's <see cref="InwardTransactionLine.MfgMonth"/> is null until someone assigns a
+    /// real PKM. Used to show the receiving/confirming screens a "PKM needed" flag, and to scope
+    /// the Pickers-only history view to just these (still-pending) GRNs.</summary>
+    public bool IsPkmless { get; set; }
+
     public ICollection<InwardTransactionLine> Lines { get; set; } = new List<InwardTransactionLine>();
 }
 
@@ -43,7 +57,11 @@ public class InwardTransactionLine
 
     public Material Material { get; set; } = null!;
 
-    public int MfgMonth { get; set; }
+    /// <summary>Null only for a line submitted through the Pickers' "Inward without PKM" flow
+    /// (see <see cref="InwardTransaction.IsPkmless"/>) - every other line always has a real value.
+    /// <see cref="InwardPutawayConfirmationLogic"/> refuses to confirm a null-PKM line into real
+    /// <see cref="StockBatch"/> inventory until a real PKM is assigned.</summary>
+    public int? MfgMonth { get; set; }
 
     public decimal RequestedQuantityBoxes { get; set; }
 

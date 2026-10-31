@@ -23,6 +23,12 @@ internal static class InwardPutawayConfirmationLogic
         ICurrentUserService currentUser,
         CancellationToken cancellationToken)
     {
+        if (line.MfgMonth is null)
+        {
+            throw new InvalidOperationException(
+                "This line has no PKM assigned yet (submitted through Inward without PKM) and cannot be confirmed into inventory until one is set.");
+        }
+
         var position = putaway.PalletPosition;
 
         if (!position.IsActive)
@@ -92,7 +98,7 @@ internal static class InwardPutawayConfirmationLogic
             {
                 MaterialId = line.MaterialId,
                 PalletPositionId = putaway.PalletPositionId,
-                MfgMonth = line.MfgMonth,
+                MfgMonth = line.MfgMonth.Value, // guarded non-null above
                 StockSubtypeId = position.LocationSubtypeId,
                 QuantityBoxes = putaway.QuantityBoxes,
                 RowVersion = 1

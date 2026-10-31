@@ -562,8 +562,19 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("varchar(450)");
 
+                    b.Property<bool>("IsPkmless")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<bool>("IsRejected")
                         .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("LrNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("ReceivedFrom")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
 
                     b.Property<string>("ReferenceNumber")
                         .IsRequired()
@@ -591,6 +602,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Property<string>("UpdatedByUserId")
                         .HasMaxLength(450)
                         .HasColumnType("varchar(450)");
+
+                    b.Property<string>("VehicleNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
 
                     b.Property<int>("WarehouseId")
                         .HasColumnType("int");
@@ -623,7 +638,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Property<int>("MaterialId")
                         .HasColumnType("int");
 
-                    b.Property<int>("MfgMonth")
+                    b.Property<int?>("MfgMonth")
                         .HasColumnType("int");
 
                     b.Property<string>("Remarks")

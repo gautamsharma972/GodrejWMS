@@ -40,6 +40,19 @@ public interface IExcelService
     /// <summary>Parses an "inward" upload: Material Code, Total Stock in CFB(qty), Mfg Month.</summary>
     IReadOnlyList<InwardImportRow> ReadInwardUpload(Stream fileStream);
 
+    /// <summary>Parses every worksheet of a client-native Unloading Sheet workbook (one sheet per
+    /// receipt, growing through the day) - fixed layout per sheet: header row 8, data from row 9
+    /// until a row's Code column contains "Remark", LR No at D2, Vehicle No at D3, Received From at
+    /// F5, an already-assigned GRN Reference Number at E2. A sheet whose row 8 doesn't start with
+    /// "Code" (a non-GRN tab, or an unused blank placeholder sheet) is reported with
+    /// <see cref="InwardSheetUploadData.IsOrderSheet"/> false rather than treated as an error.</summary>
+    IReadOnlyList<InwardSheetUploadData> ReadInwardWorkbook(Stream fileStream);
+
+    /// <summary>Sample workbook for the multi-sheet Inward upload - header row 8, LR No at D2,
+    /// Vehicle No at D3, Received From at F5, a blank GRN Reference Number placeholder at E2, and a
+    /// "Remark" footer marker - see <see cref="ReadInwardWorkbook"/> for what this layout must match.</summary>
+    byte[] WriteInwardWorkbookSampleTemplate();
+
     /// <summary>Writes a sample "GCPL Loading Sheet" workbook (same layout pullout upload now
     /// expects). <paramref name="plantNames"/> populates the Destination field's dropdown list -
     /// purely a convenience, never validated on import.</summary>
@@ -59,6 +72,20 @@ public interface IExcelService
     /// with both our reference number and the client's own number on separate lines) is recognized
     /// by Excel's own clipboard quoting (the cell wrapped in double quotes) and kept as one cell.</summary>
     (IReadOnlyList<PulloutImportRow> Rows, PulloutLoadingSheetFieldsDto HeaderFields, string? IndentText) ReadPulloutPaste(string pastedText);
+
+    /// <summary>Parses every worksheet of a client-native Loading Sheet workbook (one sheet per
+    /// order, growing through the day) - fixed layout per sheet: header row 12, data from row 13
+    /// until a row's Code column contains "Driver Sign", Vehicle No at B9, Destination at B10, an
+    /// already-assigned Pick Reference Number at H10. A sheet whose row 12 doesn't start with
+    /// "Code" (the workbook's own dashboard tabs - MIS/APO/PUSH/Indent - or an unused blank
+    /// placeholder sheet) is reported with <see cref="PulloutSheetUploadData.IsOrderSheet"/> false
+    /// rather than treated as an error.</summary>
+    IReadOnlyList<PulloutSheetUploadData> ReadPulloutWorkbook(Stream fileStream);
+
+    /// <summary>Sample workbook for the multi-sheet upload - header row 12, Vehicle No at B9,
+    /// Destination at B10, a blank Pick Reference Number placeholder at H10, and a "Driver Sign"
+    /// footer marker - see <see cref="ReadPulloutWorkbook"/> for what this layout must match.</summary>
+    byte[] WritePulloutWorkbookSampleTemplate();
 
     /// <summary>Writes the "Format inventory master" / "Format invent pullout-download" layout.</summary>
     byte[] WriteStockMaster(IReadOnlyList<StockMasterRowDto> rows);

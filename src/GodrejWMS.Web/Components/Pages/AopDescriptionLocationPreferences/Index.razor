@@ -1,5 +1,5 @@
 @page "/brand-location-preferences"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewProductMasters)]
 @using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Commands
 @using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Dtos
 @using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Queries

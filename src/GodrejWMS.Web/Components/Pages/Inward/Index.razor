@@ -14,6 +14,7 @@
 @inject IMediator Mediator
 @inject IExcelService ExcelService
 @inject IJSRuntime JsRuntime
+@inject NavigationManager NavManager
 @inject ILogger<Index> Logger
 
 <PageTitle>Inward - Godrej WMS</PageTitle>
@@ -186,6 +187,81 @@
     @if (!string.IsNullOrEmpty(_error))
     {
         <div class="alert alert-danger mb-0">@_error</div>
+    }
+
+    @if (_workbookOutcomes is not null)
+    {
+        var created = _workbookOutcomes.Count(o => o.Status == InwardSheetImportStatus.Created);
+        <div class="result-ready-bar">
+            <div class="info-bar-icon">
+                <i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i>
+            </div>
+            <div class="info-bar-content">
+                <h2>Workbook processed</h2>
+                <p>@created of @_workbookOutcomes.Count sheet(s) created as new GRNs - see the summary for what was skipped or failed.</p>
+            </div>
+            <button type="button" class="btn btn-primary" @onclick="() => _isWorkbookResultModalOpen = true">
+                <i class="bi bi-eye" aria-hidden="true"></i>
+                View Summary
+            </button>
+        </div>
+    }
+
+    @if (_workbookOutcomes is not null && _isWorkbookResultModalOpen)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseWorkbookResultModal">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="inward-workbook-result-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Multi-Sheet Upload</div>
+                        <h2 id="inward-workbook-result-title" class="slide-over-title">Workbook Import Summary</h2>
+                        <p class="slide-over-subtitle">@_workbookOutcomes.Count(o => o.Status == InwardSheetImportStatus.Created) of @_workbookOutcomes.Count sheet(s) created</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close summary" @onclick="CloseWorkbookResultModal">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Sheet</th>
+                                    <th>Outcome</th>
+                                    <th>Reference</th>
+                                    <th>Message</th>
+                                    <th class="table-actions history-actions-column">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var outcome in _workbookOutcomes)
+                                {
+                                    <tr>
+                                        <td>@outcome.SheetName</td>
+                                        <td><span class="status-pill @WorkbookOutcomePillClass(outcome.Status)">@WorkbookOutcomeLabel(outcome.Status)</span></td>
+                                        <td>@(outcome.ReferenceNumber ?? "—")</td>
+                                        <td>@outcome.Message</td>
+                                        <td class="table-actions history-actions-column">
+                                            @if (outcome.Status == InwardSheetImportStatus.Created && outcome.ReferenceNumber is not null)
+                                            {
+                                                <div class="history-row-actions">
+                                                    <button type="button" class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {outcome.ReferenceNumber}")" aria-label="@($"View {outcome.ReferenceNumber}")" @onclick="() => ViewWorkbookGrnAsync(outcome.ReferenceNumber)">
+                                                        <i class="bi bi-eye" aria-hidden="true"></i>
+                                                    </button>
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary table-action-btn history-download-btn" title="@($"Download Excel {outcome.ReferenceNumber}")" aria-label="@($"Download Excel {outcome.ReferenceNumber}")" @onclick="() => DownloadWorkbookGrnExcelAsync(outcome.ReferenceNumber)">
+                                                        <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                                                    </button>
+                                                </div>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
     }
 
     @if (_result is not null)
@@ -739,6 +815,8 @@
     private InwardResultDto? _result;
     private string _statusFilter = string.Empty;
     private bool _isResultModalOpen;
+    private IReadOnlyList<InwardSheetImportOutcome>? _workbookOutcomes;
+    private bool _isWorkbookResultModalOpen;
     private bool _isPalletDetailsOpen;
     private bool _confirming;
     private string? _confirmationMessage;
@@ -1272,6 +1350,7 @@
     {
         _error = null;
         _result = null;
+        _workbookOutcomes = null;
 
         if (_warehouseId is null)
         {
@@ -1287,9 +1366,9 @@
             await stream.CopyToAsync(memory);
             memory.Position = 0;
 
-            _result = await Mediator.Send(new ImportInwardFromExcelCommand(memory, _warehouseId.Value));
+            _workbookOutcomes = await Mediator.Send(new ImportInwardWorkbookCommand(memory, _warehouseId.Value));
             _statusFilter = string.Empty;
-            _isResultModalOpen = true;
+            _isWorkbookResultModalOpen = true;
 
         }
         catch (ValidationException ex)
@@ -1304,7 +1383,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Inward import failed");
+            Logger.LogWarning(ex, "Inward workbook import failed");
             _error = ex.Message;
         }
         finally
@@ -1383,11 +1462,63 @@
 
     private async Task DownloadSampleFormatAsync()
     {
-        var bytes = ExcelService.WriteInwardUploadTemplate();
+        var bytes = ExcelService.WriteInwardWorkbookSampleTemplate();
         var base64 = Convert.ToBase64String(bytes);
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "inward-upload-sample-format.xlsx", base64,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
+
+    private void CloseWorkbookResultModal() => _isWorkbookResultModalOpen = false;
+
+    private async Task ViewWorkbookGrnAsync(string referenceNumber)
+    {
+        try
+        {
+            var detail = await Mediator.Send(new GetInwardDetailByReferenceQuery(referenceNumber));
+            NavManager.NavigateTo($"/inward/{detail.Id}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to resolve GRN {ReferenceNumber} for viewing", referenceNumber);
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Could not open {referenceNumber}: {ex.Message}", "danger");
+        }
+    }
+
+    private async Task DownloadWorkbookGrnExcelAsync(string referenceNumber)
+    {
+        try
+        {
+            var detail = await Mediator.Send(new GetInwardDetailByReferenceQuery(referenceNumber));
+            var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.FromDetail(detail));
+            await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"inward-{detail.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to build Excel for GRN {ReferenceNumber}", referenceNumber);
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Could not build the Excel file: {ex.Message}", "danger");
+        }
+    }
+
+    private static string WorkbookOutcomeLabel(InwardSheetImportStatus status) => status switch
+    {
+        InwardSheetImportStatus.Created => "Created",
+        InwardSheetImportStatus.SkippedNotOrderSheet => "Not an Unloading Sheet",
+        InwardSheetImportStatus.SkippedNoData => "No data",
+        InwardSheetImportStatus.SkippedMissingPkm => "Missing Pkd/Batch",
+        InwardSheetImportStatus.SkippedDuplicateReference => "Already received",
+        InwardSheetImportStatus.SkippedDuplicateLrVehicleSource => "Already received today",
+        InwardSheetImportStatus.Error => "Error",
+        _ => status.ToString()
+    };
+
+    private static string WorkbookOutcomePillClass(InwardSheetImportStatus status) => status switch
+    {
+        InwardSheetImportStatus.Created => "success",
+        InwardSheetImportStatus.Error => "danger",
+        InwardSheetImportStatus.SkippedDuplicateReference or InwardSheetImportStatus.SkippedDuplicateLrVehicleSource => "warning",
+        _ => "neutral"
+    };
     private IEnumerable<InwardLineResultDto> DisplayResultLines
     {
         get

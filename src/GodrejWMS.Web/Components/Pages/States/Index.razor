@@ -1,5 +1,5 @@
 @page "/states"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewOrgMasters)]
 @using GodrejWMS.Application.Features.States.Commands
 @using GodrejWMS.Application.Features.States.Dtos
 @using GodrejWMS.Application.Features.States.Queries

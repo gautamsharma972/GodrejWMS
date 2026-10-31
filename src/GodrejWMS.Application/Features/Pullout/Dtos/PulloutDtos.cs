@@ -9,6 +9,38 @@ namespace GodrejWMS.Application.Features.Pullout.Dtos;
 /// Material Master yet, instead of a generic "(unknown material)" placeholder.</summary>
 public sealed record PulloutImportRow(long MaterialCode, decimal QuantityBoxes, int RowNumber, string? PlantName = null, string? Priority = null, string? MaterialDescription = null);
 
+/// <summary>One worksheet's worth of data from a multi-sheet Loading Sheet workbook upload (see
+/// <see cref="GodrejWMS.Application.Common.Interfaces.IExcelService.ReadPulloutWorkbook"/>) - the
+/// client's real daily workflow adds one sheet per order to the same growing file. Every field is
+/// read from a fixed cell/row position (header row 12, Vehicle No at B9, Destination at B10, an
+/// already-assigned Pick Reference Number at H10 if this sheet was already pulled before), not
+/// label-scanned, since this reader assumes the client's own native layout exactly.</summary>
+public sealed record PulloutSheetUploadData(
+    string SheetName,
+    bool IsOrderSheet,
+    IReadOnlyList<PulloutImportRow> Rows,
+    PulloutLoadingSheetFieldsDto HeaderFields,
+    string? VehicleNumber,
+    string? Destination,
+    string? ExistingPickReference);
+
+public enum PulloutSheetImportStatus
+{
+    Created,
+    SkippedNotOrderSheet,
+    SkippedNoData,
+    SkippedDuplicateReference,
+    SkippedDuplicateDestinationVehicle,
+    Error
+}
+
+/// <summary>What happened for one sheet of an <see cref="GodrejWMS.Application.Features.Pullout.Commands.ImportPulloutWorkbookCommand"/> upload.</summary>
+public sealed record PulloutSheetImportOutcome(
+    string SheetName,
+    PulloutSheetImportStatus Status,
+    string? ReferenceNumber,
+    string Message);
+
 /// <summary>Loading Sheet header fields this app has no domain model of its own for (Transport,
 /// Vehicle no, Gate No, Driver No, Plan/Start/End Time, Date, Weight, Volume) - captured verbatim
 /// from an uploaded sheet, persisted on the <c>PulloutTransaction</c>, and carried through

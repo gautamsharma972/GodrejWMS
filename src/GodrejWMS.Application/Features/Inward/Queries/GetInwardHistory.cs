@@ -82,7 +82,8 @@ public sealed class GetInwardHistoryHandler(IApplicationDbContext db)
                 // rejected GRN whose putaways RejectInwardHandler deletes) - Any() guards that so
                 // a rejected/unconfirmed GRN never also shows as Confirmed in this list.
                 t.Lines.SelectMany(l => l.Putaways).Any() && t.Lines.SelectMany(l => l.Putaways).All(p => p.IsConfirmed),
-                t.IsRejected));
+                t.IsRejected,
+                t.IsPkmless));
 
         return PaginatedList<InwardHistoryDto>.CreateAsync(query, request.PageNumber, request.PageSize);
     }

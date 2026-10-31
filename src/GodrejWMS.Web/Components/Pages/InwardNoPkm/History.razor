@@ -1,0 +1,345 @@
+@page "/inward-no-pkm/history"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInwardNoPkm)]
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Features.Inward.Dtos
+@using GodrejWMS.Application.Features.Inward.Queries
+@using GodrejWMS.Domain.Enums
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+@inject IExcelService ExcelService
+@inject ILogger<History> Logger
+
+<PageTitle>Inward (No PKM) History - Godrej WMS</PageTitle>
+
+<div class="page-shell no-pkm-history-page">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Goods Receipt Audit</div>
+            <h1>Inward (No PKM) History</h1>
+            <p class="page-kicker">Your still-pending GRNs submitted without a PKM. Once someone assigns a PKM and confirms it, it drops off this list.</p>
+        </div>
+        <div class="toolbar-group">
+            <a class="btn btn-outline-secondary" href="/inward-no-pkm">
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                <span class="no-pkm-back-label-full">Inward Entry</span>
+                <span class="no-pkm-back-label-short">Entry</span>
+            </a>
+        </div>
+    </div>
+
+    <div class="panel history-register">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Pending Transactions</h2>
+                <p class="panel-subtitle">GRNs waiting for a PKM assignment and confirmation.</p>
+            </div>
+            <div class="toolbar-group inward-history-header-actions">
+                <WarehouseSelect WarehouseId="_warehouseFilter" WarehouseIdChanged="OnWarehouseFilterChangedAsync"
+                                  AllowClear="true" Placeholder="Filter by warehouse..." />
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => LoadHistoryPage(_historyPageNumber)">
+                    <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                    Refresh
+                </button>
+            </div>
+        </div>
+        <div class="toolbar-panel panel-toolbar history-toolbar">
+            <div class="toolbar-group">
+                <div class="input-group search-control">
+                    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                    <input class="form-control" placeholder="Search reference, material, or description"
+                           @bind="_historySearch" @bind:event="oninput" @onkeyup="OnHistorySearchKeyUp" />
+                </div>
+            </div>
+            @if (_history is not null)
+            {
+                <span class="sync-chip">@_history.TotalCount.ToString("N0") @(_history.TotalCount == 1 ? "record" : "records")</span>
+            }
+        </div>
+        @if (_history is null)
+        {
+            <div class="loading-panel">
+                <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                Loading history...
+            </div>
+        }
+        else if (_history.Items.Count == 0)
+        {
+            <div class="empty-state">No pending PKM-less inward transactions.</div>
+        }
+        else
+        {
+            <div class="table-responsive history-table-wrap">
+                <table class="table table-hover align-middle mb-0 history-table inward-history-table">
+                    <thead>
+                        <tr>
+                            <th><button class="sort-button" @onclick='@(() => SortHistoryBy("reference"))'>Reference <i class='bi @HistorySortIcon("reference")'></i></button></th>
+                            <th><button class="sort-button" @onclick='@(() => SortHistoryBy("created"))'>Created <i class='bi @HistorySortIcon("created")'></i></button></th>
+                            <th><button class="sort-button" @onclick='@(() => SortHistoryBy("status"))'>Status <i class='bi @HistorySortIcon("status")'></i></button></th>
+                            <th class="text-end history-number-column"><button class="sort-button" @onclick='@(() => SortHistoryBy("lines"))'>Lines <i class='bi @HistorySortIcon("lines")'></i></button></th>
+                            <th class="text-end history-number-column"><button class="sort-button" @onclick='@(() => SortHistoryBy("quantity"))'>Allocated Boxes <i class='bi @HistorySortIcon("quantity")'></i></button></th>
+                            <th class="table-actions history-actions-column">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _history.Items)
+                        {
+                            <tr>
+                                <td><span class="record-code history-reference">@item.ReferenceNumber</span></td>
+                                <td class="history-created">@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
+                                <td><span class="status-pill @AllocationClass(item.Status)">@item.Status</span></td>
+                                <td class="text-end history-number-column">@item.LineCount</td>
+                                <td class="text-end fw-semibold history-number-column">@item.TotalQuantityBoxes.ToString("N0")</td>
+                                <td class="table-actions history-actions-column">
+                                    <div class="history-row-actions">
+                                        <button type="button" class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {item.ReferenceNumber}")" aria-label="@($"View {item.ReferenceNumber}")" @onclick="() => OpenDetailAsync(item.Id)">
+                                            <i class="bi bi-eye" aria-hidden="true"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary table-action-btn history-download-btn" title="@($"Download Excel {item.ReferenceNumber}")" aria-label="@($"Download Excel {item.ReferenceNumber}")" @onclick="() => DownloadExcelAsync(item)">
+                                            <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="no-pkm-mobile-history-list">
+                @foreach (var item in _history.Items)
+                {
+                    <article class="no-pkm-mobile-history-card">
+                        <div class="no-pkm-mobile-history-main">
+                            <span class="record-code">@item.ReferenceNumber</span>
+                            <span class="status-pill @AllocationClass(item.Status)">@item.Status</span>
+                        </div>
+                        <div class="no-pkm-mobile-history-meta">
+                            <span><i class="bi bi-clock" aria-hidden="true"></i>@item.CreatedAt.ToLocalTime().ToString("dd MMM, hh:mm tt")</span>
+                            <span><strong>@item.LineCount</strong> line(s)</span>
+                            <span><strong>@item.TotalQuantityBoxes.ToString("N0")</strong> boxes</span>
+                        </div>
+                        <div class="no-pkm-mobile-history-actions">
+                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => OpenDetailAsync(item.Id)">
+                                <i class="bi bi-eye" aria-hidden="true"></i> View
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => DownloadExcelAsync(item)">
+                                <i class="bi bi-file-earmark-excel" aria-hidden="true"></i> Excel
+                            </button>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </div>
+
+    @if (_history is not null && _history.Items.Count > 0)
+    {
+        <nav class="pagination-bar history-pagination" aria-label="Inward (No PKM) history pagination">
+            <ul class="pagination mb-0">
+                <li class="page-item @(_history.HasPreviousPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadHistoryPage(_historyPageNumber - 1)">Previous</button>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Page @_history.PageNumber of @Math.Max(1, _history.TotalPages)</span></li>
+                <li class="page-item @(_history.HasNextPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadHistoryPage(_historyPageNumber + 1)">Next</button>
+                </li>
+            </ul>
+        </nav>
+    }
+
+    @if (_isDetailOpen)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseDetail">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="inward-no-pkm-detail-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Goods Receipt</div>
+                        <h2 id="inward-no-pkm-detail-title" class="slide-over-title">@(_detail?.ReferenceNumber ?? "Loading...")</h2>
+                        <p class="slide-over-subtitle">Flagged "PKM needed" until someone assigns a PKM and confirms it.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close detail" @onclick="CloseDetail">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    @if (!string.IsNullOrWhiteSpace(_detailError))
+                    {
+                        <div class="alert alert-danger mb-0">@_detailError</div>
+                    }
+                    else if (_detail is null)
+                    {
+                        <div class="loading-panel">
+                            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                            Loading GRN details...
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Material</th>
+                                        <th class="text-end">Requested</th>
+                                        <th class="text-end">Allocated</th>
+                                        <th>Status</th>
+                                        <th>Location</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var line in _detail.Lines)
+                                    {
+                                        @if (line.Putaways.Count == 0)
+                                        {
+                                            <tr>
+                                                <td><span class="record-code">@line.MaterialNumber</span> @line.MaterialDescription</td>
+                                                <td class="text-end">@line.RequestedQuantityBoxes</td>
+                                                <td class="text-end fw-semibold">@line.AllocatedQuantityBoxes.ToString("0.###")</td>
+                                                <td><span class="status-pill @AllocationClass(line.Status)">@line.Status</span> @line.Remarks</td>
+                                                <td><span class="text-muted small">No location reserved</span></td>
+                                            </tr>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var putaway in line.Putaways)
+                                            {
+                                                <tr>
+                                                    <td><span class="record-code">@line.MaterialNumber</span> @line.MaterialDescription</td>
+                                                    <td class="text-end">@line.RequestedQuantityBoxes</td>
+                                                    <td class="text-end fw-semibold">@line.AllocatedQuantityBoxes.ToString("0.###")</td>
+                                                    <td><span class="status-pill @AllocationClass(line.Status)">@line.Status</span> @line.Remarks</td>
+                                                    <td>@putaway.LocationCode <strong>+@putaway.QuantityBoxes.ToString("0.###")</strong></td>
+                                                </tr>
+                                            }
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseDetail">Close</button>
+                    @if (_detail is not null)
+                    {
+                        <button type="button" class="btn btn-outline-secondary" @onclick="() => DownloadDetailExcelAsync(_detail)">
+                            <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                            Download Excel
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private PaginatedList<InwardHistoryDto>? _history;
+    private int _historyPageNumber = 1;
+    private string _historySearch = string.Empty;
+    private int? _warehouseFilter;
+    private string _historySortBy = "created";
+    private bool _historySortDescending = true;
+    private bool _isDetailOpen;
+    private InwardDetailDto? _detail;
+    private string? _detailError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadHistoryPage(1);
+    }
+
+    private async Task LoadHistoryPage(int page)
+    {
+        if (page < 1) return;
+
+        _historyPageNumber = page;
+        _history = await Mediator.Send(CreateHistoryQuery(page, 10));
+    }
+
+    private GetInwardHistoryWithoutPkmQuery CreateHistoryQuery(int page, int pageSize) =>
+        new(
+            Search: _historySearch,
+            WarehouseId: _warehouseFilter,
+            SortBy: _historySortBy,
+            SortDescending: _historySortDescending,
+            PageNumber: page,
+            PageSize: pageSize);
+
+    private async Task OnHistorySearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadHistoryPage(1);
+
+    private async Task OnWarehouseFilterChangedAsync(int? warehouseId)
+    {
+        _warehouseFilter = warehouseId;
+        await LoadHistoryPage(1);
+    }
+
+    private async Task SortHistoryBy(string column)
+    {
+        if (_historySortBy == column)
+        {
+            _historySortDescending = !_historySortDescending;
+        }
+        else
+        {
+            _historySortBy = column;
+            _historySortDescending = column is "created";
+        }
+
+        await LoadHistoryPage(1);
+    }
+
+    private string HistorySortIcon(string column) =>
+        _historySortBy == column ? (_historySortDescending ? "bi-sort-down-alt" : "bi-sort-up") : "bi-arrow-down-up";
+
+    private static string AllocationClass(AllocationStatus status) => status switch
+    {
+        AllocationStatus.Fulfilled => "success",
+        AllocationStatus.Partial => "warning",
+        _ => "danger"
+    };
+
+    private async Task OpenDetailAsync(int id)
+    {
+        _detail = null;
+        _detailError = null;
+        _isDetailOpen = true;
+
+        try
+        {
+            _detail = await Mediator.Send(new GetInwardDetailQuery(id));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load inward (no PKM) detail for {TransactionId}", id);
+            _detailError = ex.Message;
+        }
+    }
+
+    private void CloseDetail()
+    {
+        _isDetailOpen = false;
+        _detail = null;
+        _detailError = null;
+    }
+
+    private async Task DownloadExcelAsync(InwardHistoryDto item)
+    {
+        try
+        {
+            var detail = await Mediator.Send(new GetInwardDetailQuery(item.Id));
+            await DownloadDetailExcelAsync(detail);
+        }
+        catch (Exception ex)
+        {
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Could not build the Excel file: {ex.Message}", "danger");
+        }
+    }
+
+    private async Task DownloadDetailExcelAsync(InwardDetailDto detail)
+    {
+        var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.FromDetail(detail));
+        await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"inward-{detail.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+}

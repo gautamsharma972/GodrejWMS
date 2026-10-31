@@ -1,5 +1,6 @@
 @inject NavigationManager NavManager
 @inject IJSRuntime JsRuntime
+@inject GodrejWMS.Application.Common.Permissions.IPermissionService PermissionService
 @using System.Security.Claims
 @implements IDisposable
 
@@ -19,126 +20,142 @@
     <nav class="nav flex-column">
         <AuthorizeView>
             <Authorized>
-                <div class="nav-section-label operate-nav-heading">Operate</div>
-                <div class="nav-item dashboard-nav-item">
-                    <NavLink class="nav-link" href="" Match="NavLinkMatch.All" aria-label="Dashboard" data-tour="nav-dashboard"data-bs-title="Dashboard" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-speedometer2" aria-hidden="true"></i> <span class="nav-link-text">Dashboard</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="inventory-master" aria-label="Inventory Master" data-tour="nav-inventory-master"data-bs-title="Inventory Master" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-database-check" aria-hidden="true"></i> <span class="nav-link-text">Inventory Master</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="inventory-adjustments" aria-label="Inventory Adjustments" data-bs-title="Inventory Adjustments" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-clipboard-check" aria-hidden="true"></i> <span class="nav-link-text">Inventory Adjustments</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="racks" aria-label="Racks & Pallets" data-tour="nav-racks"data-bs-title="Racks & Pallets" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> <span class="nav-link-text">Racks &amp; Pallets</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="locations" aria-label="Location Master" data-tour="nav-locations"data-bs-title="Location Master" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-geo-alt" aria-hidden="true"></i> <span class="nav-link-text">Location Master</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="materials" aria-label="Materials" data-tour="nav-materials"data-bs-title="Materials" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-boxes" aria-hidden="true"></i> <span class="nav-link-text">Materials</span>
-                    </NavLink>
-                </div>
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewDashboard">
+                    <div class="nav-section-label operate-nav-heading">Operate</div>
+                    <div class="nav-item dashboard-nav-item">
+                        <NavLink class="nav-link" href="" Match="NavLinkMatch.All" aria-label="Dashboard" data-tour="nav-dashboard"data-bs-title="Dashboard" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-speedometer2" aria-hidden="true"></i> <span class="nav-link-text">Dashboard</span>
+                        </NavLink>
+                    </div>
+                </PermissionAuthorize>
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInventoryMaster">
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="inventory-master" aria-label="Inventory Master" data-tour="nav-inventory-master"data-bs-title="Inventory Master" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-database-check" aria-hidden="true"></i> <span class="nav-link-text">Inventory Master</span>
+                        </NavLink>
+                    </div>
+                </PermissionAuthorize>
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInventoryAdjustments">
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="inventory-adjustments" aria-label="Inventory Adjustments" data-bs-title="Inventory Adjustments" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-clipboard-check" aria-hidden="true"></i> <span class="nav-link-text">Inventory Adjustments</span>
+                        </NavLink>
+                    </div>
+                </PermissionAuthorize>
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewRacks">
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="racks" aria-label="Racks & Pallets" data-tour="nav-racks"data-bs-title="Racks & Pallets" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> <span class="nav-link-text">Racks &amp; Pallets</span>
+                        </NavLink>
+                    </div>
+                </PermissionAuthorize>
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewLocations">
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="locations" aria-label="Location Master" data-tour="nav-locations"data-bs-title="Location Master" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-geo-alt" aria-hidden="true"></i> <span class="nav-link-text">Location Master</span>
+                        </NavLink>
+                    </div>
+                </PermissionAuthorize>
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewMaterials">
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="materials" aria-label="Materials" data-tour="nav-materials"data-bs-title="Materials" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-boxes" aria-hidden="true"></i> <span class="nav-link-text">Materials</span>
+                        </NavLink>
+                    </div>
+                </PermissionAuthorize>
 
-                <div class="nav-section-label">Organization</div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="warehouses" aria-label="Warehouse Master" data-bs-title="Warehouse Master" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-building" aria-hidden="true"></i> <span class="nav-link-text">Warehouse Master</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="warehouse-categories" aria-label="Warehouse Categories" data-bs-title="Warehouse Categories" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-diagram-2" aria-hidden="true"></i> <span class="nav-link-text">Warehouse Categories</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="regions" aria-label="Regions" data-bs-title="Regions" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-globe-asia-australia" aria-hidden="true"></i> <span class="nav-link-text">Regions</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="states" aria-label="States" data-bs-title="States" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-map" aria-hidden="true"></i> <span class="nav-link-text">States</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="cities" aria-label="Cities" data-bs-title="Cities" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-pin-map" aria-hidden="true"></i> <span class="nav-link-text">Cities</span>
-                    </NavLink>
-                </div>
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewOrgMasters">
+                    <div class="nav-section-label">Organization</div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="warehouses" aria-label="Warehouse Master" data-bs-title="Warehouse Master" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-building" aria-hidden="true"></i> <span class="nav-link-text">Warehouse Master</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="warehouse-categories" aria-label="Warehouse Categories" data-bs-title="Warehouse Categories" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-diagram-2" aria-hidden="true"></i> <span class="nav-link-text">Warehouse Categories</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="regions" aria-label="Regions" data-bs-title="Regions" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-globe-asia-australia" aria-hidden="true"></i> <span class="nav-link-text">Regions</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="states" aria-label="States" data-bs-title="States" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-map" aria-hidden="true"></i> <span class="nav-link-text">States</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="cities" aria-label="Cities" data-bs-title="Cities" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-pin-map" aria-hidden="true"></i> <span class="nav-link-text">Cities</span>
+                        </NavLink>
+                    </div>
+                </PermissionAuthorize>
 
-                <div class="nav-section-label">Master Data</div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="design-types" aria-label="Design Types" data-tour="nav-master-data"data-bs-title="Design Types" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-tags" aria-hidden="true"></i> <span class="nav-link-text">Design Types</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="brands" aria-label="Brand Master" data-bs-title="Brand Master" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-bookmark" aria-hidden="true"></i> <span class="nav-link-text">Brand Master</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="aop-descriptions" aria-label="AOP Description Master" data-bs-title="AOP Description Master" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-card-text" aria-hidden="true"></i> <span class="nav-link-text">AOP Description Master</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="brand-location-preferences" aria-label="AOP Description Location Preferences" data-bs-title="AOP Description Location Preferences" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-signpost-split" aria-hidden="true"></i> <span class="nav-link-text">AOP Description Location Preferences</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="plants" aria-label="Plant Master" data-bs-title="Plant Master" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-building" aria-hidden="true"></i> <span class="nav-link-text">Plant Master</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="plant-types" aria-label="Plant Types" data-bs-title="Plant Types" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-signpost-split" aria-hidden="true"></i> <span class="nav-link-text">Plant Types</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="season-mapping" aria-label="Season Mapping" data-bs-title="Season Mapping" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-calendar-range" aria-hidden="true"></i> <span class="nav-link-text">Season Mapping</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="location-subtypes" aria-label="Location Subtypes" data-bs-title="Location Subtypes" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-tags" aria-hidden="true"></i> <span class="nav-link-text">Location Subtypes</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="sku-movement-types" aria-label="SKU Movement Types" data-bs-title="SKU Movement Types" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-speedometer2" aria-hidden="true"></i> <span class="nav-link-text">SKU Movement Types</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="zone-types" aria-label="Zone Types" data-bs-title="Zone Types" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-bullseye" aria-hidden="true"></i> <span class="nav-link-text">Zone Types</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="location-types" aria-label="Location Types" data-bs-title="Location Types" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-diagram-3" aria-hidden="true"></i> <span class="nav-link-text">Location Types</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="seasons" aria-label="Seasons" data-bs-title="Seasons" data-bs-toggle="tooltip" data-bs-placement="right">
-                        <i class="bi bi-cloud-sun" aria-hidden="true"></i> <span class="nav-link-text">Seasons</span>
-                    </NavLink>
-                </div>
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewProductMasters">
+                    <div class="nav-section-label">Master Data</div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="design-types" aria-label="Design Types" data-tour="nav-master-data"data-bs-title="Design Types" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-tags" aria-hidden="true"></i> <span class="nav-link-text">Design Types</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="brands" aria-label="Brand Master" data-bs-title="Brand Master" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-bookmark" aria-hidden="true"></i> <span class="nav-link-text">Brand Master</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="aop-descriptions" aria-label="AOP Description Master" data-bs-title="AOP Description Master" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-card-text" aria-hidden="true"></i> <span class="nav-link-text">AOP Description Master</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="brand-location-preferences" aria-label="AOP Description Location Preferences" data-bs-title="AOP Description Location Preferences" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-signpost-split" aria-hidden="true"></i> <span class="nav-link-text">AOP Description Location Preferences</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="plants" aria-label="Plant Master" data-bs-title="Plant Master" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-building" aria-hidden="true"></i> <span class="nav-link-text">Plant Master</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="plant-types" aria-label="Plant Types" data-bs-title="Plant Types" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-signpost-split" aria-hidden="true"></i> <span class="nav-link-text">Plant Types</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="season-mapping" aria-label="Season Mapping" data-bs-title="Season Mapping" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-calendar-range" aria-hidden="true"></i> <span class="nav-link-text">Season Mapping</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="location-subtypes" aria-label="Location Subtypes" data-bs-title="Location Subtypes" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-tags" aria-hidden="true"></i> <span class="nav-link-text">Location Subtypes</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="sku-movement-types" aria-label="SKU Movement Types" data-bs-title="SKU Movement Types" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-speedometer2" aria-hidden="true"></i> <span class="nav-link-text">SKU Movement Types</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="zone-types" aria-label="Zone Types" data-bs-title="Zone Types" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-bullseye" aria-hidden="true"></i> <span class="nav-link-text">Zone Types</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="location-types" aria-label="Location Types" data-bs-title="Location Types" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-diagram-3" aria-hidden="true"></i> <span class="nav-link-text">Location Types</span>
+                        </NavLink>
+                    </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="seasons" aria-label="Seasons" data-bs-title="Seasons" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-cloud-sun" aria-hidden="true"></i> <span class="nav-link-text">Seasons</span>
+                        </NavLink>
+                    </div>
+                </PermissionAuthorize>
                 <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewAuditTrail">
                     <div class="nav-item">
                         <NavLink class="nav-link" href="audit-trail" aria-label="Audit Trail" data-bs-title="Audit Trail" data-bs-toggle="tooltip" data-bs-placement="right">
@@ -164,9 +181,10 @@
                 </PermissionAuthorize>
 
                 <div class="transactions-nav-group">
-                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward">
+                @if (_showTransactionsLabel)
+                {
                     <div class="nav-section-label">Transactions</div>
-                </PermissionAuthorize>
+                }
 
                 <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward">
                     <div class="nav-item nav-group">
@@ -201,6 +219,43 @@
                             <div class="collapsed-nav-flyout-title">Inward</div>
                             <NavLink class="collapsed-nav-flyout-link" href="inward" Match="NavLinkMatch.All" @onclick="CloseCollapsedFlyout"><i class="bi bi-pencil-square"></i><span>Entry</span></NavLink>
                             <NavLink class="collapsed-nav-flyout-link" href="inward/history" @onclick="CloseCollapsedFlyout"><i class="bi bi-clock-history"></i><span>History</span></NavLink>
+                        </div>
+                    }
+                </PermissionAuthorize>
+
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInwardNoPkm">
+                    <div class="nav-item nav-group">
+                        <button type="button"
+                                @ref="_inwardNoPkmButton"
+                                class="nav-link nav-parent @(IsInwardNoPkmSection() ? "active" : string.Empty)"
+                                aria-label="Inward (No PKM)" data-tour="nav-inward-no-pkm" data-bs-title="Inward (No PKM)"
+                                data-bs-toggle="tooltip"
+                                data-bs-placement="right"
+                                aria-expanded="@(SidebarCollapsed ? IsCollapsedFlyoutOpen("inward-no-pkm") : IsInwardNoPkmMenuOpen)"
+                                @onclick="ToggleInwardNoPkmMenuAsync"
+                                @onclick:stopPropagation="true">
+                            <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
+                            <span class="nav-link-text">Inward (No PKM)</span>
+                            <i class="bi bi-chevron-down nav-chevron @(IsInwardNoPkmMenuOpen ? "expanded" : string.Empty)" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    @if (!SidebarCollapsed)
+                    {
+                        <div class="nav-submenu @(IsInwardNoPkmMenuOpen ? "expanded" : null)">
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="inward-no-pkm" Match="NavLinkMatch.All"><i class="bi bi-pencil-square" aria-hidden="true"></i> <span class="nav-link-text">Entry</span></NavLink>
+                            </div>
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="inward-no-pkm/history"><i class="bi bi-clock-history" aria-hidden="true"></i> <span class="nav-link-text">History</span></NavLink>
+                            </div>
+                        </div>
+                    }
+                    @if (SidebarCollapsed && IsCollapsedFlyoutOpen("inward-no-pkm"))
+                    {
+                        <div class="collapsed-nav-flyout" style="top: @(_collapsedFlyoutTop)px">
+                            <div class="collapsed-nav-flyout-title">Inward (No PKM)</div>
+                            <NavLink class="collapsed-nav-flyout-link" href="inward-no-pkm" Match="NavLinkMatch.All" @onclick="CloseCollapsedFlyout"><i class="bi bi-pencil-square"></i><span>Entry</span></NavLink>
+                            <NavLink class="collapsed-nav-flyout-link" href="inward-no-pkm/history" @onclick="CloseCollapsedFlyout"><i class="bi bi-clock-history"></i><span>History</span></NavLink>
                         </div>
                     }
                 </PermissionAuthorize>
@@ -372,17 +427,29 @@
     [Parameter] public bool SidebarCollapsed { get; set; }
 
     private bool? _inwardMenuExpanded;
+    private bool? _inwardNoPkmMenuExpanded;
     private bool? _pulloutMenuExpanded;
     private bool? _inventoryMovementMenuExpanded;
     private string? _collapsedFlyout;
     private double _collapsedFlyoutTop = 88;
     private ElementReference _inwardButton;
+    private ElementReference _inwardNoPkmButton;
     private ElementReference _pulloutButton;
     private ElementReference _movementButton;
+    private bool _showTransactionsLabel;
 
     protected override void OnInitialized()
     {
         NavManager.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _showTransactionsLabel =
+            await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward) ||
+            await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInwardNoPkm) ||
+            await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewPullout) ||
+            await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInventoryMovement);
     }
 
     protected override void OnParametersSet()
@@ -401,12 +468,17 @@
 
     private bool IsInwardMenuOpen => _inwardMenuExpanded ?? IsInwardSection();
 
+    private bool IsInwardNoPkmMenuOpen => _inwardNoPkmMenuExpanded ?? IsInwardNoPkmSection();
+
     private bool IsPulloutMenuOpen => _pulloutMenuExpanded ?? IsPulloutSection();
 
     private bool IsInventoryMovementMenuOpen => _inventoryMovementMenuExpanded ?? IsInventoryMovementSection();
 
     private Task ToggleInwardMenuAsync() => ToggleMenuAsync("inward", _inwardButton,
         () => _inwardMenuExpanded = !IsInwardMenuOpen);
+
+    private Task ToggleInwardNoPkmMenuAsync() => ToggleMenuAsync("inward-no-pkm", _inwardNoPkmButton,
+        () => _inwardNoPkmMenuExpanded = !IsInwardNoPkmMenuOpen);
 
     private Task TogglePulloutMenuAsync() => ToggleMenuAsync("pullout", _pulloutButton,
         () => _pulloutMenuExpanded = !IsPulloutMenuOpen);
@@ -441,6 +513,7 @@
     {
         _collapsedFlyout = null;
         _inwardMenuExpanded = null;
+        _inwardNoPkmMenuExpanded = null;
         _pulloutMenuExpanded = null;
         _inventoryMovementMenuExpanded = null;
         _ = InvokeAsync(StateHasChanged);
@@ -451,6 +524,13 @@
         var path = NavManager.ToBaseRelativePath(NavManager.Uri).Trim('/');
         return path.Equals("inward", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("inward/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsInwardNoPkmSection()
+    {
+        var path = NavManager.ToBaseRelativePath(NavManager.Uri).Trim('/');
+        return path.Equals("inward-no-pkm", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("inward-no-pkm/", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool IsPulloutSection()

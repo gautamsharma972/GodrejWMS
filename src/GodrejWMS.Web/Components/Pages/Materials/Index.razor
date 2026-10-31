@@ -1,5 +1,5 @@
 @page "/materials"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewMaterials)]
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Common.Interfaces
 @using GodrejWMS.Application.Features.Brands.Dtos

@@ -383,6 +383,8 @@
         min-height: auto;
         position: relative;
         overflow: visible;
+        background: #fff;
+        box-shadow: none;
     }
 
     .sidebar-state-control:checked + .page .sidebar {
@@ -391,11 +393,25 @@
 
     .top-row {
         position: relative;
-        padding: 0.85rem 1rem;
+        min-height: 58px;
+        justify-content: flex-end;
+        padding: 0.55rem 1rem;
+        background: #fff;
+        backdrop-filter: none;
+    }
+
+    /* The mobile navigation already provides the menu button in the brand row.
+       Keep this secondary bar focused on session actions only. */
+    .top-row-left,
+    .top-row .tour-launch {
+        display: none;
     }
 
     .top-row-actions {
+        width: 100%;
         gap: 0.45rem;
+        flex-wrap: nowrap;
+        justify-content: flex-end;
     }
 
     .account-dropdown {

@@ -5,6 +5,40 @@ namespace GodrejWMS.Application.Features.Inward.Dtos;
 /// <summary>One parsed row from an "inward" Excel upload: Material Code, Total Stock in CFB(qty), Mfg Month.</summary>
 public sealed record InwardImportRow(long MaterialCode, decimal QuantityBoxes, string MfgMonthText, int RowNumber);
 
+/// <summary>One worksheet's worth of data from a multi-sheet Unloading Sheet workbook upload (see
+/// <see cref="GodrejWMS.Application.Common.Interfaces.IExcelService.ReadInwardWorkbook"/>) - the
+/// client's real daily workflow adds one sheet per receipt to the same growing file. Every field is
+/// read from a fixed cell/row position (header row 8, LR No at D2, Vehicle No at D3, Received From
+/// at F5, an already-assigned GRN Reference Number at E2 if this sheet was already processed), not
+/// label-scanned, since this reader assumes the client's own native layout exactly.</summary>
+public sealed record InwardSheetUploadData(
+    string SheetName,
+    bool IsOrderSheet,
+    IReadOnlyList<InwardImportRow> Rows,
+    string? VehicleNumber,
+    string? LrNumber,
+    string? ReceivedFrom,
+    string? ExistingGrnReference,
+    IReadOnlyList<int> RowsMissingPkm);
+
+public enum InwardSheetImportStatus
+{
+    Created,
+    SkippedNotOrderSheet,
+    SkippedNoData,
+    SkippedMissingPkm,
+    SkippedDuplicateReference,
+    SkippedDuplicateLrVehicleSource,
+    Error
+}
+
+/// <summary>What happened for one sheet of an <see cref="GodrejWMS.Application.Features.Inward.Commands.ImportInwardWorkbookCommand"/> upload.</summary>
+public sealed record InwardSheetImportOutcome(
+    string SheetName,
+    InwardSheetImportStatus Status,
+    string? ReferenceNumber,
+    string Message);
+
 public sealed record InwardLineResultDto(
     long MaterialNumber,
     string MaterialDescription,
@@ -34,7 +68,8 @@ public sealed record InwardHistoryDto(
     decimal TotalQuantityBoxes,
     AllocationStatus Status,
     bool IsConfirmed,
-    bool IsRejected);
+    bool IsRejected,
+    bool IsPkmless = false);
 
 public sealed record InwardPutawayDto(
     string LocationCode,

@@ -1,5 +1,5 @@
 @page "/racks"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewRacks)]
 @using GodrejWMS.Application.Common.Exceptions
 @using GodrejWMS.Application.Features.Racks.Commands
 @using GodrejWMS.Application.Features.Racks.Dtos

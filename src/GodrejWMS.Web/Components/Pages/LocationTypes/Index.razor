@@ -1,5 +1,5 @@
 @page "/location-types"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewProductMasters)]
 @using GodrejWMS.Application.Features.LocationTypes.Commands
 @using GodrejWMS.Application.Features.LocationTypes.Dtos
 @using GodrejWMS.Application.Features.LocationTypes.Queries

@@ -52,6 +52,10 @@ public static class MfgMonthParser
         return $"{date:MMM}|{date:yyyy}".ToUpperInvariant();
     }
 
+    /// <summary>Same as <see cref="Format(int)"/>, but for a line that may have no PKM at all (the
+    /// Pickers' "Inward without PKM" flow) - shows "No PKM" instead of throwing on a null month.</summary>
+    public static string FormatOrNoPkm(int? mfgMonth) => mfgMonth.HasValue ? Format(mfgMonth.Value) : "No PKM";
+
     public static int ToStorageValue(int year, int month) => (year * 100) + month;
 
     public static DateOnly ToDateOnly(int mfgMonth) => new(mfgMonth / 100, mfgMonth % 100, 1);

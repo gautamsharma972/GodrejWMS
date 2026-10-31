@@ -105,7 +105,7 @@ public sealed class GetRackLayoutHandler(IApplicationDbContext db) : IRequestHan
                         s.QuantityBoxes)).ToList(),
                     positionReservations.Select(r => new PalletPositionReservationDto(
                         r.ReferenceNumber, r.MaterialNumber, r.MaterialDescription,
-                        MfgMonthParser.Format(r.MfgMonth), r.QuantityBoxes)).ToList());
+                        MfgMonthParser.FormatOrNoPkm(r.MfgMonth), r.QuantityBoxes)).ToList());
             })
             .ToList();
 

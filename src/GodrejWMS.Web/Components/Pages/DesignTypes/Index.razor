@@ -1,5 +1,5 @@
 @page "/design-types"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewProductMasters)]
 @using GodrejWMS.Application.Features.DesignTypes.Commands
 @using GodrejWMS.Application.Features.DesignTypes.Dtos
 @using GodrejWMS.Application.Features.DesignTypes.Queries

@@ -1,5 +1,5 @@
 @page "/zone-types"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewProductMasters)]
 @using GodrejWMS.Application.Features.ZoneTypes.Commands
 @using GodrejWMS.Application.Features.ZoneTypes.Dtos
 @using GodrejWMS.Application.Features.ZoneTypes.Queries

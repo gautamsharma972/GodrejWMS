@@ -1,6 +1,6 @@
 @page "/inventory-master"
 @page "/stock-master"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInventoryMaster)]
 @implements IDisposable
 @using GodrejWMS.Application.Common.Interfaces
 @using GodrejWMS.Application.Common.Models

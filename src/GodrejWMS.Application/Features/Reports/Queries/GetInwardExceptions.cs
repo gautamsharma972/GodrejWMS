@@ -59,7 +59,7 @@ public sealed class GetInwardExceptionsHandler(IApplicationDbContext db)
                 l.CreatedAt,
                 l.MaterialNumber,
                 l.MaterialDescription,
-                MfgMonthParser.Format(l.MfgMonth),
+                MfgMonthParser.FormatOrNoPkm(l.MfgMonth),
                 l.RequestedQuantityBoxes,
                 l.AllocatedQuantityBoxes,
                 l.RequestedQuantityBoxes - l.AllocatedQuantityBoxes,

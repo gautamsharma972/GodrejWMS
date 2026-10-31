@@ -525,6 +525,185 @@ public class ClosedXmlExcelService : IExcelService
         return rows;
     }
 
+    private const int InwardWorkbookHeaderRow = 8;
+
+    public IReadOnlyList<InwardSheetUploadData> ReadInwardWorkbook(Stream fileStream)
+    {
+        using var workbook = LoadWorkbook(fileStream);
+        var results = new List<InwardSheetUploadData>();
+
+        foreach (var ws in workbook.Worksheets)
+        {
+            var isOrderSheet = ws.Cell(InwardWorkbookHeaderRow, 1).GetString()
+                .Contains("Code", StringComparison.OrdinalIgnoreCase);
+
+            if (!isOrderSheet)
+            {
+                results.Add(new InwardSheetUploadData(ws.Name, false, [], null, null, null, null, []));
+                continue;
+            }
+
+            var lrNumber = NullIfEmpty(ws.Cell(2, 4).GetString());
+            var vehicleNumber = NullIfEmpty(ws.Cell(3, 4).GetString());
+            var receivedFrom = NullIfEmpty(ws.Cell(5, 6).GetString());
+            var existingGrnReference = NullIfEmpty(ws.Cell(2, 5).GetString());
+
+            var rows = new List<InwardImportRow>();
+            var rowsMissingPkm = new List<int>();
+            for (var row = InwardWorkbookHeaderRow + 1; ; row++)
+            {
+                var codeCell = ws.Cell(row, 1);
+                var codeText = codeCell.GetString().Trim();
+
+                if (codeText.Contains("Remark", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+
+                // Real sheets interrupt the data table with the occasional blank row, or a
+                // repeated mini-header row if the client manually appended more lines past the
+                // printed footer. Neither is a Code, and neither is "Remark" (the true end of this
+                // sheet's data), so keep scanning forward instead of stopping here.
+                if (ws.LastRowUsed() is { } lastRowUsed && row > lastRowUsed.RowNumber())
+                {
+                    break;
+                }
+                if (codeText.Length == 0 || !long.TryParse(codeText, out var materialCode) || materialCode <= 0)
+                {
+                    continue;
+                }
+
+                var pkmText = NullIfEmpty(ws.Cell(row, 6).GetString());
+                if (pkmText is null)
+                {
+                    rowsMissingPkm.Add(row);
+                }
+
+                rows.Add(new InwardImportRow(
+                    MaterialCode: materialCode,
+                    QuantityBoxes: ReadDecimal(ws.Cell(row, 3)),
+                    MfgMonthText: pkmText ?? string.Empty,
+                    RowNumber: row));
+            }
+
+            results.Add(new InwardSheetUploadData(ws.Name, true, rows, vehicleNumber, lrNumber, receivedFrom, existingGrnReference, rowsMissingPkm));
+        }
+
+        return results;
+    }
+
+    /// <summary>Sample workbook for the multi-sheet Inward upload (<see cref="ReadInwardWorkbook"/>):
+    /// one sheet, laid out at the exact fixed cells that reader expects - LR No at D2, Vehicle No
+    /// at D3, Received From at F5, an (initially blank) GRN Reference Number placeholder at E2, the
+    /// "Code" table header at row 8, three sample data rows (including a sample Pkd/Batch value,
+    /// since - unlike Pullout's PKM - this one is required for every row or the whole sheet is
+    /// skipped), and a "Remark" footer marking the end of data.</summary>
+    public byte[] WriteInwardWorkbookSampleTemplate()
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("UNLOADING SHEET");
+
+        ws.Column(1).Width = 16;
+        ws.Column(2).Width = 42;
+        ws.Column(3).Width = 12;
+        ws.Column(4).Width = 16;
+        ws.Column(5).Width = 14;
+        ws.Column(6).Width = 14;
+
+        var samples = new (long Code, string Description, decimal Qty, string Pkm)[]
+        {
+            (40034354, "Sample material A", 40, "MAR|2026"),
+            (40058047, "Sample material B", 20, "MAR|2026"),
+            (50010001, "Sample material C", 10, "APR|2026")
+        };
+        const int firstDataRow = 9;
+        var footerStartRow = Math.Max(24, firstDataRow + samples.Length + 1);
+        var lastRow = footerStartRow + 6;
+
+        var whole = ws.Range(1, 1, lastRow, 6);
+        whole.Style.Font.FontName = "Arial";
+        whole.Style.Font.FontSize = 10;
+        whole.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+        whole.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+        whole.Style.Border.OutsideBorderColor = XLColor.FromHtml("#222222");
+        whole.Style.Border.InsideBorderColor = XLColor.FromHtml("#222222");
+        whole.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+
+        for (var r = 1; r <= 8; r++) ws.Row(r).Height = 21;
+
+        void Label(int row, int col, string text)
+        {
+            ws.Cell(row, col).Value = text;
+            ws.Cell(row, col).Style.Font.Bold = true;
+        }
+
+        ws.Range(1, 1, 1, 6).Merge();
+        ws.Cell(1, 1).Value = "UNLOADING SHEET";
+        ws.Cell(1, 1).Style.Font.Bold = true;
+        ws.Cell(1, 1).Style.Font.FontSize = 14;
+        ws.Cell(1, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        Label(2, 1, "Invoice No:-");
+        Label(2, 3, "LR NO :-");
+        // D2 left blank for the client to fill in - value at D2 is the LR No, required by
+        // ReadInwardWorkbook.
+        ws.Cell(2, 5).CreateComment().AddText(
+            "GRN Reference Number - once this sheet has been processed, paste the GRN Reference " +
+            "Number you were given here. Re-uploading this workbook will then skip this sheet " +
+            "instead of creating a duplicate GRN.");
+
+        Label(3, 1, "Invoice Date:-");
+        Label(3, 3, "Vehicle No:-"); // value at D3 - required by ReadInwardWorkbook
+        Label(3, 5, "Plan");
+
+        Label(5, 1, "TRANSPORT");
+        Label(5, 3, "Unloading Check List");
+        Label(5, 5, "Received from:"); // value at F5 - required by ReadInwardWorkbook
+
+        Label(6, 1, "DOCK No");
+        Label(6, 3, "Start Time :-");
+        Label(6, 5, "Sup Name:");
+
+        Label(7, 1, "Date:-");
+        Label(7, 3, "End Time :-");
+
+        string[] columnHeaders = ["Code", "Desc", "Qty", "Inbound Delv No", "Physical Qty", "Pkd/Batch"];
+        for (var c = 0; c < columnHeaders.Length; c++)
+        {
+            Label(8, c + 1, columnHeaders[c]);
+        }
+
+        for (var i = 0; i < samples.Length; i++)
+        {
+            var row = firstDataRow + i;
+            ws.Row(row).Height = 20;
+            ws.Cell(row, 1).Value = samples[i].Code;
+            ws.Cell(row, 1).Style.NumberFormat.Format = "@";
+            ws.Cell(row, 2).Value = samples[i].Description;
+            ws.Cell(row, 3).Value = samples[i].Qty;
+            ws.Cell(row, 3).Style.NumberFormat.Format = "0";
+            ws.Cell(row, 6).Value = samples[i].Pkm;
+        }
+
+        var remarkRow = footerStartRow;
+        Label(remarkRow, 1, "Remark");
+        Label(remarkRow, 2, "Product Code / Description");
+        Label(remarkRow, 3, "Damage");
+        Label(remarkRow, 4, "Shortage");
+        Label(remarkRow, 5, "Outer CFB");
+        Label(remarkRow, 6, "Interchange");
+        ws.Row(remarkRow).Height = 21;
+
+        var signRow = remarkRow + 4;
+        Label(signRow, 1, "Supervisor Sign");
+        Label(signRow, 3, "Driver Sign");
+        ws.Row(signRow).Height = 21;
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
     public byte[] WritePulloutUploadTemplate(IReadOnlyList<string> plantNames)
     {
         using var workbook = new XLWorkbook();
@@ -559,6 +738,115 @@ public class ClosedXmlExcelService : IExcelService
 
             ws.Cell(7, 2).CreateDataValidation().List(lookupSheet.Range(1, 1, plantNames.Count, 1), true);
         }
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    /// <summary>Sample workbook for the multi-sheet upload (<see cref="ReadPulloutWorkbook"/>):
+    /// one sheet, laid out at the exact fixed cells that reader expects - Vehicle No at B9,
+    /// Destination at B10, an (initially blank) Pick Reference Number placeholder at H10, the
+    /// "Code" table header at row 12, three sample data rows, and a "Driver Sign" footer marking
+    /// the end of data. The client adds one more sheet like this per order through the day and
+    /// re-uploads the whole workbook; H10 gets filled in by the client once a sheet comes back with
+    /// a Pick Reference Number, so a later re-upload of that same sheet is recognized as already
+    /// done instead of creating a duplicate pullout.</summary>
+    public byte[] WritePulloutWorkbookSampleTemplate()
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Loading Sheet");
+
+        ws.Column(1).Width = 15;
+        ws.Column(2).Width = 65;
+        ws.Column(3).Width = 11;
+        ws.Column(4).Width = 11;
+        ws.Column(5).Width = 11;
+        ws.Column(6).Width = 11;
+        ws.Column(7).Width = 12;
+        ws.Column(8).Width = 21;
+
+        var samples = new (long Code, string Description, decimal DelQty)[]
+        {
+            (40034354, "Sample material A", 40),
+            (40058047, "Sample material B", 20),
+            (50010001, "Sample material C", 10)
+        };
+        const int firstDataRow = 13;
+        var footerStartRow = Math.Max(23, firstDataRow + samples.Length + 1);
+        var lastRow = footerStartRow + 8;
+
+        var whole = ws.Range(1, 1, lastRow, 8);
+        whole.Style.Font.FontName = "Arial";
+        whole.Style.Font.FontSize = 10;
+        whole.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+        whole.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+        whole.Style.Border.OutsideBorderColor = XLColor.FromHtml("#222222");
+        whole.Style.Border.InsideBorderColor = XLColor.FromHtml("#222222");
+        whole.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+
+        for (var r = 1; r <= 4; r++) ws.Row(r).Height = 18;
+        for (var r = 5; r <= 12; r++) ws.Row(r).Height = 21;
+
+        void Centered(int row, string text, bool big = false)
+        {
+            ws.Range(row, 1, row, 8).Merge();
+            ws.Cell(row, 1).Value = text;
+            ws.Cell(row, 1).Style.Font.Bold = true;
+            ws.Cell(row, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            if (big) ws.Cell(row, 1).Style.Font.FontSize = 15;
+        }
+
+        void Label(int row, int col, string text)
+        {
+            ws.Cell(row, col).Value = text;
+            ws.Cell(row, col).Style.Font.Bold = true;
+        }
+
+        Centered(5, "GODREJ CONSUMER PRODUCTS LTD");
+        Centered(6, "C/O RPM Logistics Pvt Ltd. Add- E - 2  Vadpa Village BHIWANDI-421302");
+
+        ws.Cell(7, 1).Value = "Loading Sheet";
+        ws.Cell(7, 1).Style.Font.Bold = true;
+        ws.Cell(7, 1).Style.Font.FontSize = 15;
+        Label(7, 3, "GATE NO:");
+        Label(7, 5, "Plan Time:");
+
+        Label(8, 1, "Transport Name"); // value at B8
+        Label(8, 5, "Date");
+        Label(8, 7, "Weight");
+        // GATE NO's value sits one row below its row-7 label, same column C (FindLabeledValueBelow).
+
+        Label(9, 1, "Vehicle no"); // value at B9 - required by ReadPulloutWorkbook
+        Label(9, 5, "Start Time");
+        Label(9, 7, "Volum");
+
+        Label(10, 1, "Destination"); // value at B10 - required by ReadPulloutWorkbook
+        Label(10, 5, "End Time");
+        Label(10, 7, "Indent");
+        // H10 left blank: fill this in with the Pick Reference Number once this sheet has been
+        // pulled, so re-uploading the same workbook later skips it instead of creating a duplicate.
+        ws.Cell(10, 8).CreateComment().AddText(
+            "Pick Reference Number - once this sheet has been pulled, paste the Pick Reference " +
+            "Number you were given here. Re-uploading this workbook will then skip this sheet " +
+            "instead of creating a duplicate pullout.");
+
+        Label(11, 1, "Driver No"); // value at B11
+        // The Indent value (the client's own order/indent number, if any) sits one row below its
+        // row-10 "Indent" label, same column G - same pattern as GATE NO.
+
+        string[] columnHeaders = ["Code", "Description", "Del Qty", "Priority", "MRP", "PKD", "Load Qty", "Remarks"];
+        for (var c = 0; c < columnHeaders.Length; c++)
+        {
+            Label(12, c + 1, columnHeaders[c]);
+        }
+
+        for (var i = 0; i < samples.Length; i++)
+        {
+            WriteLoadingSheetDataRow(ws, firstDataRow + i, samples[i].Code, samples[i].Description, samples[i].DelQty, priority: null, remarks: null);
+        }
+
+        WriteLoadingSheetFooter(ws, footerStartRow);
 
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
@@ -663,6 +951,79 @@ public class ClosedXmlExcelService : IExcelService
         }
 
         return (rows, headerFields, indentText);
+    }
+
+    private const int PulloutWorkbookHeaderRow = 12;
+
+    public IReadOnlyList<PulloutSheetUploadData> ReadPulloutWorkbook(Stream fileStream)
+    {
+        using var workbook = LoadWorkbook(fileStream);
+        var results = new List<PulloutSheetUploadData>();
+
+        foreach (var ws in workbook.Worksheets)
+        {
+            var isOrderSheet = ws.Cell(PulloutWorkbookHeaderRow, 1).GetString()
+                .Contains("Code", StringComparison.OrdinalIgnoreCase);
+
+            if (!isOrderSheet)
+            {
+                results.Add(new PulloutSheetUploadData(ws.Name, false, [], new PulloutLoadingSheetFieldsDto(), null, null, null));
+                continue;
+            }
+
+            var destination = NullIfEmpty(ws.Cell(10, 2).GetString());
+            var vehicleNumber = NullIfEmpty(ws.Cell(9, 2).GetString());
+            var existingPickReference = NullIfEmpty(ws.Cell(10, 8).GetString());
+
+            var headerFields = new PulloutLoadingSheetFieldsDto(
+                TransportName: FindLabeledValue(ws, PulloutWorkbookHeaderRow, "Transport"),
+                VehicleNumber: vehicleNumber,
+                GateNumber: FindLabeledValueBelow(ws, PulloutWorkbookHeaderRow, "GATE NO"),
+                DriverNumber: FindLabeledValue(ws, PulloutWorkbookHeaderRow, "Driver No"),
+                PlanTime: FindLabeledValue(ws, PulloutWorkbookHeaderRow, "Plan Time:"),
+                DateText: FindLabeledValue(ws, PulloutWorkbookHeaderRow, "Date"),
+                StartTime: FindLabeledValue(ws, PulloutWorkbookHeaderRow, "Start Time"),
+                EndTime: FindLabeledValue(ws, PulloutWorkbookHeaderRow, "End Time"),
+                WeightText: FindTextStartingWith(ws, PulloutWorkbookHeaderRow, "Weight"),
+                VolumeText: FindTextStartingWith(ws, PulloutWorkbookHeaderRow, "Volume"));
+
+            var rows = new List<PulloutImportRow>();
+            for (var row = PulloutWorkbookHeaderRow + 1; ; row++)
+            {
+                var codeCell = ws.Cell(row, 1);
+                var codeText = codeCell.GetString().Trim();
+
+                if (codeText.Contains("Driver Sign", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+
+                // Real sheets interrupt the data table with the occasional blank row, or - after
+                // the client manually appends more lines past the printed footer - a repeated
+                // mini-header row. Neither is a Code, and neither is "Driver Sign" (the true end of
+                // this sheet's data), so keep scanning forward instead of stopping here.
+                if (ws.LastRowUsed() is { } lastRowUsed && row > lastRowUsed.RowNumber())
+                {
+                    break;
+                }
+                if (codeText.Length == 0 || !long.TryParse(codeText, out var materialCode) || materialCode <= 0)
+                {
+                    continue;
+                }
+
+                rows.Add(new PulloutImportRow(
+                    MaterialCode: materialCode,
+                    QuantityBoxes: ReadDecimal(ws.Cell(row, 3)),
+                    RowNumber: row,
+                    PlantName: destination,
+                    Priority: NullIfEmpty(ws.Cell(row, 4).GetString()),
+                    MaterialDescription: NullIfEmpty(ws.Cell(row, 2).GetString())));
+            }
+
+            results.Add(new PulloutSheetUploadData(ws.Name, true, rows, headerFields, vehicleNumber, destination, existingPickReference));
+        }
+
+        return results;
     }
 
     /// <summary>Tokenizes text copied from Excel: cells separated by tab, rows by a line break. A
@@ -1138,6 +1499,21 @@ public class ClosedXmlExcelService : IExcelService
         for (var c = 0; c < columnHeaders.Length; c++)
         {
             Label(11, c + 1, columnHeaders[c]);
+        }
+
+        WriteLoadingSheetFooter(ws, footerStartRow);
+    }
+
+    /// <summary>The GCPL Loading Sheet's standard 9-row footer (Driver Sign / Loading Total,
+    /// Supervisor Sign / Checked By, blank, Sr.No/Delivery No/Del Qty/Total Spending header, 3
+    /// numbered rows, Total), starting at <paramref name="footerStartRow"/>. Shared by every
+    /// Loading Sheet layout this service writes, so the footer looks identical everywhere.</summary>
+    private static void WriteLoadingSheetFooter(IXLWorksheet ws, int footerStartRow)
+    {
+        void Label(int row, int col, string text)
+        {
+            ws.Cell(row, col).Value = text;
+            ws.Cell(row, col).Style.Font.Bold = true;
         }
 
         ws.Row(footerStartRow).Height = 21;

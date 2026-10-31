@@ -112,7 +112,7 @@ public sealed class ChangeInwardPutawayRackHandler(IApplicationDbContext db)
             p => p.Id,
             p => p.StockBatches
                 .Where(b => b.QuantityBoxes > 0)
-                .Select(b => b.MfgMonth)
+                .Select(b => (int?)b.MfgMonth)
                 .Concat(otherReservations.Where(r => r.PalletPositionId == p.Id).Select(r => r.MfgMonth))
                 .ToHashSet());
 

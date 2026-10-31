@@ -14,7 +14,7 @@ public static class InwardResultMapper
             .Select(l => new InwardLineResultDto(
                 l.Material.MaterialNumber,
                 l.Material.Description,
-                MfgMonthParser.Format(l.MfgMonth),
+                MfgMonthParser.FormatOrNoPkm(l.MfgMonth),
                 l.RequestedQuantityBoxes,
                 l.AllocatedQuantityBoxes,
                 l.Status,

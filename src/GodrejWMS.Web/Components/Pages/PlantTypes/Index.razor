@@ -1,5 +1,5 @@
 @page "/plant-types"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewProductMasters)]
 @using GodrejWMS.Application.Features.PlantTypes.Commands
 @using GodrejWMS.Application.Features.PlantTypes.Dtos
 @using GodrejWMS.Application.Features.PlantTypes.Queries

@@ -1,27 +1,87 @@
 @page "/"
 @attribute [Authorize]
+@using GodrejWMS.Application.Common.Permissions
 @using GodrejWMS.Application.Features.StockMaster.Dtos
 @using GodrejWMS.Application.Features.StockMaster.Queries
 @using GodrejWMS.Application.Features.Seasons.Dtos
 @using GodrejWMS.Application.Features.Seasons.Queries
 @inject IMediator Mediator
+@inject IPermissionService PermissionService
 
 <PageTitle>Dashboard - Godrej WMS</PageTitle>
 
-<div class="page-header">
-    <div>
-        <div class="eyebrow">Control Tower</div>
-        <h1>Warehouse Dashboard</h1>
-    </div>
-    <div class="header-actions">
-        <a class="btn btn-outline-secondary" href="inventory-master"><i class="bi bi-database-check"></i> Inventory</a>
-        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward">
-            <a class="btn btn-primary" href="inward"><i class="bi bi-box-arrow-in-down"></i> Inward</a>
-        </PermissionAuthorize>
-    </div>
-</div>
+@if (!_hasDashboardAccess)
+{
+    <div class="picker-home">
+        <section class="picker-home-hero" aria-labelledby="picker-home-title">
+            <div class="picker-home-hero-copy">
+                <span class="picker-home-eyebrow">
+                    <i class="bi bi-person-workspace" aria-hidden="true"></i>
+                    Picker workspace
+                </span>
+                <h1 id="picker-home-title">Warehouse operations</h1>
+                <p>Receive stock or review previous inward transactions from one simple workspace.</p>
+            </div>
+            <div class="picker-home-status" role="status">
+                <span class="live-dot" aria-hidden="true"></span>
+                System ready
+            </div>
+        </section>
 
-@if (_summary is null)
+        <section class="picker-action-section" aria-labelledby="picker-actions-title">
+            <div class="picker-section-heading">
+                <div>
+                    <span class="eyebrow">Quick access</span>
+                    <h2 id="picker-actions-title">Choose a task</h2>
+                </div>
+                <p>Use the options below to begin or review your work.</p>
+            </div>
+
+            <div class="picker-action-grid">
+                <PermissionAuthorize Permission="@PermissionKeys.Menu.ViewInwardNoPkm">
+                    <a class="picker-action-card picker-action-primary" href="inward-no-pkm">
+                        <span class="picker-action-icon"><i class="bi bi-box-arrow-in-down" aria-hidden="true"></i></span>
+                        <span class="picker-action-content">
+                            <strong>Record inward</strong>
+                            <small>Receive materials and enter incoming box quantities.</small>
+                        </span>
+                        <span class="picker-action-arrow" aria-hidden="true"><i class="bi bi-arrow-right"></i></span>
+                    </a>
+
+                    <a class="picker-action-card" href="inward-no-pkm/history">
+                        <span class="picker-action-icon"><i class="bi bi-clock-history" aria-hidden="true"></i></span>
+                        <span class="picker-action-content">
+                            <strong>Inward history</strong>
+                            <small>Review previously created inward transactions.</small>
+                        </span>
+                        <span class="picker-action-arrow" aria-hidden="true"><i class="bi bi-arrow-right"></i></span>
+                    </a>
+                </PermissionAuthorize>
+            </div>
+        </section>
+
+        <div class="picker-home-tip">
+            <i class="bi bi-lightbulb" aria-hidden="true"></i>
+            <span>Select <strong>Record inward</strong> to start a new receipt. Use history when you need to check an earlier entry.</span>
+        </div>
+    </div>
+}
+else
+{
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Control Tower</div>
+            <h1>Warehouse Dashboard</h1>
+        </div>
+        <div class="header-actions">
+            <a class="btn btn-outline-secondary" href="inventory-master"><i class="bi bi-database-check"></i> Inventory</a>
+            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward">
+                <a class="btn btn-primary" href="inward"><i class="bi bi-box-arrow-in-down"></i> Inward</a>
+            </PermissionAuthorize>
+        </div>
+    </div>
+
+    @if (_summary is null)
 {
     <div class="loading-panel">
         <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
@@ -201,9 +261,11 @@ else
             <a class="btn btn-primary" href="pullout"><i class="bi bi-box-arrow-up"></i> Record Pullout</a>
         </PermissionAuthorize>
     </div>
+    }
 }
 
 @code {
+    private bool _hasDashboardAccess;
     private StockSummaryDto? _summary;
     private IReadOnlyList<SeasonDto> _seasons = [];
     private int? _seasonFilter;
@@ -212,6 +274,12 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        _hasDashboardAccess = await PermissionService.HasPermissionAsync(PermissionKeys.Menu.ViewDashboard);
+        if (!_hasDashboardAccess)
+        {
+            return;
+        }
+
         _seasons = await Mediator.Send(new GetSeasonsQuery());
         _summary = await Mediator.Send(new GetStockSummaryQuery());
     }

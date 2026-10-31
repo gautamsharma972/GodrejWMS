@@ -1,5 +1,5 @@
 @page "/sku-movement-types"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewProductMasters)]
 @using GodrejWMS.Application.Features.SkuMovementTypes.Commands
 @using GodrejWMS.Application.Features.SkuMovementTypes.Dtos
 @using GodrejWMS.Application.Features.SkuMovementTypes.Queries

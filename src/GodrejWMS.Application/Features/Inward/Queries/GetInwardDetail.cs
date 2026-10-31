@@ -31,7 +31,7 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
                 l.Material.MaterialNumber,
                 l.Material.Description,
                 l.Material.DesignType,
-                MfgMonthParser.Format(l.MfgMonth),
+                MfgMonthParser.FormatOrNoPkm(l.MfgMonth),
                 l.RequestedQuantityBoxes,
                 l.AllocatedQuantityBoxes,
                 l.Status,

@@ -1,5 +1,5 @@
 @page "/plants"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewProductMasters)]
 @using GodrejWMS.Application.Features.Plants.Commands
 @using GodrejWMS.Application.Features.Plants.Dtos
 @using GodrejWMS.Application.Features.Plants.Queries

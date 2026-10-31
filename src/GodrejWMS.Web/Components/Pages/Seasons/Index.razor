@@ -1,5 +1,5 @@
 @page "/seasons"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewProductMasters)]
 @using GodrejWMS.Application.Features.Seasons.Commands
 @using GodrejWMS.Application.Features.Seasons.Dtos
 @using GodrejWMS.Application.Features.Seasons.Queries

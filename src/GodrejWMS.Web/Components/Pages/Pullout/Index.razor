@@ -12,6 +12,7 @@
 @inject IMediator Mediator
 @inject IExcelService ExcelService
 @inject IJSRuntime JsRuntime
+@inject NavigationManager NavManager
 @inject ILogger<Index> Logger
 
 <PageTitle>Picking - Godrej WMS</PageTitle>
@@ -121,6 +122,7 @@
                     </button>
                 </div>
 
+                @* Paste from Excel - temporarily disabled, see user request to remove for now.
                 <div class="paste-upload-section paste-upload-workspace">
                     <div class="paste-upload-copy">
                         <span class="paste-upload-icon" aria-hidden="true">
@@ -141,6 +143,7 @@
                         </button>
                     </div>
                 </div>
+                *@
             </div>
         </div>
 
@@ -186,6 +189,81 @@
     @if (!string.IsNullOrEmpty(_error))
     {
         <div class="alert alert-danger mb-0">@_error</div>
+    }
+
+    @if (_workbookOutcomes is not null)
+    {
+        var created = _workbookOutcomes.Count(o => o.Status == PulloutSheetImportStatus.Created);
+        <div class="result-ready-bar">
+            <div class="info-bar-icon">
+                <i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i>
+            </div>
+            <div class="info-bar-content">
+                <h2>Workbook processed</h2>
+                <p>@created of @_workbookOutcomes.Count sheet(s) created as new pullouts - see the summary for what was skipped or failed.</p>
+            </div>
+            <button type="button" class="btn btn-primary" @onclick="() => _isWorkbookResultModalOpen = true">
+                <i class="bi bi-eye" aria-hidden="true"></i>
+                View Summary
+            </button>
+        </div>
+    }
+
+    @if (_workbookOutcomes is not null && _isWorkbookResultModalOpen)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseWorkbookResultModal">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="workbook-result-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Multi-Sheet Upload</div>
+                        <h2 id="workbook-result-title" class="slide-over-title">Workbook Import Summary</h2>
+                        <p class="slide-over-subtitle">@_workbookOutcomes.Count(o => o.Status == PulloutSheetImportStatus.Created) of @_workbookOutcomes.Count sheet(s) created</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close summary" @onclick="CloseWorkbookResultModal">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Sheet</th>
+                                    <th>Outcome</th>
+                                    <th>Reference</th>
+                                    <th>Message</th>
+                                    <th class="table-actions history-actions-column">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var outcome in _workbookOutcomes)
+                                {
+                                    <tr>
+                                        <td>@outcome.SheetName</td>
+                                        <td><span class="status-pill @WorkbookOutcomePillClass(outcome.Status)">@WorkbookOutcomeLabel(outcome.Status)</span></td>
+                                        <td>@(outcome.ReferenceNumber ?? "—")</td>
+                                        <td>@outcome.Message</td>
+                                        <td class="table-actions history-actions-column">
+                                            @if (outcome.Status == PulloutSheetImportStatus.Created && outcome.ReferenceNumber is not null)
+                                            {
+                                                <div class="history-row-actions">
+                                                    <button type="button" class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {outcome.ReferenceNumber}")" aria-label="@($"View {outcome.ReferenceNumber}")" @onclick="() => ViewWorkbookPulloutAsync(outcome.ReferenceNumber)">
+                                                        <i class="bi bi-eye" aria-hidden="true"></i>
+                                                    </button>
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary table-action-btn history-download-btn" title="@($"Download Excel {outcome.ReferenceNumber}")" aria-label="@($"Download Excel {outcome.ReferenceNumber}")" @onclick="() => DownloadWorkbookPulloutExcelAsync(outcome.ReferenceNumber)">
+                                                        <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                                                    </button>
+                                                </div>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
     }
 
     @if (_result is not null)
@@ -416,6 +494,8 @@
     private PulloutResultDto? _result;
     private string _statusFilter = string.Empty;
     private bool _isResultModalOpen;
+    private IReadOnlyList<PulloutSheetImportOutcome>? _workbookOutcomes;
+    private bool _isWorkbookResultModalOpen;
     private string _pasteText = string.Empty;
     private DotNetObjectReference<Index>? _outsideClickReference;
     private string? _outsideClickHandlerId;
@@ -459,6 +539,67 @@
         _isResultModalOpen = false;
         ClosePickLocationChange();
     }
+
+    private void CloseWorkbookResultModal() => _isWorkbookResultModalOpen = false;
+
+    private async Task ViewWorkbookPulloutAsync(string referenceNumber)
+    {
+        try
+        {
+            var detail = await Mediator.Send(new GetPulloutDetailByReferenceQuery(referenceNumber));
+            NavManager.NavigateTo($"/pullout/{detail.Id}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to resolve pullout {ReferenceNumber} for viewing", referenceNumber);
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Could not open {referenceNumber}: {ex.Message}", "danger");
+        }
+    }
+
+    private async Task DownloadWorkbookPulloutExcelAsync(string referenceNumber)
+    {
+        try
+        {
+            var detail = await Mediator.Send(new GetPulloutDetailByReferenceQuery(referenceNumber));
+            var rows = detail.Lines
+                .SelectMany(l => l.Picks.Select(p => new PulloutDownloadRowDto(
+                    l.MaterialNumber, l.MaterialDescription, p.QuantityBoxes, p.MfgMonthLabel, p.LocationCode, l.PlantName)))
+                .ToList();
+            var loadingSheetHeader = new PulloutLoadingSheetHeaderDto(
+                detail.ReferenceNumber, detail.CreatedAt, detail.Lines.Select(l => l.PlantName).FirstOrDefault(p => p is not null),
+                detail.HeaderFields, detail.WarehouseAddress);
+            var loadingSheetRows = detail.Lines
+                .Select(l => new PulloutLoadingSheetRowDto(l.MaterialNumber, l.MaterialDescription, l.RequestedQuantityBoxes, l.Status, l.Priority))
+                .ToList();
+            var bytes = ExcelService.WritePulloutDownload(rows, loadingSheetHeader, loadingSheetRows);
+            await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"pullout-{detail.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to build Excel for pullout {ReferenceNumber}", referenceNumber);
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Could not build the Excel file: {ex.Message}", "danger");
+        }
+    }
+
+    private static string WorkbookOutcomeLabel(PulloutSheetImportStatus status) => status switch
+    {
+        PulloutSheetImportStatus.Created => "Created",
+        PulloutSheetImportStatus.SkippedNotOrderSheet => "Not a Loading Sheet",
+        PulloutSheetImportStatus.SkippedNoData => "No data",
+        PulloutSheetImportStatus.SkippedDuplicateReference => "Already pulled",
+        PulloutSheetImportStatus.SkippedDuplicateDestinationVehicle => "Already pulled today",
+        PulloutSheetImportStatus.Error => "Error",
+        _ => status.ToString()
+    };
+
+    private static string WorkbookOutcomePillClass(PulloutSheetImportStatus status) => status switch
+    {
+        PulloutSheetImportStatus.Created => "success",
+        PulloutSheetImportStatus.Error => "danger",
+        PulloutSheetImportStatus.SkippedDuplicateReference or PulloutSheetImportStatus.SkippedDuplicateDestinationVehicle => "warning",
+        _ => "neutral"
+    };
 
     private void OpenPickLocationChange(PulloutLineResultDto line, PulloutPickDto pick)
     {
@@ -537,6 +678,7 @@
         _showRejectPanel = false;
         _error = null;
         _result = null;
+        _workbookOutcomes = null;
 
         if (_warehouseId is null)
         {
@@ -552,12 +694,12 @@
             await stream.CopyToAsync(memory);
             memory.Position = 0;
 
-            _result = await Mediator.Send(new ImportPulloutFromExcelCommand(memory, _warehouseId.Value));
-            _isResultModalOpen = true;
+            _workbookOutcomes = await Mediator.Send(new ImportPulloutWorkbookCommand(memory, _warehouseId.Value));
+            _isWorkbookResultModalOpen = true;
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Pullout import failed");
+            Logger.LogWarning(ex, "Pullout workbook import failed");
             _error = ex.Message;
         }
         finally
@@ -655,7 +797,7 @@
 
     private async Task DownloadSampleFormatAsync()
     {
-        var bytes = ExcelService.WritePulloutUploadTemplate(_plants.Where(p => p.IsActive).Select(p => p.Name).ToList());
+        var bytes = ExcelService.WritePulloutWorkbookSampleTemplate();
         var base64 = Convert.ToBase64String(bytes);
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "pullout-upload-sample-format.xlsx", base64,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

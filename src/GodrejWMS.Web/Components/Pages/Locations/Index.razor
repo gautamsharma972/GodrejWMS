@@ -1,5 +1,5 @@
 @page "/locations"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewLocations)]
 @using GodrejWMS.Application.Common.Interfaces
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Features.Locations.Commands

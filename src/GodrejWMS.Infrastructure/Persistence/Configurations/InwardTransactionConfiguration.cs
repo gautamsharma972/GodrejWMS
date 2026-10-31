@@ -19,6 +19,9 @@ public class InwardTransactionConfiguration : IEntityTypeConfiguration<InwardTra
         builder.Property(t => t.RejectedByUserId).HasMaxLength(450);
         builder.Property(t => t.RejectedByUserName).HasMaxLength(256);
         builder.Property(t => t.RejectionReason).HasMaxLength(500);
+        builder.Property(t => t.VehicleNumber).HasMaxLength(50);
+        builder.Property(t => t.LrNumber).HasMaxLength(50);
+        builder.Property(t => t.ReceivedFrom).HasMaxLength(200);
 
         builder.HasMany(t => t.Lines)
             .WithOne(l => l.InwardTransaction)

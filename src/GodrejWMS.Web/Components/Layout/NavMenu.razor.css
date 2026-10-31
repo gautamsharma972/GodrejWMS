@@ -263,6 +263,116 @@
         display: flex;
     }
 }
+
+@media (max-width: 860px) {
+    .brand-panel {
+        min-height: 58px;
+        padding: 0.65rem 0.85rem;
+    }
+
+    .navbar-brand {
+        gap: 0.65rem;
+    }
+
+    .brand-mark {
+        width: 38px;
+        height: 38px;
+        box-shadow: none;
+    }
+
+    .brand-name {
+        font-size: 0.94rem;
+    }
+
+    .brand-subtitle {
+        margin-top: 0.08rem;
+        font-size: 0.62rem;
+    }
+
+    .navbar-toggler {
+        top: 0.62rem;
+        right: 0.85rem;
+        width: 38px;
+        height: 38px;
+        background-size: 1.2rem;
+    }
+
+    .nav-scrollable {
+        padding: 0.45rem 0.75rem 0.55rem;
+        border-bottom: 1px solid var(--wms-border);
+        background: #fff;
+    }
+
+    .nav-section-label {
+        margin: 0.25rem 0 0.3rem;
+        padding: 0 0.55rem;
+        font-size: 0.62rem;
+    }
+
+    .nav-item {
+        margin-bottom: 0.12rem;
+    }
+
+    .nav-item ::deep .nav-link {
+        min-height: 38px;
+        gap: 0.6rem;
+        padding: 0.48rem 0.55rem;
+        border-radius: 7px;
+        font-size: 0.86rem;
+    }
+
+    .nav-item ::deep .nav-link i {
+        font-size: 0.92rem;
+    }
+
+    .nav-submenu {
+        margin: 0.1rem 0.2rem 0.25rem 0.85rem;
+        padding: 0.1rem 0 0.1rem 0.55rem;
+    }
+
+    .nav-subitem ::deep .nav-link {
+        min-height: 34px;
+        padding: 0.38rem 0.55rem;
+        font-size: 0.8rem;
+    }
+
+    .nav-spacer {
+        height: 0.25rem;
+    }
+
+    .sidebar-user-footer,
+    .navbar-toggler:checked ~ .sidebar-user-footer {
+        gap: 0.4rem;
+        padding: 0.48rem 0.75rem;
+        background: #fff;
+        backdrop-filter: none;
+    }
+
+    .sidebar-user-profile {
+        gap: 0.55rem;
+        padding: 0.2rem;
+    }
+
+    .sidebar-user-avatar {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+    }
+
+    .sidebar-user-details strong {
+        font-size: 0.78rem;
+    }
+
+    .sidebar-user-details > span {
+        font-size: 0.66rem;
+    }
+
+    .sidebar-logout {
+        min-height: 34px;
+        padding: 0.4rem 0.55rem;
+        font-size: 0.72rem;
+    }
+}
 .nav-group {
     margin-bottom: 0.15rem;
 }
@@ -464,6 +574,19 @@
     to {
         opacity: 1;
         transform: translateX(0) scale(1);
+    }
+}
+
+@media (max-width: 860px) {
+    .nav-submenu {
+        margin: 0.1rem 0.2rem 0.25rem 0.85rem;
+        padding: 0.1rem 0 0.1rem 0.55rem;
+    }
+
+    .nav-subitem ::deep .nav-link {
+        min-height: 34px;
+        padding: 0.38rem 0.55rem;
+        font-size: 0.8rem;
     }
 }
 

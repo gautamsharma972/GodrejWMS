@@ -1,5 +1,5 @@
 @page "/aop-descriptions"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewProductMasters)]
 @using GodrejWMS.Application.Features.AopDescriptions.Commands
 @using GodrejWMS.Application.Features.AopDescriptions.Dtos
 @using GodrejWMS.Application.Features.AopDescriptions.Queries

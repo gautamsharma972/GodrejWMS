@@ -110,7 +110,7 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
             if (!MfgMonthParser.TryParse(row.MfgMonthLabel, out var mfgMonth) || mfgMonth != line.MfgMonth)
             {
                 throw new InvalidOperationException(
-                    $"Row {row.RowNumber}: PKM mismatch for SKU {line.Material.MaterialNumber}. Expected {MfgMonthParser.Format(line.MfgMonth)}.");
+                    $"Row {row.RowNumber}: PKM mismatch for SKU {line.Material.MaterialNumber}. Expected {MfgMonthParser.FormatOrNoPkm(line.MfgMonth)}.");
             }
 
             if (row.RequestedQuantityBoxes != line.RequestedQuantityBoxes
@@ -223,7 +223,7 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
                 .ToHashSet());
         var mfgMonths = positions.ToDictionary(
             p => p.Id,
-            p => p.StockBatches.Where(b => b.QuantityBoxes > 0).Select(b => b.MfgMonth)
+            p => p.StockBatches.Where(b => b.QuantityBoxes > 0).Select(b => (int?)b.MfgMonth)
                 .Concat(otherReservations.Where(r => r.PalletPositionId == p.Id).Select(r => r.MfgMonth))
                 .ToHashSet());
 

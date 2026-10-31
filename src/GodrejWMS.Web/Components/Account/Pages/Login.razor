@@ -4,10 +4,14 @@
 @using System.ComponentModel.DataAnnotations
 @using Microsoft.AspNetCore.Authentication
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Common.Permissions
 @using GodrejWMS.Infrastructure.Identity
 
 @inject UserManager<ApplicationUser> UserManager
 @inject SignInManager<ApplicationUser> SignInManager
+@inject IApplicationDbContext Db
 @inject ILogger<Login> Logger
 @inject IdentityRedirectManager RedirectManager
 
@@ -186,7 +190,15 @@
         if (result.Succeeded)
         {
             Logger.LogInformation("User logged in.");
-            RedirectManager.RedirectTo(ReturnUrl);
+            if (string.IsNullOrEmpty(ReturnUrl))
+            {
+                var signedInUser = user ?? await UserManager.FindByEmailAsync(Input.Email);
+                RedirectManager.RedirectTo(signedInUser is null ? "" : await LandingPageAsync(signedInUser));
+            }
+            else
+            {
+                RedirectManager.RedirectTo(ReturnUrl);
+            }
         }
         else if (result.RequiresTwoFactor)
         {
@@ -203,6 +215,32 @@
         {
             errorMessage = "Error: Invalid login attempt.";
         }
+    }
+
+    /// <summary>Where to send a user who logged in without a specific ReturnUrl (e.g. typed the
+    /// bare login URL, or followed a bookmark). Someone with the Dashboard permission still lands
+    /// on "/" as always; someone who only has the Pickers' "Inward without PKM" menu (and nothing
+    /// else) skips the generic "/" welcome page and goes straight to their one working page.</summary>
+    private async Task<string> LandingPageAsync(ApplicationUser signedInUser)
+    {
+        var roles = await UserManager.GetRolesAsync(signedInUser);
+        if (roles.Contains(GodrejWMS.Infrastructure.Identity.RoleNames.PlatformAdmin) || roles.Contains("Superadmin"))
+        {
+            return "";
+        }
+
+        var grants = await Db.RolePermissions
+            .Where(p => roles.Contains(p.RoleName) && p.IsGranted &&
+                (p.PermissionKey == PermissionKeys.Menu.ViewDashboard || p.PermissionKey == PermissionKeys.Menu.ViewInwardNoPkm))
+            .Select(p => p.PermissionKey)
+            .ToListAsync();
+
+        if (grants.Contains(PermissionKeys.Menu.ViewDashboard))
+        {
+            return "";
+        }
+
+        return grants.Contains(PermissionKeys.Menu.ViewInwardNoPkm) ? "inward-no-pkm" : "";
     }
 
     private sealed class InputModel

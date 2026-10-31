@@ -10,7 +10,9 @@ public static class PermissionKeys
 {
     public static class Menu
     {
+        public const string ViewDashboard = "Menu.ViewDashboard";
         public const string ViewInward = "Menu.ViewInward";
+        public const string ViewInwardNoPkm = "Menu.ViewInwardNoPkm";
         public const string ViewPullout = "Menu.ViewPullout";
         public const string ViewInventoryMaster = "Menu.ViewInventoryMaster";
         public const string ViewInventoryAdjustments = "Menu.ViewInventoryAdjustments";
@@ -91,7 +93,7 @@ public static class PermissionKeys
     /// <summary>Every key above, for seeding and for rendering the full matrix.</summary>
     public static readonly IReadOnlyList<string> All =
     [
-        Menu.ViewInward, Menu.ViewPullout, Menu.ViewInventoryMaster, Menu.ViewInventoryAdjustments,
+        Menu.ViewDashboard, Menu.ViewInward, Menu.ViewInwardNoPkm, Menu.ViewPullout, Menu.ViewInventoryMaster, Menu.ViewInventoryAdjustments,
         Menu.ViewRacks, Menu.ViewLocations, Menu.ViewMaterials, Menu.ViewInventoryMovement,
         Menu.ViewAuditTrail, Menu.ViewReports, Menu.ViewOrgMasters, Menu.ViewProductMasters, Menu.ViewUserManagement,
         Inward.Create, Inward.View, Inward.Edit, Inward.Putaway, Inward.Confirm, Inward.Reject, Inward.Reallocate,

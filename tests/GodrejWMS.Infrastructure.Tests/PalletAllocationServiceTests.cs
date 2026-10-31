@@ -152,6 +152,57 @@ public class PalletAllocationServiceTests
     }
 
     [Fact]
+    public async Task AllocateAsync_WithNullMfgMonth_SkipsTopUp_LandsOnlyOnEmptyPosition()
+    {
+        var (db, material, _) = SeedWarehouse(capacityBoxes: 40);
+        var mfgMonth = 201003;
+        var toppedUpPosition = db.PalletPositions.First(p => p.LocationCode == "A-01-01");
+
+        // Pre-existing stock of the same material/PKM - a real inward with this PKM would top
+        // this position up first. The Pickers' "Inward without PKM" flow has no PKM to match
+        // against, so it must skip this position entirely rather than topping it up.
+        db.StockBatches.Add(new StockBatch
+        {
+            MaterialId = material.Id,
+            PalletPositionId = toppedUpPosition.Id,
+            MfgMonth = mfgMonth,
+            QuantityBoxes = 35
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new PalletAllocationService(db, new TestClock());
+
+        var result = await sut.AllocateAsync(material.Id, 5, mfgMonth: null, warehouseId: 1);
+
+        Assert.Equal(AllocationStatus.Fulfilled, result.Status);
+        var allocation = Assert.Single(result.Lines);
+        Assert.Equal("A-02-01", allocation.LocationCode);
+        Assert.Equal(5, allocation.QuantityBoxes);
+        Assert.Equal(35, db.StockBatches.Single(b => b.PalletPositionId == toppedUpPosition.Id).QuantityBoxes);
+    }
+
+    [Fact]
+    public async Task AllocateAsync_WithNullMfgMonth_SkipsSameRackConsolidation_UsesOnlyEmptyPositions()
+    {
+        var (db, material, rackA, rackB) = SeedTwoRackWarehouse(capacityBoxes: 40, levels: 2);
+
+        // An anchor for same-rack consolidation on rack A - a real inward (with a PKM) would
+        // prefer consolidating onto rack A's other empty level over spreading to rack B. With no
+        // PKM to consolidate against, this anchor must be ignored entirely.
+        var anchorPosition = rackA.PalletPositions.First(p => p.Level == 1);
+        AddStock(db, material, anchorPosition, 201003, 10);
+
+        var sut = new PalletAllocationService(db, new TestClock());
+
+        var result = await sut.AllocateAsync(material.Id, 5, mfgMonth: null, warehouseId: 1);
+
+        Assert.Equal(AllocationStatus.Fulfilled, result.Status);
+        var allocation = Assert.Single(result.Lines);
+        Assert.NotEqual(anchorPosition.LocationCode, allocation.LocationCode);
+        Assert.True(db.PalletPositions.Single(p => p.LocationCode == allocation.LocationCode).Id != anchorPosition.Id);
+    }
+
+    [Fact]
     public async Task AllocateAsync_UsesAopPreferredRange_BeforeLegacyTopUpOutsideRange()
     {
         var (db, material, rackA, rackB) = SeedTwoRackWarehouse(capacityBoxes: 40, levels: 1);

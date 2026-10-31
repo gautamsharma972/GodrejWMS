@@ -108,6 +108,10 @@
                                     {
                                         <span class="status-pill @(item.IsConfirmed ? "success" : "warning")">@(item.IsConfirmed ? "Confirmed" : "Reserved")</span>
                                     }
+                                    @if (item.IsPkmless && !item.IsConfirmed && !item.IsRejected)
+                                    {
+                                        <span class="status-pill warning" title="Submitted through Inward without PKM - assign a real PKM before this can be confirmed.">PKM needed</span>
+                                    }
                                 </td>
                                 <td class="text-end history-number-column">@item.LineCount</td>
                                 <td class="text-end fw-semibold history-number-column">@item.TotalQuantityBoxes.ToString("N0")</td>

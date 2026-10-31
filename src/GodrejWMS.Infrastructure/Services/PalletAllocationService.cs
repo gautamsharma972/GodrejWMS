@@ -49,7 +49,7 @@ public class PalletAllocationService(
     public async Task<InwardAllocationResult> AllocateAsync(
         int materialId,
         decimal quantityBoxes,
-        int mfgMonth,
+        int? mfgMonth,
         int warehouseId,
         int stockSubtypeId = LocationSubtypeIds.Good,
         int? excludeInwardTransactionLineId = null,
@@ -159,7 +159,7 @@ public class PalletAllocationService(
         int stockSubtypeId,
         Material material,
         int activeSeasonId,
-        int incomingMfgMonth,
+        int? incomingMfgMonth,
         int? oldestMfgMonth,
         bool allowPkmMixing,
         HashSet<int> racksWithSameDesignType,
@@ -167,29 +167,36 @@ public class PalletAllocationService(
         decimal remaining,
         bool isAopPreferredPhase)
     {
-        foreach (var position in positions
-            .Where(p => (HasSameSkuPkmStock(p, materialId, incomingMfgMonth, stockSubtypeId)
-                    || HasSameSkuPkmReservation(p.Id, pendingReservations, materialId, incomingMfgMonth, stockSubtypeId))
-                && (allowPkmMixing || !HasDifferentPkmForMaterial(p, materialId, incomingMfgMonth, pendingReservations)))
-            .OrderBy(p => ScoreLocation(p, material, activeSeasonId, incomingMfgMonth, oldestMfgMonth: null))
-            .ThenBy(p => p.Rack.Code)
-            .ThenBy(p => p.Column)
-            .ThenBy(p => p.Level))
+        // With no PKM at all (the Pickers' "Inward without PKM" flow), there is nothing for Tier 1
+        // (same-SKU+PKM top-up) or Tier 2 (same-rack consolidation) to match against - both are
+        // skipped entirely and every box goes straight to Tier 3 below, landing on a genuinely
+        // empty pallet position.
+        if (incomingMfgMonth is { } knownMfgMonth)
         {
-            remaining = ReserveAtPosition(position, material, pendingReservations, reservedByPosition, lines,
-                remaining, isAopPreferredPhase ? "AOP-preferred range · Same SKU + PKM top-up" : "Same SKU + PKM top-up");
-            if (remaining <= 0)
+            foreach (var position in positions
+                .Where(p => (HasSameSkuPkmStock(p, materialId, knownMfgMonth, stockSubtypeId)
+                        || HasSameSkuPkmReservation(p.Id, pendingReservations, materialId, knownMfgMonth, stockSubtypeId))
+                    && (allowPkmMixing || !HasDifferentPkmForMaterial(p, materialId, knownMfgMonth, pendingReservations)))
+                .OrderBy(p => ScoreLocation(p, material, activeSeasonId, incomingMfgMonth, oldestMfgMonth: null))
+                .ThenBy(p => p.Rack.Code)
+                .ThenBy(p => p.Column)
+                .ThenBy(p => p.Level))
             {
-                return 0;
+                remaining = ReserveAtPosition(position, material, pendingReservations, reservedByPosition, lines,
+                    remaining, isAopPreferredPhase ? "AOP-preferred range · Same SKU + PKM top-up" : "Same SKU + PKM top-up");
+                if (remaining <= 0)
+                {
+                    return 0;
+                }
             }
-        }
 
-        if (hasAnchor)
-        {
-            remaining = FillSameRackConsolidation(
-                positions, pendingReservations, reservedByPosition, lines,
-                materialId, stockSubtypeId, material, activeSeasonId, incomingMfgMonth, oldestMfgMonth,
-                allowPkmMixing, remaining, isAopPreferredPhase);
+            if (hasAnchor)
+            {
+                remaining = FillSameRackConsolidation(
+                    positions, pendingReservations, reservedByPosition, lines,
+                    materialId, stockSubtypeId, material, activeSeasonId, knownMfgMonth, oldestMfgMonth,
+                    allowPkmMixing, remaining, isAopPreferredPhase);
+            }
         }
 
         foreach (var position in positions
@@ -398,7 +405,7 @@ public class PalletAllocationService(
         PalletPosition position,
         Material material,
         int activeSeasonId,
-        int incomingMfgMonth,
+        int? incomingMfgMonth,
         int? oldestMfgMonth,
         bool sameDesignCodeInRack)
     {
@@ -432,7 +439,7 @@ public class PalletAllocationService(
             return "Near existing stock of the same Design Code";
         }
 
-        if (oldestMfgMonth.HasValue && incomingMfgMonth > oldestMfgMonth.Value)
+        if (oldestMfgMonth.HasValue && incomingMfgMonth.HasValue && incomingMfgMonth.Value > oldestMfgMonth.Value)
         {
             return "Empty location selected after preserving older stock priority";
         }
@@ -450,7 +457,7 @@ public class PalletAllocationService(
         PalletPosition position,
         Material material,
         int activeSeasonId,
-        int incomingMfgMonth,
+        int? incomingMfgMonth,
         int? oldestMfgMonth)
     {
         var isCurrentSeason = material.SeasonId == activeSeasonId;
@@ -475,7 +482,7 @@ public class PalletAllocationService(
             score -= 12;
         }
 
-        if (oldestMfgMonth.HasValue && incomingMfgMonth > oldestMfgMonth.Value)
+        if (oldestMfgMonth.HasValue && incomingMfgMonth.HasValue && incomingMfgMonth.Value > oldestMfgMonth.Value)
         {
             score += 50;
         }
@@ -585,5 +592,5 @@ public class PalletAllocationService(
         return preferred;
     }
 
-    private sealed record PendingReservation(int PalletPositionId, int RackId, int MaterialId, int MfgMonth, int StockSubtypeId, decimal QuantityBoxes);
+    private sealed record PendingReservation(int PalletPositionId, int RackId, int MaterialId, int? MfgMonth, int StockSubtypeId, decimal QuantityBoxes);
 }

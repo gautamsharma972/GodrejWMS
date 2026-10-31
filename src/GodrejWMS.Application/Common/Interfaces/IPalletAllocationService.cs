@@ -13,12 +13,16 @@ public interface IPalletAllocationService
     /// Allocates <paramref name="quantityBoxes"/> of <paramref name="materialId"/> (manufactured in
     /// <paramref name="mfgMonth"/>) across one or more pallet positions within
     /// <paramref name="warehouseId"/> only. Existing confirmed stock and pending put-away
-    /// reservations are both considered occupied for capacity scoring.
+    /// reservations are both considered occupied for capacity scoring. When
+    /// <paramref name="mfgMonth"/> is null (the Pickers' "Inward without PKM" flow - there is no
+    /// PKM yet to match against), the same-SKU+PKM top-up and same-rack consolidation tiers are
+    /// skipped entirely and every box lands on a genuinely empty pallet position, ranked by the
+    /// same zone/velocity/season/AOP-preference scoring every other inward uses.
     /// </summary>
     Task<InwardAllocationResult> AllocateAsync(
         int materialId,
         decimal quantityBoxes,
-        int mfgMonth,
+        int? mfgMonth,
         int warehouseId,
         int stockSubtypeId = LocationSubtypeIds.Good,
         int? excludeInwardTransactionLineId = null,

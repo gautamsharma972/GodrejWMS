@@ -1,5 +1,5 @@
 @page "/season-mapping"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewProductMasters)]
 @using GodrejWMS.Application.Features.SeasonMapping.Commands
 @using GodrejWMS.Application.Features.SeasonMapping.Dtos
 @using GodrejWMS.Application.Features.SeasonMapping.Queries

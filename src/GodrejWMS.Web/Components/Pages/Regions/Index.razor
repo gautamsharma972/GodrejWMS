@@ -1,5 +1,5 @@
 @page "/regions"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewOrgMasters)]
 @using GodrejWMS.Application.Features.Regions.Commands
 @using GodrejWMS.Application.Features.Regions.Dtos
 @using GodrejWMS.Application.Features.Regions.Queries
