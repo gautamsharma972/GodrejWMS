@@ -12,7 +12,8 @@ public class UserAccountCommandValidatorTests
     {
         var validator = new UpdateUserValidator(
             new PermissionStub(true),
-            new UserServiceStub(new UserAccountDto("target", "old@example.com", "Old Name", true, [KnownRoles.OfficeStaff])));
+            new UserServiceStub(new UserAccountDto("target", "old@example.com", "Old Name", true, [KnownRoles.OfficeStaff])),
+            new CurrentUserStub("caller"));
 
         var result = await validator.ValidateAsync(new UpdateUserCommand("target", "new@example.com", "New Name"));
 
@@ -45,6 +46,20 @@ public class UserAccountCommandValidatorTests
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, e => e.ErrorMessage.Contains("Platform Admin"));
+    }
+
+    [Fact]
+    public async Task DeleteUser_SuperadminCannotDeleteAnotherSuperadmin()
+    {
+        var validator = new DeleteUserValidator(
+            new PermissionStub(true),
+            new UserServiceStub(new UserAccountDto("target", "admin@example.com", "Admin", true, [KnownRoles.Superadmin])),
+            new CurrentUserStub("caller"));
+
+        var result = await validator.ValidateAsync(new DeleteUserCommand("target"));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.ErrorMessage.Contains("Only Platform Admin"));
     }
 
     private sealed class PermissionStub(bool granted) : IPermissionService

@@ -79,6 +79,33 @@ public class InventoryMovementServiceTests
     }
 
     [Fact]
+    public async Task SequentialMovements_WithSameClockValue_GetUniqueMovementNumbers()
+    {
+        var (db, material, source, destination, reason) = SeedScenario(sourceQty: 25);
+        var secondDestination = new PalletPosition
+        {
+            RackId = source.RackId,
+            Column = 3,
+            Level = 1,
+            LocationCode = "A-03-01",
+            MaxPallets = 1
+        };
+        db.PalletPositions.Add(secondDestination);
+        await db.SaveChangesAsync();
+        var sut = CreateService(db);
+
+        var first = await sut.ExecuteAsync(
+            new InventoryMovementLineRequest(material.Id, 202603, source.Id, destination.Id, 5), reason.Id);
+        var second = await sut.ExecuteAsync(
+            new InventoryMovementLineRequest(material.Id, 202603, source.Id, secondDestination.Id, 5), reason.Id);
+
+        Assert.True(first.Success);
+        Assert.True(second.Success);
+        Assert.NotEqual(first.Movement!.MovementNumber, second.Movement!.MovementNumber);
+        Assert.All(db.StockMovements, movement => Assert.True(movement.MovementNumber.Length <= 40));
+    }
+
+    [Fact]
     public async Task Test3_AllowsMoveIntoDestinationHoldingSameSku_WhenCapacityExists()
     {
         var (db, material, source, destination, reason) = SeedScenario(sourceQty: 25, destinationCapacity: 40);

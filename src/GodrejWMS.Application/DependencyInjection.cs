@@ -20,6 +20,7 @@ public static class DependencyInjection
         });
 
         services.AddValidatorsFromAssembly(assembly);
+        services.AddSingleton<PermissionRevision>();
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddScoped<IWarehouseAccessService, WarehouseAccessService>();
 

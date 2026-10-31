@@ -16,17 +16,21 @@ public sealed class ImportPulloutFromExcelValidator : AbstractValidator<ImportPu
     }
 }
 
-public sealed class ImportPulloutFromExcelHandler(IExcelService excel, IMediator mediator)
+public sealed class ImportPulloutFromExcelHandler(IExcelService excel, IMediator mediator, IApplicationDbContext db)
     : IRequestHandler<ImportPulloutFromExcelCommand, PulloutResultDto>
 {
-    public Task<PulloutResultDto> Handle(ImportPulloutFromExcelCommand request, CancellationToken cancellationToken)
+    public async Task<PulloutResultDto> Handle(ImportPulloutFromExcelCommand request, CancellationToken cancellationToken)
     {
-        var (rows, headerFields) = excel.ReadPulloutUpload(request.FileStream);
+        var (rows, headerFields, indentText) = excel.ReadPulloutUpload(request.FileStream);
+
+        var clientIndentNumber = await PulloutIndentDuplicateGuard.CheckAsync(db, indentText, cancellationToken);
 
         var lines = rows
             .Select(r => new SubmitPulloutLine(r.MaterialCode, r.QuantityBoxes, r.PlantName, r.Priority, r.MaterialDescription))
             .ToList();
 
-        return mediator.Send(new SubmitPulloutCommand(lines, HeaderFields: headerFields, WarehouseId: request.WarehouseId), cancellationToken);
+        return await mediator.Send(
+            new SubmitPulloutCommand(lines, HeaderFields: headerFields, WarehouseId: request.WarehouseId, ClientIndentNumber: clientIndentNumber),
+            cancellationToken);
     }
 }

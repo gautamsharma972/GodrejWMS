@@ -16,6 +16,8 @@ internal static class InventoryAdjustmentMapper
             adjustment.Status,
             line.Material.MaterialNumber,
             line.Material.Description,
+            line.PhysicalMaterial?.MaterialNumber,
+            line.PhysicalMaterial?.Description,
             line.PalletPosition.LocationCode,
             MfgMonthParser.Format(line.MfgMonth),
             line.StockSubtype.DisplayName,
@@ -30,6 +32,7 @@ internal static class InventoryAdjustmentMapper
             adjustment.ReviewedAt,
             adjustment.ReviewComment,
             line.ActualQuantityBeforePosting,
-            line.ActualQuantityAfterPosting);
+            line.ActualQuantityAfterPosting,
+            line.ActualPhysicalQuantityBeforePosting);
     }
 }

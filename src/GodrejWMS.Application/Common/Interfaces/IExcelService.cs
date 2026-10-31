@@ -50,7 +50,15 @@ public interface IExcelService
     /// single Plant Name applied to every row, and the remaining header fields (Transport,
     /// Vehicle no, Gate No, Driver No, Plan/Start/End Time, Date, Weight, Volume) captured
     /// verbatim for pass-through to the eventual download.</summary>
-    (IReadOnlyList<PulloutImportRow> Rows, PulloutLoadingSheetFieldsDto HeaderFields) ReadPulloutUpload(Stream fileStream);
+    (IReadOnlyList<PulloutImportRow> Rows, PulloutLoadingSheetFieldsDto HeaderFields, string? IndentText) ReadPulloutUpload(Stream fileStream);
+
+    /// <summary>Same parsing as <see cref="ReadPulloutUpload"/>, but from a block of text pasted
+    /// straight out of Excel (tab-separated cells, newline-separated rows) instead of an uploaded
+    /// .xlsx file - for pasting a Loading Sheet's header block and data rows copied directly from a
+    /// client's own working workbook. A cell containing an embedded line break (e.g. an Indent cell
+    /// with both our reference number and the client's own number on separate lines) is recognized
+    /// by Excel's own clipboard quoting (the cell wrapped in double quotes) and kept as one cell.</summary>
+    (IReadOnlyList<PulloutImportRow> Rows, PulloutLoadingSheetFieldsDto HeaderFields, string? IndentText) ReadPulloutPaste(string pastedText);
 
     /// <summary>Writes the "Format inventory master" / "Format invent pullout-download" layout.</summary>
     byte[] WriteStockMaster(IReadOnlyList<StockMasterRowDto> rows);

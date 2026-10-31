@@ -31,7 +31,7 @@ public sealed class UpdateRolePermissionsValidator : AbstractValidator<UpdateRol
     }
 }
 
-public sealed class UpdateRolePermissionsHandler(IApplicationDbContext db)
+public sealed class UpdateRolePermissionsHandler(IApplicationDbContext db, PermissionRevision permissionRevision)
     : IRequestHandler<UpdateRolePermissionsCommand>
 {
     public async Task Handle(UpdateRolePermissionsCommand request, CancellationToken cancellationToken)
@@ -54,5 +54,6 @@ public sealed class UpdateRolePermissionsHandler(IApplicationDbContext db)
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        permissionRevision.Increment();
     }
 }

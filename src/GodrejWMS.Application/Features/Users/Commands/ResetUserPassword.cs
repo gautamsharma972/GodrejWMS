@@ -24,6 +24,20 @@ public sealed class ResetUserPasswordValidator : AbstractValidator<ResetUserPass
 
         RuleFor(x => x).CustomAsync(async (command, context, ct) =>
         {
+            var target = await users.GetUserAsync(command.UserId, ct);
+            if (target is null)
+            {
+                context.AddFailure("UserId", "User not found.");
+                return;
+            }
+
+            var hierarchyError = UserRoleHierarchy.ValidateTarget(currentUser, target.Roles);
+            if (hierarchyError is not null)
+            {
+                context.AddFailure("UserId", hierarchyError);
+                return;
+            }
+
             if (currentUser.IsPlatformLevel())
             {
                 return;
@@ -35,15 +49,7 @@ public sealed class ResetUserPasswordValidator : AbstractValidator<ResetUserPass
                 return;
             }
 
-            var target = await users.GetUserAsync(command.UserId, ct);
-            if (target is null)
-            {
-                context.AddFailure("UserId", "User not found.");
-                return;
-            }
-
-            var targetRole = target.Roles.FirstOrDefault();
-            if (targetRole is KnownRoles.Superadmin or KnownRoles.LogisticManager)
+            if (target.Roles.Any(role => role is KnownRoles.Superadmin or KnownRoles.LogisticManager))
             {
                 context.AddFailure("UserId", "Head Supervisor cannot reset a Superadmin or Logistic Manager password.");
                 return;

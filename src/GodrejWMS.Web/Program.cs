@@ -56,12 +56,7 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.SlidingExpiration = true;
 });
 
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("RequireAdmin", policy => policy.RequireRole(RoleNames.All));
-    options.AddPolicy("RequireSupervisorOrAdmin", policy => policy.RequireRole(RoleNames.All));
-    options.AddPolicy("RequireOperatorOrAdmin", policy => policy.RequireRole(RoleNames.All));
-});
+builder.Services.AddAuthorization();
 
 // Lets page-level [Authorize(Policy = "Permission:<key>")] attributes be driven by the same
 // Role & Permission Management matrix the nav menu already uses, instead of a hardcoded role list

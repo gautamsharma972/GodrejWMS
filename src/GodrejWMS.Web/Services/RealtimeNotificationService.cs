@@ -38,6 +38,11 @@ public sealed class RealtimeNotificationService : IRealtimeNotificationService
             return notification.RecipientUserId == subscription.UserId;
         }
 
+        if (notification.Broadcast)
+        {
+            return true;
+        }
+
         return notification.AudienceRoles is { Count: > 0 }
             && notification.AudienceRoles.Any(subscription.Roles.Contains);
     }

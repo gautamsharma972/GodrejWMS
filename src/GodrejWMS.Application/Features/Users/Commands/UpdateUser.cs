@@ -10,7 +10,7 @@ public sealed record UpdateUserCommand(string UserId, string Email, string FullN
 
 public sealed class UpdateUserValidator : AbstractValidator<UpdateUserCommand>
 {
-    public UpdateUserValidator(IPermissionService permissions, IUserManagementService users)
+    public UpdateUserValidator(IPermissionService permissions, IUserManagementService users, ICurrentUserService currentUser)
     {
         RuleFor(x => x.UserId).NotEmpty();
         RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
@@ -28,9 +28,10 @@ public sealed class UpdateUserValidator : AbstractValidator<UpdateUserCommand>
             {
                 context.AddFailure(nameof(command.UserId), "User not found.");
             }
-            else if (target.Roles.Contains(KnownRoles.PlatformAdmin))
+            else if (command.UserId != currentUser.UserId
+                && UserRoleHierarchy.ValidateTarget(currentUser, target.Roles) is { } hierarchyError)
             {
-                context.AddFailure(nameof(command.UserId), "Platform Admin accounts cannot be edited here.");
+                context.AddFailure(nameof(command.UserId), hierarchyError);
             }
         });
     }

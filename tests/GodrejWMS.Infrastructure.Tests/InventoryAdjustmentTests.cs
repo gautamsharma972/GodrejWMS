@@ -14,6 +14,60 @@ namespace GodrejWMS.Infrastructure.Tests;
 public class InventoryAdjustmentTests
 {
     [Fact]
+    public async Task SupervisorSubmission_AutoApprovesAndUpdatesLiveInventory()
+    {
+        var supervisor = new AdjustmentUser("supervisor", "supervisor@test", "Supervisor");
+        await using var db = CreateDb(Guid.NewGuid().ToString(), supervisor);
+        var batchId = await SeedAsync(db, 20);
+
+        var result = await new SubmitInventoryAdjustmentHandler(
+                db, new AdjustmentClock(), supervisor, new AdjustmentNotifications(), new FakeAdjustmentPermissions(supervisor))
+            .Handle(new SubmitInventoryAdjustmentCommand(
+                batchId, 16, InventoryAdjustmentReasonCodes.PhysicalCountVariance, "Supervisor verified count"),
+                CancellationToken.None);
+
+        Assert.Equal(InventoryAdjustmentStatus.Approved, result.Status);
+        Assert.Equal("supervisor@test", result.ReviewedByUserName);
+        Assert.Equal(16, db.StockBatches.Single(b => b.Id == batchId).QuantityBoxes);
+        Assert.Equal(20, result.ActualQuantityBeforePosting);
+        Assert.Equal(16, result.ActualQuantityAfterPosting);
+    }
+
+    [Fact]
+    public async Task MaterialCorrection_WaitsForApproval_ThenReplacesSystemSkuAtSameLocation()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var requester = new AdjustmentUser("operator", "operator@test", "Office Staff");
+        await using var operatorDb = CreateDb(databaseName, requester);
+        var originalBatchId = await SeedAsync(operatorDb, 40);
+        var physicalMaterial = NewMaterial(40039574, "Physically found SKU");
+        operatorDb.Materials.Add(physicalMaterial);
+        await operatorDb.SaveChangesAsync();
+
+        var submitted = await new SubmitInventoryAdjustmentHandler(
+                operatorDb, new AdjustmentClock(), requester, new AdjustmentNotifications(), new FakeAdjustmentPermissions(requester))
+            .Handle(new SubmitInventoryAdjustmentCommand(
+                originalBatchId, 35, InventoryAdjustmentReasonCodes.DataEntryCorrection,
+                "Wrong SKU recorded in this pallet position", physicalMaterial.Id), CancellationToken.None);
+
+        Assert.Equal(40, operatorDb.StockBatches.Single(b => b.Id == originalBatchId).QuantityBoxes);
+        Assert.False(operatorDb.StockBatches.Any(b => b.MaterialId == physicalMaterial.Id));
+        Assert.Equal(physicalMaterial.MaterialNumber, submitted.PhysicalMaterialNumber);
+
+        var supervisor = new AdjustmentUser("supervisor", "supervisor@test", "Supervisor");
+        await using var supervisorDb = CreateDb(databaseName, supervisor);
+        var approved = await new ApproveInventoryAdjustmentHandler(
+                supervisorDb, new AdjustmentClock(), supervisor, new AdjustmentNotifications(), new FakeAdjustmentPermissions(supervisor))
+            .Handle(new ApproveInventoryAdjustmentCommand(submitted.Id, "Physical SKU verified"), CancellationToken.None);
+
+        Assert.Equal(InventoryAdjustmentStatus.Approved, approved.Status);
+        Assert.False(supervisorDb.StockBatches.Any(b => b.Id == originalBatchId));
+        var replacement = Assert.Single(supervisorDb.StockBatches.Where(b => b.MaterialId == physicalMaterial.Id));
+        Assert.Equal(35, replacement.QuantityBoxes);
+        Assert.Equal(202610, replacement.MfgMonth);
+    }
+
+    [Fact]
     public async Task Submit_DoesNotChangeStock_AndSupervisorApprovalPostsCount()
     {
         var databaseName = Guid.NewGuid().ToString();
@@ -151,19 +205,7 @@ public class InventoryAdjustmentTests
         var rack = new Rack { WarehouseId = 1, Code = "C", Columns = 1, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
         var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "C-01-01", StockBatches = [] };
         rack.PalletPositions.Add(position);
-        var material = new Material
-        {
-            MaterialNumber = 40019311,
-            Description = "Test SKU",
-            DesignType = "GGAF1",
-            PackSize = 1,
-            GrossWeightKg = 1,
-            LengthMm = 1,
-            WidthMm = 1,
-            HeightMm = 1,
-            PalletCapacityBoxes = 60,
-            SeasonId = SeasonIds.Rainy
-        };
+        var material = NewMaterial(40019311, "Test SKU");
         db.LocationSubtypes.Add(subtype);
         db.Racks.Add(rack);
         db.Materials.Add(material);
@@ -188,6 +230,20 @@ public class InventoryAdjustmentTests
         await db.SaveChangesAsync();
         return batch.Id;
     }
+
+    private static Material NewMaterial(long materialNumber, string description) => new()
+    {
+        MaterialNumber = materialNumber,
+        Description = description,
+        DesignType = "GGAF1",
+        PackSize = 1,
+        GrossWeightKg = 1,
+        LengthMm = 1,
+        WidthMm = 1,
+        HeightMm = 1,
+        PalletCapacityBoxes = 60,
+        SeasonId = SeasonIds.Rainy
+    };
 }
 
 file sealed class AdjustmentUser(string id, string name, string role) : ICurrentUserService

@@ -57,11 +57,6 @@ public sealed class ApproveInventoryAdjustmentHandler(
         var adjustment = await LoadTrackedAsync(db, request.AdjustmentId, cancellationToken);
         EnsurePending(adjustment);
 
-        if (!string.IsNullOrWhiteSpace(adjustment.RequestedByUserId) && adjustment.RequestedByUserId == currentUser.UserId)
-        {
-            throw new InvalidOperationException("You cannot approve your own inventory adjustment request.");
-        }
-
         var line = adjustment.Lines.Single();
         var batch = line.StockBatchId.HasValue
             ? await db.StockBatches.FirstOrDefaultAsync(b => b.Id == line.StockBatchId.Value, cancellationToken)
@@ -81,12 +76,75 @@ public sealed class ApproveInventoryAdjustmentHandler(
             await NotifyRequesterAsync(adjustment, "Adjustment needs a recount",
                 $"{adjustment.AdjustmentNumber} could not be approved because inventory changed after the count.",
                 "warning", cancellationToken);
+            await PublishRefreshAsync(RealtimeTopics.InventoryAdjustmentsChanged, cancellationToken);
             return await LoadDetailAsync(db, adjustment.Id, cancellationToken);
+        }
+
+        StockBatch? physicalBatch = null;
+        if (line.PhysicalMaterialId.HasValue)
+        {
+            physicalBatch = await db.StockBatches.FirstOrDefaultAsync(b =>
+                b.MaterialId == line.PhysicalMaterialId.Value &&
+                b.PalletPositionId == line.PalletPositionId &&
+                b.MfgMonth == line.MfgMonth, cancellationToken);
+
+            var physicalBatchChanged = line.PhysicalStockBatchIdAtCount.HasValue
+                ? physicalBatch is null ||
+                  physicalBatch.Id != line.PhysicalStockBatchIdAtCount.Value ||
+                  physicalBatch.RowVersion != line.PhysicalBatchRowVersionAtCount ||
+                  physicalBatch.QuantityBoxes != line.PhysicalSystemQuantityAtCount
+                : physicalBatch is not null;
+
+            if (physicalBatchChanged)
+            {
+                line.ActualQuantityBeforePosting = batch.QuantityBoxes;
+                line.ActualPhysicalQuantityBeforePosting = physicalBatch?.QuantityBoxes;
+                adjustment.Status = InventoryAdjustmentStatus.Conflict;
+                adjustment.OpenStockBatchId = null;
+                adjustment.ReviewedByUserId = currentUser.UserId;
+                adjustment.ReviewedByUserName = currentUser.UserName;
+                adjustment.ReviewedAt = clock.UtcNow;
+                adjustment.ReviewComment = "The physically counted SKU inventory changed after this request was submitted. A new count is required.";
+                adjustment.RowVersion++;
+                await db.SaveChangesAsync(cancellationToken);
+                await NotifyRequesterAsync(adjustment, "Adjustment needs a recount",
+                    $"{adjustment.AdjustmentNumber} could not be approved because inventory changed after the count.",
+                    "warning", cancellationToken);
+                await PublishRefreshAsync(RealtimeTopics.InventoryAdjustmentsChanged, cancellationToken);
+                return await LoadDetailAsync(db, adjustment.Id, cancellationToken);
+            }
         }
 
         line.ActualQuantityBeforePosting = batch.QuantityBoxes;
         line.ActualQuantityAfterPosting = line.CountedQuantity;
-        if (line.CountedQuantity == 0)
+        if (line.PhysicalMaterialId.HasValue)
+        {
+            // The system batch is wrong for this position. Approval removes it and records the
+            // physically verified SKU at the same location, PKM and stock subtype.
+            line.StockBatchId = null;
+            line.StockBatch = null;
+            db.StockBatches.Remove(batch);
+            line.ActualPhysicalQuantityBeforePosting = physicalBatch?.QuantityBoxes;
+
+            if (physicalBatch is null)
+            {
+                db.StockBatches.Add(new StockBatch
+                {
+                    MaterialId = line.PhysicalMaterialId.Value,
+                    PalletPositionId = line.PalletPositionId,
+                    MfgMonth = line.MfgMonth,
+                    StockSubtypeId = line.StockSubtypeId,
+                    QuantityBoxes = line.CountedQuantity,
+                    RowVersion = 1
+                });
+            }
+            else
+            {
+                physicalBatch.QuantityBoxes = line.CountedQuantity;
+                physicalBatch.RowVersion++;
+            }
+        }
+        else if (line.CountedQuantity == 0)
         {
             line.StockBatchId = null;
             line.StockBatch = null;
@@ -118,6 +176,8 @@ public sealed class ApproveInventoryAdjustmentHandler(
         await NotifyRequesterAsync(adjustment, "Adjustment approved",
             $"{adjustment.AdjustmentNumber} was approved and live inventory was updated.",
             "success", cancellationToken);
+        await PublishRefreshAsync(RealtimeTopics.InventoryAdjustmentsChanged, cancellationToken);
+        await PublishRefreshAsync(RealtimeTopics.InventoryChanged, cancellationToken);
 
         return await LoadDetailAsync(db, adjustment.Id, cancellationToken);
     }
@@ -148,6 +208,7 @@ public sealed class ApproveInventoryAdjustmentHandler(
     {
         var adjustment = await db.InventoryAdjustments.AsNoTracking()
             .Include(a => a.Lines).ThenInclude(l => l.Material)
+            .Include(a => a.Lines).ThenInclude(l => l.PhysicalMaterial)
             .Include(a => a.Lines).ThenInclude(l => l.PalletPosition)
             .Include(a => a.Lines).ThenInclude(l => l.StockSubtype)
             .SingleAsync(a => a.Id == id, cancellationToken);
@@ -163,6 +224,11 @@ public sealed class ApproveInventoryAdjustmentHandler(
         notifications.PublishAsync(new RealtimeNotification(
             Guid.NewGuid(), title, message, kind, "/inventory-adjustments", clock.UtcNow,
             RecipientUserId: adjustment.RequestedByUserId), cancellationToken);
+
+    private Task PublishRefreshAsync(string topic, CancellationToken cancellationToken) =>
+        notifications.PublishAsync(new RealtimeNotification(
+            Guid.NewGuid(), string.Empty, string.Empty, "info", null, clock.UtcNow,
+            Topic: topic, Silent: true, Broadcast: true), cancellationToken);
 }
 
 public sealed class RejectInventoryAdjustmentHandler(
@@ -200,6 +266,9 @@ public sealed class RejectInventoryAdjustmentHandler(
             "/inventory-adjustments",
             clock.UtcNow,
             RecipientUserId: adjustment.RequestedByUserId), cancellationToken);
+        await notifications.PublishAsync(new RealtimeNotification(
+            Guid.NewGuid(), string.Empty, string.Empty, "info", null, clock.UtcNow,
+            Topic: RealtimeTopics.InventoryAdjustmentsChanged, Silent: true, Broadcast: true), cancellationToken);
         return await ApproveInventoryAdjustmentHandler.LoadDetailAsync(db, adjustment.Id, cancellationToken);
     }
 }
@@ -237,6 +306,9 @@ public sealed class CancelInventoryAdjustmentHandler(
             clock.UtcNow,
             AudienceRoles: ["Supervisor", "Superadmin"],
             ExcludeUserId: currentUser.UserId), cancellationToken);
+        await notifications.PublishAsync(new RealtimeNotification(
+            Guid.NewGuid(), string.Empty, string.Empty, "info", null, clock.UtcNow,
+            Topic: RealtimeTopics.InventoryAdjustmentsChanged, Silent: true, Broadcast: true), cancellationToken);
         return await ApproveInventoryAdjustmentHandler.LoadDetailAsync(db, adjustment.Id, cancellationToken);
     }
 }

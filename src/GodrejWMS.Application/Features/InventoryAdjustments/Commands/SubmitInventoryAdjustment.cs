@@ -13,7 +13,8 @@ public sealed record SubmitInventoryAdjustmentCommand(
     int StockBatchId,
     int CountedQuantity,
     string ReasonCode,
-    string? ReasonText) : IRequest<InventoryAdjustmentDetailDto>;
+    string? ReasonText,
+    int? PhysicalMaterialId = null) : IRequest<InventoryAdjustmentDetailDto>;
 
 public sealed class SubmitInventoryAdjustmentValidator : AbstractValidator<SubmitInventoryAdjustmentCommand>
 {
@@ -21,6 +22,10 @@ public sealed class SubmitInventoryAdjustmentValidator : AbstractValidator<Submi
     {
         RuleFor(x => x.StockBatchId).GreaterThan(0);
         RuleFor(x => x.CountedQuantity).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.CountedQuantity).GreaterThan(0)
+            .When(x => x.PhysicalMaterialId.HasValue)
+            .WithMessage("Physical quantity must be greater than zero when correcting the SKU.");
+        RuleFor(x => x.PhysicalMaterialId).GreaterThan(0).When(x => x.PhysicalMaterialId.HasValue);
         RuleFor(x => x.ReasonCode)
             .Must(InventoryAdjustmentReasonCodes.All.ContainsKey)
             .WithMessage("Select a valid adjustment reason.");
@@ -54,7 +59,21 @@ public sealed class SubmitInventoryAdjustmentHandler(
             .FirstOrDefaultAsync(b => b.Id == request.StockBatchId, cancellationToken)
             ?? throw new InvalidOperationException("The selected inventory batch was not found.");
 
-        if (batch.QuantityBoxes == request.CountedQuantity)
+        var physicalMaterialId = request.PhysicalMaterialId == batch.MaterialId ? null : request.PhysicalMaterialId;
+        Material? physicalMaterial = null;
+        StockBatch? physicalBatch = null;
+        if (physicalMaterialId.HasValue)
+        {
+            physicalMaterial = await db.Materials.FirstOrDefaultAsync(
+                m => m.Id == physicalMaterialId.Value && m.IsActive, cancellationToken)
+                ?? throw new InvalidOperationException("The physically counted SKU was not found or is inactive.");
+            physicalBatch = await db.StockBatches.FirstOrDefaultAsync(b =>
+                b.MaterialId == physicalMaterialId.Value &&
+                b.PalletPositionId == batch.PalletPositionId &&
+                b.MfgMonth == batch.MfgMonth, cancellationToken);
+        }
+
+        if (!physicalMaterialId.HasValue && batch.QuantityBoxes == request.CountedQuantity)
         {
             throw new InvalidOperationException("The physical quantity matches the system quantity; no adjustment is required.");
         }
@@ -64,6 +83,13 @@ public sealed class SubmitInventoryAdjustmentHandler(
         if (hasPendingRequest)
         {
             throw new InvalidOperationException("A pending adjustment already exists for this SKU, PKM, and location.");
+        }
+
+        if (physicalBatch is not null && await db.InventoryAdjustmentLines.AnyAsync(l =>
+                l.StockBatchId == physicalBatch.Id &&
+                l.InventoryAdjustment.Status == InventoryAdjustmentStatus.PendingApproval, cancellationToken))
+        {
+            throw new InvalidOperationException("A pending adjustment already exists for the physically counted SKU in this location.");
         }
 
         var now = clock.UtcNow;
@@ -84,13 +110,17 @@ public sealed class SubmitInventoryAdjustmentHandler(
         {
             StockBatchId = batch.Id,
             MaterialId = batch.MaterialId,
+            PhysicalMaterialId = physicalMaterialId,
             PalletPositionId = batch.PalletPositionId,
             MfgMonth = batch.MfgMonth,
             StockSubtypeId = batch.StockSubtypeId,
             SystemQuantityAtCount = batch.QuantityBoxes,
             CountedQuantity = request.CountedQuantity,
             VarianceQuantity = request.CountedQuantity - batch.QuantityBoxes,
-            BatchRowVersionAtCount = batch.RowVersion
+            BatchRowVersionAtCount = batch.RowVersion,
+            PhysicalStockBatchIdAtCount = physicalBatch?.Id,
+            PhysicalSystemQuantityAtCount = physicalBatch?.QuantityBoxes,
+            PhysicalBatchRowVersionAtCount = physicalBatch?.RowVersion
         });
 
         db.InventoryAdjustments.Add(adjustment);
@@ -103,23 +133,45 @@ public sealed class SubmitInventoryAdjustmentHandler(
             throw new InvalidOperationException("A pending adjustment was created for this inventory while you were submitting. Refresh and review the existing request.");
         }
 
+        // A user who already holds approval authority (normally the Supervisor) is the final
+        // reviewer in this workflow. Apply the same approval handler immediately so their own
+        // count is posted without creating a request that nobody else can approve.
+        if (await permissions.HasPermissionAsync(PermissionKeys.Inventory.ApproveAdjustment, cancellationToken))
+        {
+            var approvalHandler = new ApproveInventoryAdjustmentHandler(
+                db, clock, currentUser, notifications, permissions);
+            return await approvalHandler.Handle(
+                new ApproveInventoryAdjustmentCommand(adjustment.Id, "Auto-approved for authorized inventory reviewer."),
+                cancellationToken);
+        }
+
         await notifications.PublishAsync(new RealtimeNotification(
             Guid.NewGuid(),
             "Adjustment approval requested",
-            $"{adjustment.AdjustmentNumber}: SKU {batch.Material.MaterialNumber} at {batch.PalletPosition.LocationCode} requires review.",
+            physicalMaterial is null
+                ? $"{adjustment.AdjustmentNumber}: SKU {batch.Material.MaterialNumber} at {batch.PalletPosition.LocationCode} requires review."
+                : $"{adjustment.AdjustmentNumber}: SKU {batch.Material.MaterialNumber} was physically identified as {physicalMaterial.MaterialNumber} at {batch.PalletPosition.LocationCode}.",
             "warning",
             "/inventory-adjustments",
             now,
             AudienceRoles: ["Supervisor", "Superadmin"],
             ExcludeUserId: currentUser.UserId), cancellationToken);
 
+        await PublishRefreshAsync(RealtimeTopics.InventoryAdjustmentsChanged, now, cancellationToken);
+
         return await LoadDetailAsync(adjustment.Id, cancellationToken);
     }
+
+    private Task PublishRefreshAsync(string topic, DateTimeOffset now, CancellationToken cancellationToken) =>
+        notifications.PublishAsync(new RealtimeNotification(
+            Guid.NewGuid(), string.Empty, string.Empty, "info", null, now,
+            Topic: topic, Silent: true, Broadcast: true), cancellationToken);
 
     private async Task<InventoryAdjustmentDetailDto> LoadDetailAsync(int id, CancellationToken cancellationToken)
     {
         var adjustment = await db.InventoryAdjustments.AsNoTracking()
             .Include(a => a.Lines).ThenInclude(l => l.Material)
+            .Include(a => a.Lines).ThenInclude(l => l.PhysicalMaterial)
             .Include(a => a.Lines).ThenInclude(l => l.PalletPosition)
             .Include(a => a.Lines).ThenInclude(l => l.StockSubtype)
             .SingleAsync(a => a.Id == id, cancellationToken);

@@ -36,6 +36,12 @@ public class InventoryAdjustmentLine : AuditableEntity
     public StockBatch? StockBatch { get; set; }
     public int MaterialId { get; set; }
     public Material Material { get; set; } = null!;
+    /// <summary>
+    /// Material physically found in the location when it differs from the system material.
+    /// Null means this is a quantity-only adjustment.
+    /// </summary>
+    public int? PhysicalMaterialId { get; set; }
+    public Material? PhysicalMaterial { get; set; }
     public int PalletPositionId { get; set; }
     public PalletPosition PalletPosition { get; set; } = null!;
     public int MfgMonth { get; set; }
@@ -45,8 +51,14 @@ public class InventoryAdjustmentLine : AuditableEntity
     public decimal CountedQuantity { get; set; }
     public decimal VarianceQuantity { get; set; }
     public uint BatchRowVersionAtCount { get; set; }
+    /// <summary>Snapshot of an already-existing physical-material batch, if one was present when
+    /// the request was submitted. These values make approval conflict-safe for both batches.</summary>
+    public int? PhysicalStockBatchIdAtCount { get; set; }
+    public decimal? PhysicalSystemQuantityAtCount { get; set; }
+    public uint? PhysicalBatchRowVersionAtCount { get; set; }
     public decimal? ActualQuantityBeforePosting { get; set; }
     public decimal? ActualQuantityAfterPosting { get; set; }
+    public decimal? ActualPhysicalQuantityBeforePosting { get; set; }
 }
 
 public static class InventoryAdjustmentReasonCodes

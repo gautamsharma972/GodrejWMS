@@ -565,13 +565,17 @@ public class ClosedXmlExcelService : IExcelService
         return stream.ToArray();
     }
 
-    public (IReadOnlyList<PulloutImportRow> Rows, PulloutLoadingSheetFieldsDto HeaderFields) ReadPulloutUpload(Stream fileStream)
+    public (IReadOnlyList<PulloutImportRow> Rows, PulloutLoadingSheetFieldsDto HeaderFields, string? IndentText) ReadPulloutUpload(Stream fileStream)
     {
         using var workbook = LoadWorkbook(fileStream);
         var ws = workbook.Worksheets.First();
 
         var headerRow = FindHeaderRow(ws, "Code", maxRow: 20);
         var plantName = FindLabeledValue(ws, headerRow, "Destination");
+        // Our own downloaded Loading Sheet puts the Indent value in the next column, same row
+        // (merged cell) - checked first. The client's own native sheet instead puts it one row
+        // below the "Indent" label, same column (the same layout "GATE NO" uses) - the fallback.
+        var indentText = FindLabeledValue(ws, headerRow, "Indent") ?? FindIndentValueBelowLabel(ws, headerRow);
         var headerFields = new PulloutLoadingSheetFieldsDto(
             TransportName: FindLabeledValue(ws, headerRow, "Transport"),
             VehicleNumber: FindLabeledValue(ws, headerRow, "Vehicle no"),
@@ -606,7 +610,245 @@ public class ClosedXmlExcelService : IExcelService
             row++;
         }
 
-        return (rows, headerFields);
+        return (rows, headerFields, indentText);
+    }
+
+    /// <summary>Mirrors <see cref="ReadPulloutUpload"/> exactly - same column positions, same
+    /// labeled-field scan - but reads a parsed clipboard grid instead of an <see cref="IXLCell"/>
+    /// grid, for a Loading Sheet pasted straight from Excel instead of uploaded as a file.</summary>
+    public (IReadOnlyList<PulloutImportRow> Rows, PulloutLoadingSheetFieldsDto HeaderFields, string? IndentText) ReadPulloutPaste(string pastedText)
+    {
+        var grid = ParseClipboardGrid(pastedText);
+
+        var headerRow = FindHeaderRowInGrid(grid, "Code", maxRow: 20);
+        var plantName = FindLabeledValueInGrid(grid, headerRow, "Destination");
+        // See the matching comment in ReadPulloutUpload - same-row (our own download format)
+        // checked first, falling back to one-row-below (the client's native sheet format).
+        var indentText = FindLabeledValueInGrid(grid, headerRow, "Indent") ?? FindIndentValueBelowLabelInGrid(grid, headerRow);
+        var headerFields = new PulloutLoadingSheetFieldsDto(
+            TransportName: FindLabeledValueInGrid(grid, headerRow, "Transport"),
+            VehicleNumber: FindLabeledValueInGrid(grid, headerRow, "Vehicle no"),
+            GateNumber: FindLabeledValueBelowInGrid(grid, headerRow, "GATE NO"),
+            DriverNumber: FindLabeledValueInGrid(grid, headerRow, "Driver No"),
+            PlanTime: FindLabeledValueInGrid(grid, headerRow, "Plan Time:"),
+            DateText: FindLabeledValueInGrid(grid, headerRow, "Date"),
+            StartTime: FindLabeledValueInGrid(grid, headerRow, "Start Time"),
+            EndTime: FindLabeledValueInGrid(grid, headerRow, "End Time"),
+            WeightText: FindTextStartingWithInGrid(grid, headerRow, "Weight"),
+            VolumeText: FindTextStartingWithInGrid(grid, headerRow, "Volume"));
+
+        var rows = new List<PulloutImportRow>();
+
+        var row = headerRow + 1;
+        while (true)
+        {
+            var codeText = GridCell(grid, row, 1).Trim();
+            if (codeText.Length == 0 || !long.TryParse(codeText, out var materialCode) || materialCode <= 0)
+            {
+                break;
+            }
+
+            var qtyText = GridCell(grid, row, 3).Trim();
+            decimal.TryParse(qtyText, out var quantity);
+
+            rows.Add(new PulloutImportRow(
+                MaterialCode: materialCode,
+                QuantityBoxes: quantity,
+                RowNumber: row,
+                PlantName: plantName,
+                Priority: NullIfEmpty(GridCell(grid, row, 4)),
+                MaterialDescription: NullIfEmpty(GridCell(grid, row, 2))));
+
+            row++;
+        }
+
+        return (rows, headerFields, indentText);
+    }
+
+    /// <summary>Tokenizes text copied from Excel: cells separated by tab, rows by a line break. A
+    /// cell containing a tab or line break of its own is wrapped by Excel in double quotes (with
+    /// embedded quotes doubled), the same convention CSV uses - handled here so an Indent cell with
+    /// our reference number and the client's own number on two lines (one Alt+Enter-separated
+    /// cell) stays one cell instead of splitting into two spurious rows.</summary>
+    private static List<List<string>> ParseClipboardGrid(string text)
+    {
+        var rows = new List<List<string>>();
+        var currentRow = new List<string>();
+        var field = new System.Text.StringBuilder();
+        var inQuotes = false;
+        var i = 0;
+
+        void EndField()
+        {
+            currentRow.Add(field.ToString());
+            field.Clear();
+        }
+
+        void EndRow()
+        {
+            EndField();
+            rows.Add(currentRow);
+            currentRow = [];
+        }
+
+        while (i < text.Length)
+        {
+            var c = text[i];
+            if (inQuotes)
+            {
+                if (c == '"')
+                {
+                    if (i + 1 < text.Length && text[i + 1] == '"')
+                    {
+                        field.Append('"');
+                        i += 2;
+                        continue;
+                    }
+                    inQuotes = false;
+                    i++;
+                    continue;
+                }
+                field.Append(c);
+                i++;
+                continue;
+            }
+
+            if (c == '"' && field.Length == 0)
+            {
+                inQuotes = true;
+                i++;
+                continue;
+            }
+            if (c == '\t')
+            {
+                EndField();
+                i++;
+                continue;
+            }
+            if (c == '\r')
+            {
+                if (i + 1 < text.Length && text[i + 1] == '\n')
+                {
+                    i++;
+                }
+                EndRow();
+                i++;
+                continue;
+            }
+            if (c == '\n')
+            {
+                EndRow();
+                i++;
+                continue;
+            }
+            field.Append(c);
+            i++;
+        }
+
+        if (field.Length > 0 || currentRow.Count > 0)
+        {
+            EndRow();
+        }
+
+        return rows;
+    }
+
+    private static string GridCell(List<List<string>> grid, int row, int col)
+    {
+        var r = row - 1;
+        var c = col - 1;
+        if (r < 0 || r >= grid.Count)
+        {
+            return string.Empty;
+        }
+        var line = grid[r];
+        return c < 0 || c >= line.Count ? string.Empty : line[c];
+    }
+
+    /// <summary>Unlike <see cref="FindHeaderRow"/> (which falls back to row 1 for a file upload -
+    /// safe there, since our own templates always carry a real header row, so that fallback is
+    /// never actually exercised with real data), a paste is exactly as likely to be *just* the data
+    /// rows with no "Code" header row at all - the client controls precisely what they select. If
+    /// "Code" isn't found, this returns 0 so data parsing starts at row 1 instead of silently
+    /// skipping it as a phantom header row.</summary>
+    private static int FindHeaderRowInGrid(List<List<string>> grid, string firstColumnLabelContains, int maxRow)
+    {
+        for (var row = 1; row <= maxRow; row++)
+        {
+            if (GridCell(grid, row, 1).Contains(firstColumnLabelContains, StringComparison.OrdinalIgnoreCase))
+            {
+                return row;
+            }
+        }
+
+        return 0;
+    }
+
+    private static string? FindLabeledValueInGrid(List<List<string>> grid, int maxRow, string label)
+    {
+        for (var row = 1; row <= maxRow; row++)
+        {
+            for (var col = 1; col <= 7; col++)
+            {
+                if (GridCell(grid, row, col).Trim().Equals(label, StringComparison.OrdinalIgnoreCase))
+                {
+                    return NullIfEmpty(GridCell(grid, row, col + 1));
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? FindLabeledValueBelowInGrid(List<List<string>> grid, int maxRow, string labelContains)
+    {
+        for (var row = 1; row <= maxRow; row++)
+        {
+            for (var col = 1; col <= 8; col++)
+            {
+                if (GridCell(grid, row, col).Contains(labelContains, StringComparison.OrdinalIgnoreCase))
+                {
+                    return NullIfEmpty(GridCell(grid, row + 1, col));
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>See <see cref="FindIndentValueBelowLabel"/> - the grid-based (paste) equivalent.</summary>
+    private static string? FindIndentValueBelowLabelInGrid(List<List<string>> grid, int headerRow)
+    {
+        for (var row = 1; row < headerRow; row++)
+        {
+            for (var col = 1; col <= 8; col++)
+            {
+                if (GridCell(grid, row, col).Contains("Indent", StringComparison.OrdinalIgnoreCase))
+                {
+                    var valueRow = row + 1;
+                    return valueRow < headerRow ? NullIfEmpty(GridCell(grid, valueRow, col)) : null;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? FindTextStartingWithInGrid(List<List<string>> grid, int maxRow, string prefix)
+    {
+        for (var row = 1; row <= maxRow; row++)
+        {
+            for (var col = 1; col <= 8; col++)
+            {
+                var text = GridCell(grid, row, col).Trim();
+                if (text.Length > 0 && text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return text;
+                }
+            }
+        }
+
+        return null;
     }
 
     public byte[] WritePulloutDownload(
@@ -985,6 +1227,28 @@ public class ClosedXmlExcelService : IExcelService
                 if (ws.Cell(row, col).GetString().Contains(labelContains, StringComparison.OrdinalIgnoreCase))
                 {
                     return NullIfEmpty(ws.Cell(row + 1, col).GetString());
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Like <see cref="FindLabeledValueBelow"/>, but only for "Indent", and only ever
+    /// reads a row strictly before <paramref name="headerRow"/> (the "Code" column-header row) as
+    /// the value - unlike GATE NO, an "Indent" label can sit immediately above that header row with
+    /// no gap, and the generic version would then read the header row's own cell (e.g. "PKD") as if
+    /// it were the indent value.</summary>
+    private static string? FindIndentValueBelowLabel(IXLWorksheet ws, int headerRow)
+    {
+        for (var row = 1; row < headerRow; row++)
+        {
+            for (var col = 1; col <= 8; col++)
+            {
+                if (ws.Cell(row, col).GetString().Contains("Indent", StringComparison.OrdinalIgnoreCase))
+                {
+                    var valueRow = row + 1;
+                    return valueRow < headerRow ? NullIfEmpty(ws.Cell(valueRow, col).GetString()) : null;
                 }
             }
         }
