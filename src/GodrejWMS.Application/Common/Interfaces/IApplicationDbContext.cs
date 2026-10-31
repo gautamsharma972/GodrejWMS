@@ -17,7 +17,7 @@ public interface IApplicationDbContext : IAsyncDisposable
     DbSet<OrganizationSettings> OrganizationSettings { get; }
     DbSet<Material> Materials { get; }
     DbSet<Brand> Brands { get; }
-    DbSet<BrandLocationPreference> BrandLocationPreferences { get; }
+    DbSet<AopDescriptionLocationPreference> AopDescriptionLocationPreferences { get; }
     DbSet<AopDescription> AopDescriptions { get; }
 
     DbSet<DesignType> DesignTypes { get; }

@@ -126,6 +126,57 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.ToTable("AopDescriptions", (string)null);
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.AopDescriptionLocationPreference", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AopDescriptionId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("BrandId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<int>("FromPalletPositionId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<int>("ToPalletPositionId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BrandId");
+
+                    b.HasIndex("FromPalletPositionId");
+
+                    b.HasIndex("ToPalletPositionId");
+
+                    b.HasIndex("AopDescriptionId", "FromPalletPositionId", "ToPalletPositionId")
+                        .IsUnique();
+
+                    b.ToTable("AopDescriptionLocationPreferences", (string)null);
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.Brand", b =>
                 {
                     b.Property<int>("Id")
@@ -166,52 +217,6 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Brands", (string)null);
-                });
-
-            modelBuilder.Entity("GodrejWMS.Domain.Entities.BrandLocationPreference", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("BrandId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("CreatedByUserId")
-                        .HasMaxLength(450)
-                        .HasColumnType("varchar(450)");
-
-                    b.Property<int>("FromPalletPositionId")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<int>("ToPalletPositionId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("UpdatedByUserId")
-                        .HasMaxLength(450)
-                        .HasColumnType("varchar(450)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FromPalletPositionId");
-
-                    b.HasIndex("ToPalletPositionId");
-
-                    b.HasIndex("BrandId", "FromPalletPositionId", "ToPalletPositionId")
-                        .IsUnique();
-
-                    b.ToTable("BrandLocationPreferences", (string)null);
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.City", b =>
@@ -2137,13 +2142,18 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
-            modelBuilder.Entity("GodrejWMS.Domain.Entities.BrandLocationPreference", b =>
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.AopDescriptionLocationPreference", b =>
                 {
-                    b.HasOne("GodrejWMS.Domain.Entities.Brand", "Brand")
+                    b.HasOne("GodrejWMS.Domain.Entities.AopDescription", "AopDescription")
                         .WithMany("LocationPreferences")
-                        .HasForeignKey("BrandId")
+                        .HasForeignKey("AopDescriptionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("GodrejWMS.Domain.Entities.Brand", null)
+                        .WithMany()
+                        .HasForeignKey("BrandId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("GodrejWMS.Domain.Entities.PalletPosition", "FromPalletPosition")
                         .WithMany()
@@ -2157,7 +2167,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Brand");
+                    b.Navigation("AopDescription");
 
                     b.Navigation("FromPalletPosition");
 
@@ -2612,13 +2622,13 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.AopDescription", b =>
                 {
+                    b.Navigation("LocationPreferences");
+
                     b.Navigation("Materials");
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.Brand", b =>
                 {
-                    b.Navigation("LocationPreferences");
-
                     b.Navigation("Materials");
                 });
 

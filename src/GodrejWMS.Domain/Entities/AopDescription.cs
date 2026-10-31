@@ -8,4 +8,5 @@ public class AopDescription : AuditableEntity
     public string? Description { get; set; }
     public bool IsActive { get; set; } = true;
     public ICollection<Material> Materials { get; set; } = new List<Material>();
+    public ICollection<AopDescriptionLocationPreference> LocationPreferences { get; set; } = new List<AopDescriptionLocationPreference>();
 }
