@@ -19,7 +19,10 @@
             <p class="page-kicker">Prioritize inward put-away within one or more location ranges for each AOP Description.</p>
         </div>
         <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Create">
-            <button class="btn btn-primary" @onclick="() => ShowForm(null)"><i class="bi bi-plus-lg"></i> New Mapping</button>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-secondary" @onclick="ShowCopy"><i class="bi bi-copy"></i> Copy Mappings</button>
+                <button class="btn btn-primary" @onclick="() => ShowForm(null)"><i class="bi bi-plus-lg"></i> New Mapping</button>
+            </div>
         </PermissionAuthorize>
     </div>
 
@@ -50,6 +53,44 @@
                     </div>
                     <div class="slide-over-footer"><button type="button" class="btn btn-outline-secondary" @onclick="CloseForm">Cancel</button><button type="submit" class="btn btn-primary" disabled="@_saving">@(_saving ? "Saving..." : "Save Mapping")</button></div>
                 </EditForm>
+            </section>
+        </div>
+    }
+
+    @if (_showCopy)
+    {
+        <div class="slide-over-backdrop" @onclick="CloseCopy">
+            <section class="slide-over-panel" role="dialog" aria-modal="true" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div><div class="eyebrow">Copy preferences</div><h2 class="slide-over-title">Copy mappings to another AOP Description</h2><p class="slide-over-subtitle">Every active location range of the source is replicated onto the target.</p></div>
+                    <button class="slide-over-close" aria-label="Close" @onclick="CloseCopy"><i class="bi bi-x-lg"></i></button>
+                </div>
+                <div class="slide-over-form">
+                    <div class="slide-over-body">
+                        <div class="row g-3">
+                            <div class="col-12"><label class="form-label">Copy from (AOP Description with mappings) <span class="text-danger">*</span></label><SearchableAopSelect Options="@CopySourceOptions" @bind-Value="_copySourceId" /></div>
+                            @if (_copySourceId != 0)
+                            {
+                                <div class="col-12"><div class="feedback-bar info mb-0"><div class="feedback-bar-content"><strong>@CopySourceRanges.Count active range(s) will be copied</strong><span>@string.Join(", ", CopySourceRanges.Select(r => $"{r.FromLocationCode} to {r.ToLocationCode}"))</span></div></div></div>
+                            }
+                            <div class="col-12"><label class="form-label">Copy to (AOP Description) <span class="text-danger">*</span></label><SearchableAopSelect Options="@CopyTargetOptions" @bind-Value="_copyTargetId" /></div>
+                        </div>
+                        @if (_copyError is not null) { <div class="alert alert-danger mt-3 mb-0">@_copyError</div> }
+                        @if (_copyResult is not null)
+                        {
+                            <div class="alert @(_copyResult.Skipped.Count == 0 ? "alert-success" : "alert-warning") mt-3 mb-0">
+                                <strong>@_copyResult.Copied.Count range(s) copied@(_copyResult.Skipped.Count > 0 ? $", {_copyResult.Skipped.Count} skipped" : "").</strong>
+                                @if (_copyResult.Skipped.Count > 0)
+                                {
+                                    <ul class="mb-0 mt-2 small">
+                                        @foreach (var skipped in _copyResult.Skipped) { <li><strong>@skipped.FromLocationCode to @skipped.ToLocationCode</strong> - @skipped.Reason</li> }
+                                    </ul>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <div class="slide-over-footer"><button type="button" class="btn btn-outline-secondary" @onclick="CloseCopy">@(_copyResult is null ? "Cancel" : "Close")</button><button type="button" class="btn btn-primary" disabled="@(_copying || _copySourceId == 0 || _copyTargetId == 0)" @onclick="CopyAsync">@(_copying ? "Copying..." : "Copy Mappings")</button></div>
+                </div>
             </section>
         </div>
     }
@@ -163,5 +204,34 @@
         try { await Mediator.Send(new DeleteAopDescriptionLocationPreferenceCommand(item.Id)); await LoadAsync(); await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Mapping deleted."); }
         catch (Exception ex) { Logger.LogWarning(ex, "Failed to delete AOP description location preference"); _error = ex.Message; }
     }
+    private bool _showCopy;
+    private bool _copying;
+    private int _copySourceId;
+    private int _copyTargetId;
+    private string? _copyError;
+    private CopyAopDescriptionLocationPreferencesResult? _copyResult;
+
+    private IReadOnlyList<AopDescriptionDto> CopySourceOptions =>
+        _aops.Where(a => (_items ?? []).Any(i => i.AopDescriptionId == a.Id && i.IsActive)).OrderBy(a => a.Code).ToList();
+    private IReadOnlyList<AopDescriptionDto> CopyTargetOptions =>
+        _aops.Where(a => a.IsActive && a.Id != _copySourceId).OrderBy(a => a.Code).ToList();
+    private List<AopDescriptionLocationPreferenceDto> CopySourceRanges =>
+        (_items ?? []).Where(i => i.AopDescriptionId == _copySourceId && i.IsActive).ToList();
+
+    private void ShowCopy() { _copySourceId = 0; _copyTargetId = 0; _copyError = null; _copyResult = null; _showCopy = true; }
+    private void CloseCopy() { _showCopy = false; }
+    private async Task CopyAsync()
+    {
+        _copying = true; _copyError = null; _copyResult = null;
+        try
+        {
+            _copyResult = await Mediator.Send(new CopyAopDescriptionLocationPreferencesCommand(_copySourceId, _copyTargetId));
+            await LoadAsync();
+            if (_copyResult.Copied.Count > 0) await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"{_copyResult.Copied.Count} mapping(s) copied.");
+        }
+        catch (Exception ex) { Logger.LogWarning(ex, "Failed to copy AOP description location preferences"); _copyError = ex.Message; }
+        finally { _copying = false; }
+    }
+
     private sealed class FormModel { public int AopDescriptionId { get; set; } public int WarehouseId { get; set; } public int RackId { get; set; } public int FromPalletPositionId { get; set; } public int ToPalletPositionId { get; set; } public bool IsActive { get; set; } = true; }
 }

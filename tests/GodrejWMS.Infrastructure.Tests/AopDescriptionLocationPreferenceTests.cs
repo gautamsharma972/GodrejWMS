@@ -410,6 +410,58 @@ public class AopDescriptionLocationPreferenceTests
         Assert.StartsWith("AOP-preferred range", result.Lines.Single(l => l.MaterialNumber == m2.MaterialNumber).AllocatedTo.Single().Reason);
     }
 
+    [Fact]
+    public async Task Copy_ReplicatesActiveRanges_ToTargetAopDescription_AndSkipsInactive()
+    {
+        var w = SeedWorld();
+        AddMapping(w, w.Aop, w.A(1, 1), w.A(2, 3));
+        AddMapping(w, w.Aop, w.B(1, 1), w.B(1, 3));
+        AddMapping(w, w.Aop, w.A(4, 1), w.A(4, 3), active: false);
+
+        var result = await new CopyAopDescriptionLocationPreferencesHandler(w.Db, new FixedClock(), new FixedUser())
+            .Handle(new CopyAopDescriptionLocationPreferencesCommand(w.Aop.Id, w.OtherAop.Id), CancellationToken.None);
+
+        Assert.Equal(2, result.Copied.Count);
+        Assert.Empty(result.Skipped);
+        var copied = w.Db.AopDescriptionLocationPreferences.Where(x => x.AopDescriptionId == w.OtherAop.Id).ToList();
+        Assert.Equal(2, copied.Count);
+        Assert.All(copied, x => Assert.True(x.IsActive));
+        Assert.Equal(3, w.Db.AopDescriptionLocationPreferences.Count(x => x.AopDescriptionId == w.Aop.Id));
+    }
+
+    [Fact]
+    public async Task Copy_SkipsAndReports_RangesTheTargetAlreadyCoversOrOverlaps()
+    {
+        var w = SeedWorld();
+        AddMapping(w, w.Aop, w.A(1, 1), w.A(2, 3));
+        AddMapping(w, w.Aop, w.B(1, 1), w.B(1, 3));
+        AddMapping(w, w.OtherAop, w.A(2, 1), w.A(3, 3)); // overlaps the first source range
+
+        var result = await new CopyAopDescriptionLocationPreferencesHandler(w.Db, new FixedClock(), new FixedUser())
+            .Handle(new CopyAopDescriptionLocationPreferencesCommand(w.Aop.Id, w.OtherAop.Id), CancellationToken.None);
+
+        Assert.Single(result.Copied);
+        var skipped = Assert.Single(result.Skipped);
+        Assert.Equal("A-01-01", skipped.FromLocationCode);
+        Assert.Contains("overlaps", skipped.Reason);
+    }
+
+    [Fact]
+    public async Task Copy_Rejects_SourceWithoutActiveMappings_AndInactiveTarget()
+    {
+        var w = SeedWorld();
+        var handler = new CopyAopDescriptionLocationPreferencesHandler(w.Db, new FixedClock(), new FixedUser());
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            handler.Handle(new CopyAopDescriptionLocationPreferencesCommand(w.Aop.Id, w.OtherAop.Id), CancellationToken.None));
+
+        AddMapping(w, w.Aop, w.A(1, 1), w.A(2, 3));
+        w.OtherAop.IsActive = false;
+        w.Db.SaveChanges();
+        var result = await handler.Handle(new CopyAopDescriptionLocationPreferencesCommand(w.Aop.Id, w.OtherAop.Id), CancellationToken.None);
+        Assert.Empty(result.Copied);
+        Assert.Single(result.Skipped);
+    }
+
     // ───────────────────────── test doubles ─────────────────────────
 
     private sealed class CapturingLogger<T> : ILogger<T>
