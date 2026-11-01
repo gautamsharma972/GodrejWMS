@@ -240,7 +240,18 @@
                                         <td>@outcome.SheetName</td>
                                         <td><span class="status-pill @WorkbookOutcomePillClass(outcome.Status)">@WorkbookOutcomeLabel(outcome.Status)</span></td>
                                         <td>@(outcome.ReferenceNumber ?? "—")</td>
-                                        <td>@outcome.Message</td>
+                                        <td>
+                                            @outcome.Message
+                                            @if (outcome.SkippedLines is { Count: > 0 })
+                                            {
+                                                <ul class="mt-2 mb-0 small text-danger">
+                                                    @foreach (var skipped in outcome.SkippedLines)
+                                                    {
+                                                        <li><strong>@skipped.MaterialNumber</strong> (@skipped.MfgMonthLabel) - @skipped.AllocatedQuantityBoxes of @skipped.RequestedQuantityBoxes boxes: @skipped.Reason</li>
+                                                    }
+                                                </ul>
+                                            }
+                                        </td>
                                         <td class="table-actions history-actions-column">
                                             @if (outcome.Status == InwardSheetImportStatus.Created && outcome.ReferenceNumber is not null)
                                             {

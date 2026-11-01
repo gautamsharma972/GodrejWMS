@@ -1,6 +1,7 @@
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Domain.Entities;
 using MediatR;
@@ -13,10 +14,16 @@ public sealed record ConfirmInwardPutawayCommand(string ReferenceNumber) : IRequ
 public sealed class ConfirmInwardPutawayHandler(
     IApplicationDbContext db,
     IDateTimeProvider clock,
-    ICurrentUserService currentUser) : IRequestHandler<ConfirmInwardPutawayCommand, InwardResultDto>
+    ICurrentUserService currentUser,
+    IPermissionService permissions) : IRequestHandler<ConfirmInwardPutawayCommand, InwardResultDto>
 {
     public async Task<InwardResultDto> Handle(ConfirmInwardPutawayCommand request, CancellationToken cancellationToken)
     {
+        if (!await permissions.HasPermissionAsync(PermissionKeys.Inward.Confirm, cancellationToken))
+        {
+            throw new InvalidOperationException("You do not have permission to confirm inward transactions.");
+        }
+
         var reference = request.ReferenceNumber.Trim();
         var transaction = await db.InwardTransactions
             .Include(t => t.Lines)
@@ -26,6 +33,17 @@ public sealed class ConfirmInwardPutawayHandler(
                     .ThenInclude(p => p.PalletPosition)
             .FirstOrDefaultAsync(t => t.ReferenceNumber == reference, cancellationToken)
             ?? throw new NotFoundException(nameof(InwardTransaction), reference);
+
+        var awaitingPkm = transaction.Lines
+            .Where(l => l.MfgMonth is null)
+            .SelectMany(l => l.Putaways.Where(p => !p.IsConfirmed))
+            .Select(p => p.PalletPosition.LocationCode)
+            .ToList();
+        if (awaitingPkm.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"The picker has not assigned a PKM for {awaitingPkm.Count} location(s) yet: {string.Join(", ", awaitingPkm)}. Confirm after PKM is submitted for every location.");
+        }
 
         foreach (var line in transaction.Lines)
         {

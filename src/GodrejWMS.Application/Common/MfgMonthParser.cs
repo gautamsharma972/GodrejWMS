@@ -8,7 +8,7 @@ namespace GodrejWMS.Application.Common;
 /// </summary>
 public static class MfgMonthParser
 {
-    private static readonly string[] Formats = ["MMM|yyyy", "MMM|yy", "MM/yyyy", "yyyy-MM"];
+    private static readonly string[] Formats = ["MMM|yyyy", "MMM|yy", "MMM-yy", "MMM-yyyy", "MMM yy", "MMM yyyy", "dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "d-M-yyyy", "dd.MM.yyyy", "MM/yyyy", "yyyy-MM"];
 
     public static bool TryParse(string? text, out int mfgMonth)
     {

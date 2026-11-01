@@ -242,9 +242,11 @@
                     @if (!SidebarCollapsed)
                     {
                         <div class="nav-submenu @(IsInwardNoPkmMenuOpen ? "expanded" : null)">
+                            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inward.Create">
                             <div class="nav-item nav-subitem">
                                 <NavLink class="nav-link" href="inward-no-pkm" Match="NavLinkMatch.All"><i class="bi bi-pencil-square" aria-hidden="true"></i> <span class="nav-link-text">Entry</span></NavLink>
                             </div>
+                            </PermissionAuthorize>
                             <div class="nav-item nav-subitem">
                                 <NavLink class="nav-link" href="inward-no-pkm/history"><i class="bi bi-clock-history" aria-hidden="true"></i> <span class="nav-link-text">History</span></NavLink>
                             </div>
@@ -254,7 +256,9 @@
                     {
                         <div class="collapsed-nav-flyout" style="top: @(_collapsedFlyoutTop)px">
                             <div class="collapsed-nav-flyout-title">Inward (No PKM)</div>
+                            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inward.Create">
                             <NavLink class="collapsed-nav-flyout-link" href="inward-no-pkm" Match="NavLinkMatch.All" @onclick="CloseCollapsedFlyout"><i class="bi bi-pencil-square"></i><span>Entry</span></NavLink>
+                            </PermissionAuthorize>
                             <NavLink class="collapsed-nav-flyout-link" href="inward-no-pkm/history" @onclick="CloseCollapsedFlyout"><i class="bi bi-clock-history"></i><span>History</span></NavLink>
                         </div>
                     }

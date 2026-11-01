@@ -1,5 +1,6 @@
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Domain.Entities;
 using MediatR;
@@ -18,10 +19,16 @@ public sealed record ConfirmSingleInwardPutawayCommand(int PutawayId) : IRequest
 public sealed class ConfirmSingleInwardPutawayHandler(
     IApplicationDbContext db,
     IDateTimeProvider clock,
-    ICurrentUserService currentUser) : IRequestHandler<ConfirmSingleInwardPutawayCommand, InwardResultDto>
+    ICurrentUserService currentUser,
+    IPermissionService permissions) : IRequestHandler<ConfirmSingleInwardPutawayCommand, InwardResultDto>
 {
     public async Task<InwardResultDto> Handle(ConfirmSingleInwardPutawayCommand request, CancellationToken cancellationToken)
     {
+        if (!await permissions.HasPermissionAsync(PermissionKeys.Inward.Confirm, cancellationToken))
+        {
+            throw new InvalidOperationException("You do not have permission to confirm inward transactions.");
+        }
+
         var putaway = await db.InwardPutaways
             .Include(p => p.PalletPosition)
             .Include(p => p.InwardTransactionLine)

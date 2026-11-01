@@ -1,5 +1,6 @@
 @page "/inward-no-pkm/history"
 @attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInwardNoPkm)]
+@using GodrejWMS.Application.Common
 @using GodrejWMS.Application.Common.Interfaces
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Features.Inward.Dtos
@@ -7,6 +8,10 @@
 @using GodrejWMS.Domain.Enums
 @inject IMediator Mediator
 @inject IJSRuntime JsRuntime
+@using GodrejWMS.Application.Common.Permissions
+@using GodrejWMS.Application.Features.Inward.Commands
+@inject IPermissionService PermissionService
+@inject NavigationManager Navigation
 @inject IExcelService ExcelService
 @inject ILogger<History> Logger
 
@@ -85,7 +90,16 @@
                         @foreach (var item in _history.Items)
                         {
                             <tr>
-                                <td><span class="record-code history-reference">@item.ReferenceNumber</span></td>
+                                <td>
+                                    @if (_pickerMode)
+                                    {
+                                        <span class="record-code history-reference">@item.ReferenceNumber</span>
+                                    }
+                                    else
+                                    {
+                                        <a class="record-code history-reference" href="@($"/inward/{item.Id}")">@item.ReferenceNumber</a>
+                                    }
+                                </td>
                                 <td class="history-created">@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
                                 <td><span class="status-pill @AllocationClass(item.Status)">@item.Status</span></td>
                                 <td class="text-end history-number-column">@item.LineCount</td>
@@ -98,6 +112,12 @@
                                         <button type="button" class="btn btn-sm btn-outline-secondary table-action-btn history-download-btn" title="@($"Download Excel {item.ReferenceNumber}")" aria-label="@($"Download Excel {item.ReferenceNumber}")" @onclick="() => DownloadExcelAsync(item)">
                                             <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
                                         </button>
+                                        @if (!_pickerMode && !item.IsConfirmed && !item.IsRejected)
+                                        {
+                                            <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"Putaway {item.ReferenceNumber}")" aria-label="@($"Putaway {item.ReferenceNumber}")" href="@($"/inward/{item.Id}/putaway")">
+                                                <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
+                                            </a>
+                                        }
                                     </div>
                                 </td>
                             </tr>
@@ -173,6 +193,67 @@
                             Loading GRN details...
                         </div>
                     }
+                    else if (_pickerMode)
+                    {
+                        var locations = PickerLocations();
+                        var selected = _selectedPutawayId is { } sid ? locations.FirstOrDefault(l => l.Putaway.Id == sid) : null;
+                        @if (selected is null)
+                        {
+                            var done = locations.Count(l => l.IsDone);
+                            <p class="text-muted mb-2">Tap a location to update its PKM. <strong>@done of @locations.Count</strong> done.</p>
+                            <div class="picker-location-list d-grid gap-2">
+                                @foreach (var location in locations)
+                                {
+                                    <button type="button" class="btn text-start border rounded-3 p-3 d-flex justify-content-between align-items-center @(location.IsDone ? "btn-light" : "btn-outline-primary")"
+                                            disabled="@location.Putaway.IsConfirmed" @onclick="() => SelectLocation(location.Putaway.Id)">
+                                        <span>
+                                            <strong class="fs-5">@location.Putaway.LocationCode</strong><br />
+                                            <span class="small text-muted">@location.Line.MaterialNumber &middot; @location.Putaway.QuantityBoxes.ToString("0.###") boxes</span>
+                                        </span>
+                                        <span class="status-pill @(location.IsDone ? "success" : "warning")">@(location.Putaway.IsConfirmed ? "Confirmed" : location.IsDone ? "PKM " + location.Line.MfgMonthLabel : "PKM needed")</span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            var pick = PickFor(selected.Putaway.Id, selected.Line.MfgMonthLabel);
+                            <button type="button" class="btn btn-link px-0 mb-2" @onclick="() => _selectedPutawayId = null">
+                                <i class="bi bi-arrow-left" aria-hidden="true"></i> All locations
+                            </button>
+                            <div class="border rounded-3 p-3">
+                                <div class="text-muted small">Location</div>
+                                <div class="fs-3 fw-bold mb-3">@selected.Putaway.LocationCode</div>
+                                <div class="text-muted small">Material code</div>
+                                <div class="fw-semibold mb-2">@selected.Line.MaterialNumber</div>
+                                <div class="text-muted small">Material description</div>
+                                <div class="fw-semibold mb-2">@selected.Line.MaterialDescription</div>
+                                <div class="text-muted small">Qty (boxes)</div>
+                                <div class="fs-4 fw-bold mb-3">@selected.Putaway.QuantityBoxes.ToString("0.###")</div>
+                                <div class="text-muted small mb-1">PKM</div>
+                                <div class="d-grid gap-2" style="grid-template-columns: 1fr 1fr">
+                                    <select class="form-select form-select-lg" title="PKM year" @bind="pick.Year">
+                                        <option value="0">Year</option>
+                                        @foreach (var year in YearOptions)
+                                        {
+                                            <option value="@year">@year</option>
+                                        }
+                                    </select>
+                                    <select class="form-select form-select-lg" title="PKM month" @bind="pick.Month">
+                                        <option value="0">Month</option>
+                                        @foreach (var month in MonthLabels)
+                                        {
+                                            <option value="@month.Value">@month.Label</option>
+                                        }
+                                    </select>
+                                </div>
+                                <button type="button" class="btn btn-primary btn-lg w-100 mt-3" disabled="@(_submittingPkm || !pick.IsComplete)" @onclick="SubmitSelectedLocationAsync">
+                                    <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                                    @(_submittingPkm ? "Submitting..." : "Submit")
+                                </button>
+                            </div>
+                        }
+                    }
                     else
                     {
                         <div class="table-responsive">
@@ -184,6 +265,7 @@
                                         <th class="text-end">Allocated</th>
                                         <th>Status</th>
                                         <th>Location</th>
+                                        <th>PKM</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -197,6 +279,7 @@
                                                 <td class="text-end fw-semibold">@line.AllocatedQuantityBoxes.ToString("0.###")</td>
                                                 <td><span class="status-pill @AllocationClass(line.Status)">@line.Status</span> @line.Remarks</td>
                                                 <td><span class="text-muted small">No location reserved</span></td>
+                                                <td>@line.MfgMonthLabel</td>
                                             </tr>
                                         }
                                         else
@@ -205,10 +288,36 @@
                                             {
                                                 <tr>
                                                     <td><span class="record-code">@line.MaterialNumber</span> @line.MaterialDescription</td>
-                                                    <td class="text-end">@line.RequestedQuantityBoxes</td>
-                                                    <td class="text-end fw-semibold">@line.AllocatedQuantityBoxes.ToString("0.###")</td>
+                                                    <td class="text-end">@line.RequestedQuantityBoxes.ToString("0.###")</td>
+                                                    <td class="text-end fw-semibold">@putaway.QuantityBoxes.ToString("0.###")</td>
                                                     <td><span class="status-pill @AllocationClass(line.Status)">@line.Status</span> @line.Remarks</td>
-                                                    <td>@putaway.LocationCode <strong>+@putaway.QuantityBoxes.ToString("0.###")</strong></td>
+                                                    <td>@putaway.LocationCode</td>
+                                                    <td>
+                                                        @if (_canAssignPkm && !putaway.IsConfirmed)
+                                                        {
+                                                            var pick = PickFor(putaway.Id, line.MfgMonthLabel);
+                                                            <div class="mfg-picker">
+                                                                <select class="form-select" title="PKM year" @bind="pick.Year">
+                                                                    <option value="0">Year</option>
+                                                                    @foreach (var year in YearOptions)
+                                                                    {
+                                                                        <option value="@year">@year</option>
+                                                                    }
+                                                                </select>
+                                                                <select class="form-select" title="PKM month" @bind="pick.Month">
+                                                                    <option value="0">Month</option>
+                                                                    @foreach (var month in MonthLabels)
+                                                                    {
+                                                                        <option value="@month.Value">@month.Label</option>
+                                                                    }
+                                                                </select>
+                                                            </div>
+                                                        }
+                                                        else
+                                                        {
+                                                            @line.MfgMonthLabel
+                                                        }
+                                                    </td>
                                                 </tr>
                                             }
                                         }
@@ -220,7 +329,14 @@
                 </div>
                 <div class="slide-over-footer">
                     <button type="button" class="btn btn-outline-secondary" @onclick="CloseDetail">Close</button>
-                    @if (_detail is not null)
+                    @if (_detail is not null && _canAssignPkm && !_pickerMode && !_detail.IsConfirmed)
+                    {
+                        <button type="button" class="btn btn-primary" disabled="@(_submittingPkm || !_picks.Values.Any(p => p.IsComplete))" @onclick="SubmitPkmAsync">
+                            <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                            @(_submittingPkm ? "Submitting..." : "Submit PKM")
+                        </button>
+                    }
+                    @if (_detail is not null && !_pickerMode)
                     {
                         <button type="button" class="btn btn-outline-secondary" @onclick="() => DownloadDetailExcelAsync(_detail)">
                             <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
@@ -244,8 +360,106 @@
     private InwardDetailDto? _detail;
     private string? _detailError;
 
+    private bool _canAssignPkm;
+    // Pickers (can assign PKM, cannot confirm) get the one-location-at-a-time mobile flow;
+    // Superadmin / Platform Admin keep the full table.
+    private bool _pickerMode;
+    private int? _selectedPutawayId;
+
+    private sealed record PickerLocation(InwardDetailLineDto Line, InwardPutawayDto Putaway)
+    {
+        public bool IsDone => Line.MfgMonthLabel != "No PKM";
+    }
+
+    private List<PickerLocation> PickerLocations() => _detail is null ? [] :
+        _detail.Lines.SelectMany(l => l.Putaways.Select(p => new PickerLocation(l, p))).OrderBy(x => x.IsDone).ThenBy(x => x.Putaway.LocationCode, StringComparer.Ordinal).ToList();
+
+    private void SelectLocation(int putawayId) => _selectedPutawayId = putawayId;
+
+    private async Task SubmitSelectedLocationAsync()
+    {
+        if (_detail is null || _selectedPutawayId is not { } id || !_picks.TryGetValue(id, out var pick) || !pick.IsComplete) return;
+
+        _submittingPkm = true;
+        try
+        {
+            await Mediator.Send(new AssignInwardPutawayPkmCommand(_detail.ReferenceNumber,
+                [new PutawayPkmAssignment(id, $"{MonthLabels[pick.Month - 1].Label}|{pick.Year}")]));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "PKM saved.", "success");
+            _picks.Remove(id);
+            _selectedPutawayId = null;
+            _detail = await Mediator.Send(new GetInwardDetailQuery(_detail.Id));
+        }
+        catch (Exception ex)
+        {
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", ex.Message, "danger");
+        }
+        finally
+        {
+            _submittingPkm = false;
+        }
+    }
+    private bool _submittingPkm;
+    private readonly Dictionary<int, PkmPick> _picks = new();
+
+    private static readonly (int Value, string Label)[] MonthLabels =
+        Enumerable.Range(1, 12).Select(m => (m, System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetAbbreviatedMonthName(m).ToUpperInvariant())).ToArray();
+
+    private static IEnumerable<int> YearOptions => Enumerable.Range(DateTime.Today.Year - 3, 5);
+
+    private sealed class PkmPick
+    {
+        public int Year { get; set; }
+        public int Month { get; set; }
+        public bool IsComplete => Year > 0 && Month > 0;
+    }
+
+    private PkmPick PickFor(int putawayId, string currentLabel)
+    {
+        if (!_picks.TryGetValue(putawayId, out var pick))
+        {
+            pick = new PkmPick();
+            if (MfgMonthParser.TryParse(currentLabel, out var current))
+            {
+                pick.Year = current / 100;
+                pick.Month = current % 100;
+            }
+            _picks[putawayId] = pick;
+        }
+        return pick;
+    }
+
+    private async Task SubmitPkmAsync()
+    {
+        if (_detail is null) return;
+
+        var assignments = _picks.Where(p => p.Value.IsComplete)
+            .Select(p => new PutawayPkmAssignment(p.Key, $"{MonthLabels[p.Value.Month - 1].Label}|{p.Value.Year}"))
+            .ToList();
+
+        _submittingPkm = true;
+        try
+        {
+            var result = await Mediator.Send(new AssignInwardPutawayPkmCommand(_detail.ReferenceNumber, assignments));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"PKM saved for {assignments.Count} location(s) on {result.ReferenceNumber}.", "success");
+            _picks.Clear();
+        _selectedPutawayId = null;
+            _detail = await Mediator.Send(new GetInwardDetailQuery(_detail.Id));
+        }
+        catch (Exception ex)
+        {
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", ex.Message, "danger");
+        }
+        finally
+        {
+            _submittingPkm = false;
+        }
+    }
+
     protected override async Task OnInitializedAsync()
     {
+        _canAssignPkm = await PermissionService.HasPermissionAsync(PermissionKeys.Inward.AssignPkm);
+        _pickerMode = _canAssignPkm && !await PermissionService.HasPermissionAsync(PermissionKeys.Inward.Confirm);
         await LoadHistoryPage(1);
     }
 
@@ -301,9 +515,18 @@
 
     private async Task OpenDetailAsync(int id)
     {
+        // Everyone except the Picker gets the same full GRN screen as Inward (with PKM): Putaway,
+        // Confirm, Reject, Download/Upload allocation. Pickers keep the one-location-at-a-time flow.
+        if (!_pickerMode)
+        {
+            Navigation.NavigateTo($"/inward/{id}");
+            return;
+        }
+
         _detail = null;
         _detailError = null;
         _isDetailOpen = true;
+        _picks.Clear();
 
         try
         {

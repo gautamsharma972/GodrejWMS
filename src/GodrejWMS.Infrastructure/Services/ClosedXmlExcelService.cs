@@ -548,6 +548,7 @@ public class ClosedXmlExcelService : IExcelService
             var receivedFrom = NullIfEmpty(ws.Cell(5, 6).GetString());
             var existingGrnReference = NullIfEmpty(ws.Cell(2, 5).GetString());
 
+            var pkmColumn = FindHeaderColumn(ws, InwardWorkbookHeaderRow, "Pkd/Batch") ?? 6;
             var rows = new List<InwardImportRow>();
             var rowsMissingPkm = new List<int>();
             for (var row = InwardWorkbookHeaderRow + 1; ; row++)
@@ -573,7 +574,7 @@ public class ClosedXmlExcelService : IExcelService
                     continue;
                 }
 
-                var pkmText = NullIfEmpty(ws.Cell(row, 6).GetString());
+                var pkmText = ReadMfgMonthText(ws.Cell(row, pkmColumn));
                 if (pkmText is null)
                 {
                     rowsMissingPkm.Add(row);
@@ -1902,6 +1903,40 @@ public class ClosedXmlExcelService : IExcelService
 
         // Fall back to row 1 (a plain data-only upload with no header row).
         return 1;
+    }
+
+    private static int? FindHeaderColumn(IXLWorksheet ws, int headerRow, string header)
+    {
+        var lastColumn = ws.Row(headerRow).LastCellUsed()?.Address.ColumnNumber ?? 0;
+        for (var col = 1; col <= lastColumn; col++)
+        {
+            if (ws.Cell(headerRow, col).GetString().Trim().Equals(header, StringComparison.OrdinalIgnoreCase))
+            {
+                return col;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Reads a Pkd/Batch cell that may be a real Excel date (shown as "Sep-26", value
+    /// 01/09/2026) or text, returning the "MMM|yyyy" label MfgMonthParser expects.</summary>
+    private static string? ReadMfgMonthText(IXLCell cell)
+    {
+        if (cell.DataType == XLDataType.DateTime)
+        {
+            var date = cell.GetDateTime();
+            return $"{date:MMM}|{date:yyyy}".ToUpperInvariant();
+        }
+        if (cell.DataType == XLDataType.Number && cell.Value.GetNumber() is var serial and > 20000 and < 80000)
+        {
+            var date = DateTime.FromOADate(serial);
+            return $"{date:MMM}|{date:yyyy}".ToUpperInvariant();
+        }
+        if (cell.HasFormula && !cell.IsEmpty() && cell.TryGetValue<DateTime>(out var formulaDate))
+        {
+            return $"{formulaDate:MMM}|{formulaDate:yyyy}".ToUpperInvariant();
+        }
+        return NullIfEmpty(cell.GetString());
     }
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

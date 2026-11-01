@@ -89,7 +89,8 @@ public static class DevelopmentDataSeeder
             (Email: "logisticmanager@godrejwms.local", FullName: "Logistic Manager", Role: RoleNames.LogisticManager),
             (Email: "headsupervisor@godrejwms.local", FullName: "Head Supervisor", Role: RoleNames.HeadSupervisor),
             (Email: "officestaff@godrejwms.local", FullName: "Office Staff", Role: RoleNames.OfficeStaff),
-            (Email: "supervisor@godrejwms.local", FullName: "Supervisor", Role: RoleNames.Supervisor)
+            (Email: "supervisor@godrejwms.local", FullName: "Supervisor", Role: RoleNames.Supervisor),
+            (Email: "picker@godrejwms.local", FullName: "Picker", Role: RoleNames.Pickers)
         };
 
         foreach (var account in accounts)

@@ -37,7 +37,21 @@ public sealed record InwardSheetImportOutcome(
     string SheetName,
     InwardSheetImportStatus Status,
     string? ReferenceNumber,
-    string Message);
+    string Message,
+    IReadOnlyList<InwardSkippedLine>? SkippedLines = null);
+
+/// <summary>An uploaded row that was dropped (or only partly allocated) while creating the GRN,
+/// and why - so the user can see why the GRN total is lower than the sheet total.</summary>
+public sealed record InwardSkippedLine(long MaterialNumber, string MfgMonthLabel, decimal RequestedQuantityBoxes, decimal AllocatedQuantityBoxes, string Reason);
+
+public static class InwardSkippedLineMapper
+{
+    public static List<InwardSkippedLine> From(IEnumerable<InwardLineResultDto> lines) => lines
+        .Where(l => l.AllocatedQuantityBoxes < l.RequestedQuantityBoxes)
+        .Select(l => new InwardSkippedLine(l.MaterialNumber, l.MfgMonthLabel, l.RequestedQuantityBoxes, l.AllocatedQuantityBoxes,
+            l.Remarks ?? "Not fully allocated."))
+        .ToList();
+}
 
 public sealed record InwardLineResultDto(
     long MaterialNumber,

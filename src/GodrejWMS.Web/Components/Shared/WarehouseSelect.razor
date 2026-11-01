@@ -138,7 +138,10 @@ else if (_warehouses.Count > 1)
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && _hasPendingNotify)
+        // Not gated on firstRender: OnInitializedAsync awaits the warehouse fetch, so the component's
+        // first render (and its firstRender=true callback) can happen before the pending id is set -
+        // gating on firstRender then dropped the notify and the parent's warehouse stayed null.
+        if (_hasPendingNotify)
         {
             _hasPendingNotify = false;
             await WarehouseIdChanged.InvokeAsync(_pendingNotifyId);

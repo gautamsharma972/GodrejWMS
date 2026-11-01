@@ -367,7 +367,7 @@ public class PalletAllocationServiceTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new ConfirmInwardPutawayHandler(db, new TestClock(), new TestCurrentUser());
+        var sut = new ConfirmInwardPutawayHandler(db, new TestClock(), new TestCurrentUser(), new AllowAllPermissions());
 
         var result = await sut.Handle(new ConfirmInwardPutawayCommand("GRN-CONFIRM"), CancellationToken.None);
 

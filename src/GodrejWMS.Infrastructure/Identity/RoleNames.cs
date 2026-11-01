@@ -16,6 +16,9 @@ public static class RoleNames
     public const string HeadSupervisor = "Head Supervisor";
     public const string Supervisor = "Supervisor";
 
+    /// <summary>Custom (data-driven) role for the Inward-without-PKM picker; created by migration, deliberately not in <see cref="All"/>.</summary>
+    public const string Pickers = "Pickers";
+
     /// <summary>The vendor-level role above Superadmin - deliberately NOT in <see cref="All"/>,
     /// which represents the client-visible, Superadmin-assignable role set. Platform Admin is a
     /// fixed, code-level role (same treatment as Superadmin itself): never shown in the Role &amp;

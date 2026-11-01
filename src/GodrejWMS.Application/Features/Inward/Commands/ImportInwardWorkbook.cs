@@ -104,8 +104,11 @@ public sealed class ImportInwardWorkbookHandler(IExcelService excel, IMediator m
                         VehicleNumber: sheet.VehicleNumber, LrNumber: sheet.LrNumber, ReceivedFrom: sheet.ReceivedFrom),
                     cancellationToken);
 
-                outcomes.Add(new InwardSheetImportOutcome(sheet.SheetName, InwardSheetImportStatus.Created, result.ReferenceNumber,
-                    $"GRN {result.ReferenceNumber} created with {sheet.Rows.Count} line(s)."));
+                var skipped = InwardSkippedLineMapper.From(result.Lines);
+                var message = skipped.Count == 0
+                    ? $"GRN {result.ReferenceNumber} created with {sheet.Rows.Count} line(s)."
+                    : $"GRN {result.ReferenceNumber} created, but {skipped.Count} of {sheet.Rows.Count} line(s) were skipped or only partly allocated - see below.";
+                outcomes.Add(new InwardSheetImportOutcome(sheet.SheetName, InwardSheetImportStatus.Created, result.ReferenceNumber, message, skipped));
             }
             catch (Exception ex)
             {

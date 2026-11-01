@@ -36,6 +36,7 @@ public static class PermissionKeys
         public const string Confirm = "Inward.Confirm";
         public const string Reject = "Inward.Reject";
         public const string Reallocate = "Inward.Reallocate";
+        public const string AssignPkm = "Inward.AssignPkm";
     }
 
     public static class Pullout
@@ -96,7 +97,7 @@ public static class PermissionKeys
         Menu.ViewDashboard, Menu.ViewInward, Menu.ViewInwardNoPkm, Menu.ViewPullout, Menu.ViewInventoryMaster, Menu.ViewInventoryAdjustments,
         Menu.ViewRacks, Menu.ViewLocations, Menu.ViewMaterials, Menu.ViewInventoryMovement,
         Menu.ViewAuditTrail, Menu.ViewReports, Menu.ViewOrgMasters, Menu.ViewProductMasters, Menu.ViewUserManagement,
-        Inward.Create, Inward.View, Inward.Edit, Inward.Putaway, Inward.Confirm, Inward.Reject, Inward.Reallocate,
+        Inward.Create, Inward.View, Inward.Edit, Inward.Putaway, Inward.Confirm, Inward.Reject, Inward.Reallocate, Inward.AssignPkm,
         Pullout.Create, Pullout.View, Pullout.Edit, Pullout.Pick, Pullout.Confirm, Pullout.Reject,
         Inventory.View, Inventory.Import, Inventory.Adjust, Inventory.ApproveAdjustment, Inventory.Move, Inventory.ManageLocations, Inventory.ManageRacks,
         Masters.View, Masters.Create, Masters.Edit, Masters.Deactivate, Masters.Delete,

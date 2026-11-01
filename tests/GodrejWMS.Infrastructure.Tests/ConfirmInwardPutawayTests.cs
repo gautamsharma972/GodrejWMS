@@ -69,7 +69,7 @@ public class ConfirmInwardPutawayTests
     public async Task Confirm_CreatesStockBatch_AndIncrementsRowVersion_WhenLocationStillFree()
     {
         var (db, _, position, transaction, putaway) = SeedScenario();
-        var handler = new ConfirmInwardPutawayHandler(db, new TestClock(), new TestCurrentUser());
+        var handler = new ConfirmInwardPutawayHandler(db, new TestClock(), new TestCurrentUser(), new AllowAllPermissions());
 
         await handler.Handle(new ConfirmInwardPutawayCommand(transaction.ReferenceNumber), CancellationToken.None);
 
@@ -92,7 +92,7 @@ public class ConfirmInwardPutawayTests
         db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = position.Id, MfgMonth = 201001, QuantityBoxes = 15 });
         await db.SaveChangesAsync();
 
-        var handler = new ConfirmInwardPutawayHandler(db, new TestClock(), new TestCurrentUser());
+        var handler = new ConfirmInwardPutawayHandler(db, new TestClock(), new TestCurrentUser(), new AllowAllPermissions());
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             handler.Handle(new ConfirmInwardPutawayCommand(transaction.ReferenceNumber), CancellationToken.None));
@@ -121,7 +121,7 @@ public class ConfirmInwardPutawayTests
         db.StockBatches.Add(new StockBatch { MaterialId = otherMaterial.Id, PalletPositionId = position.Id, MfgMonth = 201001, QuantityBoxes = 5 });
         await db.SaveChangesAsync();
 
-        var handler = new ConfirmInwardPutawayHandler(db, new TestClock(), new TestCurrentUser());
+        var handler = new ConfirmInwardPutawayHandler(db, new TestClock(), new TestCurrentUser(), new AllowAllPermissions());
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             handler.Handle(new ConfirmInwardPutawayCommand(transaction.ReferenceNumber), CancellationToken.None));
@@ -135,7 +135,7 @@ public class ConfirmInwardPutawayTests
         position.IsActive = false;
         await db.SaveChangesAsync();
 
-        var handler = new ConfirmInwardPutawayHandler(db, new TestClock(), new TestCurrentUser());
+        var handler = new ConfirmInwardPutawayHandler(db, new TestClock(), new TestCurrentUser(), new AllowAllPermissions());
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             handler.Handle(new ConfirmInwardPutawayCommand(transaction.ReferenceNumber), CancellationToken.None));
@@ -153,7 +153,7 @@ public class ConfirmInwardPutawayTests
         material.RequirePreferredZone = true;
         await db.SaveChangesAsync();
 
-        var handler = new ConfirmInwardPutawayHandler(db, new TestClock(), new TestCurrentUser());
+        var handler = new ConfirmInwardPutawayHandler(db, new TestClock(), new TestCurrentUser(), new AllowAllPermissions());
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             handler.Handle(new ConfirmInwardPutawayCommand(transaction.ReferenceNumber), CancellationToken.None));
@@ -183,7 +183,7 @@ public class ConfirmInwardPutawayTests
         db.InwardTransactionLines.Add(line2);
         await db.SaveChangesAsync();
 
-        var handler = new ConfirmSingleInwardPutawayHandler(db, new TestClock(), new TestCurrentUser());
+        var handler = new ConfirmSingleInwardPutawayHandler(db, new TestClock(), new TestCurrentUser(), new AllowAllPermissions());
 
         var result = await handler.Handle(new ConfirmSingleInwardPutawayCommand(putaway.Id), CancellationToken.None);
 
@@ -200,7 +200,7 @@ public class ConfirmInwardPutawayTests
         putaway.IsConfirmed = true;
         await db.SaveChangesAsync();
 
-        var handler = new ConfirmSingleInwardPutawayHandler(db, new TestClock(), new TestCurrentUser());
+        var handler = new ConfirmSingleInwardPutawayHandler(db, new TestClock(), new TestCurrentUser(), new AllowAllPermissions());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             handler.Handle(new ConfirmSingleInwardPutawayCommand(putaway.Id), CancellationToken.None));
@@ -223,4 +223,9 @@ file sealed class TestCurrentUser : ICurrentUserService
     public bool IsInRole(string role) => true;
 
     public IReadOnlyList<string> Roles => ["Superadmin"];
+}
+
+internal sealed class AllowAllPermissions : GodrejWMS.Application.Common.Permissions.IPermissionService
+{
+    public Task<bool> HasPermissionAsync(string permissionKey, CancellationToken cancellationToken = default) => Task.FromResult(true);
 }

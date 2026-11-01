@@ -80,7 +80,8 @@ public class InventoryAdjustmentTests
 
         Assert.Equal(60, operatorDb.StockBatches.Single(b => b.Id == batchId).QuantityBoxes);
         Assert.Equal(InventoryAdjustmentStatus.PendingApproval, submitted.Status);
-        var reviewNotification = Assert.Single(submitNotifications.Published);
+        var reviewNotification = Assert.Single(submitNotifications.Published, n => !n.Silent);
+        Assert.Contains(submitNotifications.Published, n => n.Silent && n.Topic == RealtimeTopics.InventoryAdjustmentsChanged);
         Assert.Contains("Supervisor", reviewNotification.AudienceRoles!);
         Assert.Equal("/inventory-adjustments", reviewNotification.Url);
 
@@ -94,7 +95,8 @@ public class InventoryAdjustmentTests
         Assert.Equal(50, supervisorDb.StockBatches.Single(b => b.Id == batchId).QuantityBoxes);
         Assert.Equal(60, approved.ActualQuantityBeforePosting);
         Assert.Equal(50, approved.ActualQuantityAfterPosting);
-        var requesterNotification = Assert.Single(approvalNotifications.Published);
+        var requesterNotification = Assert.Single(approvalNotifications.Published, n => !n.Silent);
+        Assert.Contains(approvalNotifications.Published, n => n.Silent && n.Topic == RealtimeTopics.InventoryAdjustmentsChanged);
         Assert.Equal("operator", requesterNotification.RecipientUserId);
         Assert.Equal("success", requesterNotification.Kind);
     }
