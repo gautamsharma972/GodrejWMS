@@ -14,7 +14,8 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// </summary>
 public sealed record SubmitInwardCommand(
     IReadOnlyList<SubmitInwardLine> Lines, int WarehouseId,
-    string? VehicleNumber = null, string? LrNumber = null, string? ReceivedFrom = null) : IRequest<InwardResultDto>;
+    string? VehicleNumber = null, string? LrNumber = null, string? ReceivedFrom = null,
+    string? UploadHeaderJson = null) : IRequest<InwardResultDto>;
 
 public sealed record SubmitInwardLine(long MaterialCode, decimal QuantityBoxes, string MfgMonthText);
 
@@ -60,7 +61,8 @@ public sealed class SubmitInwardHandler(
             CreatedByUserId = currentUser.UserId,
             VehicleNumber = request.VehicleNumber,
             LrNumber = request.LrNumber,
-            ReceivedFrom = request.ReceivedFrom
+            ReceivedFrom = request.ReceivedFrom,
+            UploadHeaderJson = request.UploadHeaderJson
         };
 
         db.InwardTransactions.Add(transaction);
@@ -117,6 +119,12 @@ public sealed class SubmitInwardHandler(
 
         await db.SaveChangesAsync(cancellationToken);
 
-        return new InwardResultDto(transaction.Id, transaction.ReferenceNumber, transaction.CreatedAt, resultLines, IsConfirmed: resultLines.All(l => l.IsConfirmed));
+        return new InwardResultDto(
+            transaction.Id, transaction.ReferenceNumber, transaction.CreatedAt, resultLines,
+            IsConfirmed: resultLines.All(l => l.IsConfirmed),
+            VehicleNumber: transaction.VehicleNumber,
+            LrNumber: transaction.LrNumber,
+            UploadHeaderJson: transaction.UploadHeaderJson,
+            ReceivedFrom: transaction.ReceivedFrom);
     }
 }

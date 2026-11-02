@@ -639,7 +639,7 @@
     {
         if (_result is null) return;
 
-        var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.FromResult(_result));
+        var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.PackageFromResult(_result));
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"inward-{_result.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
@@ -929,7 +929,7 @@
 
     private async Task DownloadDetailExcelAsync(InwardDetailDto detail)
     {
-        var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.FromDetail(detail));
+        var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.PackageFromDetail(detail));
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"inward-{detail.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }

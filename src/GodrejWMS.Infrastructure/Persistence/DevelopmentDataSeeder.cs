@@ -1,3 +1,6 @@
+#if DEBUG
+// Compiled into Debug builds only. A Release build (what scripts/publish.sh produces) does not contain this
+// class at all, so no setting or environment variable on a production server can turn demo seeding on.
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
@@ -132,3 +135,4 @@ public static class DevelopmentDataSeeder
         }
     }
 }
+#endif

@@ -1311,7 +1311,7 @@
     {
         if (_detail is null) return;
 
-        var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.FromDetail(_detail));
+        var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.PackageFromDetail(_detail));
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"inward-{_detail.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }

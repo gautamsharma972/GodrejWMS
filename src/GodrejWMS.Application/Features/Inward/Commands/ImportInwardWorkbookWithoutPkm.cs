@@ -90,7 +90,8 @@ public sealed class ImportInwardWorkbookWithoutPkmHandler(IExcelService excel, I
 
                 var result = await mediator.Send(
                     new SubmitInwardWithoutPkmCommand(lines, request.WarehouseId,
-                        VehicleNumber: sheet.VehicleNumber, LrNumber: sheet.LrNumber, ReceivedFrom: sheet.ReceivedFrom),
+                        VehicleNumber: sheet.VehicleNumber, LrNumber: sheet.LrNumber, ReceivedFrom: sheet.ReceivedFrom,
+                        UploadHeaderJson: sheet.HeaderBlockJson),
                     cancellationToken);
 
                 var skipped = InwardSkippedLineMapper.From(result.Lines);

@@ -36,6 +36,12 @@ public class InwardTransaction : AuditableEntity
     /// every line's <see cref="InwardTransactionLine.MfgMonth"/> is null until someone assigns a
     /// real PKM. Used to show the receiving/confirming screens a "PKM needed" flag, and to scope
     /// the Pickers-only history view to just these (still-pending) GRNs.</summary>
+    /// <summary>The first seven rows of the uploaded Unloading Sheet (invoice, LR/vehicle, transport,
+    /// dock, dates...), stored as JSON so the GRN Excel download can repeat them at the top exactly as
+    /// the client typed them. See <c>InwardUploadHeaderBlock</c>. Null for manual entry, the plain
+    /// single-sheet upload, and GRNs created before this was captured.</summary>
+    public string? UploadHeaderJson { get; set; }
+
     public bool IsPkmless { get; set; }
 
     public ICollection<InwardTransactionLine> Lines { get; set; } = new List<InwardTransactionLine>();

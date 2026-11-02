@@ -3,18 +3,77 @@ using GodrejWMS.Domain.Enums;
 
 namespace GodrejWMS.Application.Features.Inward;
 
-/// <summary>
-/// Turns a GRN (from the allocation-result panel or the detail page) into the rows of the inward
-/// Excel download: one row per put-away location, or one location-less row for a line that got none.
-/// </summary>
 public static class InwardDownloadMapper
 {
+    /// <summary>The whole two-sheet GRN workbook's data (Inward Download rows plus the Unloading Sheet).</summary>
+    public static InwardDownloadDto PackageFromDetail(InwardDetailDto detail) => new(
+        FromDetail(detail),
+        new InwardDownloadHeaderDto(detail.ReferenceNumber, detail.VehicleNumber, detail.LrNumber,
+            ResolveHeaderJson(detail.UploadHeaderJson, detail.VehicleNumber, detail.LrNumber, detail.ReceivedFrom, detail.CreatedAt)),
+        detail.Lines
+            .Select(l => new InwardUnloadingSheetRowDto(
+                l.MaterialNumber, l.MaterialDescription, l.RequestedQuantityBoxes, l.MfgMonthLabel,
+                AllocationRemark(l.Status, detail.IsRejected)))
+            .ToList());
+
+    public static InwardDownloadDto PackageFromResult(InwardResultDto result) => new(
+        FromResult(result),
+        new InwardDownloadHeaderDto(result.ReferenceNumber, result.VehicleNumber, result.LrNumber,
+            ResolveHeaderJson(result.UploadHeaderJson, result.VehicleNumber, result.LrNumber, result.ReceivedFrom, result.CreatedAt)),
+        result.Lines
+            .Select(l => new InwardUnloadingSheetRowDto(
+                l.MaterialNumber, l.MaterialDescription, l.RequestedQuantityBoxes, l.MfgMonthLabel,
+                AllocationRemark(l.Status, result.IsRejected)))
+            .ToList());
+
+    /// <summary>The seven header rows to repeat at the top of the workbook. A GRN uploaded after the rows were
+    /// being saved returns them exactly as stored. An earlier uploaded GRN (it has a vehicle, LR or Received
+    /// From but no stored rows - the original file is gone) gets a block rebuilt in the same layout from the
+    /// fields that were kept; everything that was never stored stays blank. A GRN entered by hand has no upload
+    /// to repeat and returns null.</summary>
+    public static string? ResolveHeaderJson(string? storedJson, string? vehicle, string? lr, string? receivedFrom, DateTimeOffset createdAt)
+    {
+        if (InwardUploadHeaderBlock.TryParse(storedJson) is not null)
+        {
+            return storedJson;
+        }
+
+        if (string.IsNullOrWhiteSpace(vehicle) && string.IsNullOrWhiteSpace(lr) && string.IsNullOrWhiteSpace(receivedFrom))
+        {
+            return null;
+        }
+
+        static string Text(string? value) => value?.Trim() ?? string.Empty;
+        return new InwardUploadHeaderBlock(
+        [
+            ["UNLOADING SHEET", "", "", "", "", ""],
+            ["Invoice No:-", "", "LR NO :-", Text(lr), "", ""],
+            ["Invoice Date:-", "", "Vehicle No:-", Text(vehicle), "Plan", ""],
+            ["", "", "", "", "", ""],
+            ["TRANSPORT", "", "Unloading Check List", "", "Received from:", Text(receivedFrom)],
+            ["DOCK No", "", "Start Time :-", "", "Sup Name:", ""],
+            ["Date:-", createdAt.ToLocalTime().ToString("dd/MM/yy"), "End Time :-", "", "", ""]
+        ], ["A1:F1"]).ToJson();
+    }
+
+    /// <summary>The Unloading Sheet's per-line verdict on whether locations were found for the line.</summary>
+    public static string AllocationRemark(AllocationStatus status, bool isRejected) =>
+        isRejected
+            ? "GRN rejected"
+            : status switch
+            {
+                AllocationStatus.Fulfilled => "Fully allocated",
+                AllocationStatus.Partial => "Partially allocated",
+                _ => "Not allocated"
+            };
+
     public static IReadOnlyList<InwardDownloadRow> FromDetail(InwardDetailDto detail) =>
         detail.Lines
             .SelectMany(l => Rows(
                 detail.ReferenceNumber, l.MaterialNumber, l.MaterialDescription, l.MfgMonthLabel,
                 l.RequestedQuantityBoxes, l.AllocatedQuantityBoxes, l.Status,
-                l.Putaways.Select(p => (p.LocationCode, p.QuantityBoxes, p.IsConfirmed, (int?)p.Id)), detail.IsRejected))
+                l.Putaways.Select(p => (p.LocationCode, p.QuantityBoxes, p.IsConfirmed, (int?)p.Id)), detail.IsRejected,
+                detail.VehicleNumber, detail.LrNumber))
             .ToList();
 
     public static IReadOnlyList<InwardDownloadRow> FromResult(InwardResultDto result) =>
@@ -22,19 +81,22 @@ public static class InwardDownloadMapper
             .SelectMany(l => Rows(
                 result.ReferenceNumber, l.MaterialNumber, l.MaterialDescription, l.MfgMonthLabel,
                 l.RequestedQuantityBoxes, l.AllocatedQuantityBoxes, l.Status,
-                l.AllocatedTo.Select(a => (a.LocationCode, a.QuantityBoxes, a.IsConfirmed, a.PutawayId)), result.IsRejected))
+                l.AllocatedTo.Select(a => (a.LocationCode, a.QuantityBoxes, a.IsConfirmed, a.PutawayId)), result.IsRejected,
+                result.VehicleNumber, result.LrNumber))
             .ToList();
 
     private static IEnumerable<InwardDownloadRow> Rows(
         string reference, long materialNumber, string description, string mfgMonthLabel,
         decimal requested, decimal allocated, AllocationStatus status,
-        IEnumerable<(string LocationCode, decimal QuantityBoxes, bool IsConfirmed, int? PutawayId)> locations, bool isRejected)
+        IEnumerable<(string LocationCode, decimal QuantityBoxes, bool IsConfirmed, int? PutawayId)> locations, bool isRejected,
+        string? vehicleNumber, string? lrNumber)
     {
         var placed = locations.ToList();
         if (placed.Count == 0)
         {
             yield return new InwardDownloadRow(reference, materialNumber, description, mfgMonthLabel,
-                requested, allocated, status.ToString(), string.Empty, 0m, isRejected ? "Rejected" : "No location");
+                requested, allocated, status.ToString(), string.Empty, 0m, isRejected ? "Rejected" : "No location",
+                VehicleNumber: vehicleNumber, LrNumber: lrNumber);
             yield break;
         }
 
@@ -42,7 +104,7 @@ public static class InwardDownloadMapper
         {
             yield return new InwardDownloadRow(reference, materialNumber, description, mfgMonthLabel,
                 requested, allocated, status.ToString(), locationCode, quantity,
-                isRejected ? "Rejected" : isConfirmed ? "Confirmed" : "Reserved", putawayId);
+                isRejected ? "Rejected" : isConfirmed ? "Confirmed" : "Reserved", putawayId, vehicleNumber, lrNumber);
         }
     }
 }

@@ -19,7 +19,8 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// <see cref="InwardPutawayConfirmationLogic"/>) - that assignment flow is a later piece of work.</summary>
 public sealed record SubmitInwardWithoutPkmCommand(
     IReadOnlyList<SubmitInwardWithoutPkmLine> Lines, int WarehouseId,
-    string? VehicleNumber = null, string? LrNumber = null, string? ReceivedFrom = null) : IRequest<InwardResultDto>;
+    string? VehicleNumber = null, string? LrNumber = null, string? ReceivedFrom = null,
+    string? UploadHeaderJson = null) : IRequest<InwardResultDto>;
 
 public sealed record SubmitInwardWithoutPkmLine(long MaterialCode, decimal QuantityBoxes);
 
@@ -63,6 +64,7 @@ public sealed class SubmitInwardWithoutPkmHandler(
             VehicleNumber = request.VehicleNumber,
             LrNumber = request.LrNumber,
             ReceivedFrom = request.ReceivedFrom,
+            UploadHeaderJson = request.UploadHeaderJson,
             IsPkmless = true
         };
 
@@ -112,6 +114,12 @@ public sealed class SubmitInwardWithoutPkmHandler(
 
         await db.SaveChangesAsync(cancellationToken);
 
-        return new InwardResultDto(transaction.Id, transaction.ReferenceNumber, transaction.CreatedAt, resultLines, IsConfirmed: resultLines.All(l => l.IsConfirmed));
+        return new InwardResultDto(
+            transaction.Id, transaction.ReferenceNumber, transaction.CreatedAt, resultLines,
+            IsConfirmed: resultLines.All(l => l.IsConfirmed),
+            VehicleNumber: transaction.VehicleNumber,
+            LrNumber: transaction.LrNumber,
+            UploadHeaderJson: transaction.UploadHeaderJson,
+            ReceivedFrom: transaction.ReceivedFrom);
     }
 }

@@ -19,7 +19,8 @@ public sealed record InwardSheetUploadData(
     string? LrNumber,
     string? ReceivedFrom,
     string? ExistingGrnReference,
-    IReadOnlyList<int> RowsMissingPkm);
+    IReadOnlyList<int> RowsMissingPkm,
+    string? HeaderBlockJson = null);
 
 public enum InwardSheetImportStatus
 {
@@ -72,7 +73,11 @@ public sealed record InwardResultDto(
     DateTimeOffset CreatedAt,
     IReadOnlyList<InwardLineResultDto> Lines,
     bool IsConfirmed = false,
-    bool IsRejected = false);
+    bool IsRejected = false,
+    string? VehicleNumber = null,
+    string? LrNumber = null,
+    string? UploadHeaderJson = null,
+    string? ReceivedFrom = null);
 
 public sealed record InwardHistoryDto(
     int Id,
@@ -83,7 +88,9 @@ public sealed record InwardHistoryDto(
     AllocationStatus Status,
     bool IsConfirmed,
     bool IsRejected,
-    bool IsPkmless = false);
+    bool IsPkmless = false,
+    string? VehicleNumber = null,
+    string? LrNumber = null);
 
 public sealed record InwardPutawayDto(
     string LocationCode,
@@ -115,7 +122,11 @@ public sealed record InwardDetailDto(
     bool IsRejected = false,
     DateTimeOffset? RejectedAt = null,
     string? RejectedByUserName = null,
-    string? RejectionReason = null);
+    string? RejectionReason = null,
+    string? VehicleNumber = null,
+    string? LrNumber = null,
+    string? UploadHeaderJson = null,
+    string? ReceivedFrom = null);
 /// <summary>
 /// One row of the inward Excel download: one put-away location of one GRN line, or a single row with
 /// no location for a line that received none.
@@ -131,11 +142,37 @@ public sealed record InwardDownloadRow(
     string LocationCode,
     decimal QuantityBoxes,
     string PutawayStatus,
-    int? PutawayId = null);
+    int? PutawayId = null,
+    string? VehicleNumber = null,
+    string? LrNumber = null);
+
+/// <summary>Per-GRN context for the Unloading Sheet: vehicle/LR, the GRN reference, and the first
+/// seven rows of the original upload (see <c>InwardUploadHeaderBlock</c>), if there was one.</summary>
+public sealed record InwardDownloadHeaderDto(
+    string ReferenceNumber,
+    string? VehicleNumber,
+    string? LrNumber,
+    string? UploadHeaderJson);
+
+/// <summary>One uploaded line on the Unloading Sheet, with the system's allocation verdict in
+/// <see cref="Remarks"/> ("Fully allocated", "Partially allocated" or "Not allocated").</summary>
+public sealed record InwardUnloadingSheetRowDto(
+    long MaterialNumber,
+    string MaterialDescription,
+    decimal RequestedQuantityBoxes,
+    string MfgMonthLabel,
+    string Remarks);
+
+/// <summary>Everything the two-sheet GRN workbook needs: sheet 1 (Inward Download) rows, and the
+/// header plus per-line remarks for sheet 2 (Unloading Sheet).</summary>
+public sealed record InwardDownloadDto(
+    IReadOnlyList<InwardDownloadRow> Rows,
+    InwardDownloadHeaderDto Header,
+    IReadOnlyList<InwardUnloadingSheetRowDto> UnloadingRows);
 
 /// <summary>One row read back from a GRN allocation workbook for location reassignment.</summary>
 public sealed record InwardPutawayReassignmentImportRow(
-    string ReferenceNumber,
+    string? ReferenceNumber,
     long MaterialNumber,
     string MfgMonthLabel,
     decimal RequestedQuantityBoxes,

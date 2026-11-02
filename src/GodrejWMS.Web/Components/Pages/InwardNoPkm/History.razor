@@ -52,7 +52,7 @@
             <div class="toolbar-group">
                 <div class="input-group search-control">
                     <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
-                    <input class="form-control" placeholder="Search reference, material, or description"
+                    <input class="form-control" placeholder="Search reference, vehicle, LR, material, or description"
                            @bind="_historySearch" @bind:event="oninput" @onkeyup="OnHistorySearchKeyUp" />
                 </div>
             </div>
@@ -78,11 +78,13 @@
                 <table class="table table-hover align-middle mb-0 history-table inward-history-table">
                     <thead>
                         <tr>
-                            <th><button class="sort-button" @onclick='@(() => SortHistoryBy("reference"))'>Reference <i class='bi @HistorySortIcon("reference")'></i></button></th>
-                            <th><button class="sort-button" @onclick='@(() => SortHistoryBy("created"))'>Created <i class='bi @HistorySortIcon("created")'></i></button></th>
-                            <th><button class="sort-button" @onclick='@(() => SortHistoryBy("status"))'>Status <i class='bi @HistorySortIcon("status")'></i></button></th>
-                            <th class="text-end history-number-column"><button class="sort-button" @onclick='@(() => SortHistoryBy("lines"))'>Lines <i class='bi @HistorySortIcon("lines")'></i></button></th>
-                            <th class="text-end history-number-column"><button class="sort-button" @onclick='@(() => SortHistoryBy("quantity"))'>Allocated Boxes <i class='bi @HistorySortIcon("quantity")'></i></button></th>
+                            <th class="history-col-reference"><button class="sort-button" @onclick='@(() => SortHistoryBy("reference"))'>Reference <i class='bi @HistorySortIcon("reference")'></i></button></th>
+                            <th class="history-col-created"><button class="sort-button" @onclick='@(() => SortHistoryBy("created"))'>Created <i class='bi @HistorySortIcon("created")'></i></button></th>
+                            <th class="history-col-vehicle">Vehicle No.</th>
+                            <th class="history-col-lr">LR No.</th>
+                            <th class="history-col-status"><button class="sort-button" @onclick='@(() => SortHistoryBy("status"))'>Status <i class='bi @HistorySortIcon("status")'></i></button></th>
+                            <th class="text-end history-number-column history-col-lines"><button class="sort-button" @onclick='@(() => SortHistoryBy("lines"))'>Lines <i class='bi @HistorySortIcon("lines")'></i></button></th>
+                            <th class="text-end history-number-column history-col-quantity"><button class="sort-button" @onclick='@(() => SortHistoryBy("quantity"))'>Allocated Boxes <i class='bi @HistorySortIcon("quantity")'></i></button></th>
                             <th class="table-actions history-actions-column">Actions</th>
                         </tr>
                     </thead>
@@ -90,7 +92,7 @@
                         @foreach (var item in _history.Items)
                         {
                             <tr>
-                                <td>
+                                <td class="history-col-reference">
                                     @if (_pickerMode)
                                     {
                                         <span class="record-code history-reference">@item.ReferenceNumber</span>
@@ -100,10 +102,12 @@
                                         <a class="record-code history-reference" href="@($"/inward/{item.Id}")">@item.ReferenceNumber</a>
                                     }
                                 </td>
-                                <td class="history-created">@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
-                                <td><span class="status-pill @AllocationClass(item.Status)">@item.Status</span></td>
-                                <td class="text-end history-number-column">@item.LineCount</td>
-                                <td class="text-end fw-semibold history-number-column">@item.TotalQuantityBoxes.ToString("N0")</td>
+                                <td class="history-created history-col-created">@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
+                                <td class="history-col-vehicle" title="@item.VehicleNumber">@(string.IsNullOrWhiteSpace(item.VehicleNumber) ? "-" : item.VehicleNumber)</td>
+                                <td class="history-col-lr" title="@item.LrNumber">@(string.IsNullOrWhiteSpace(item.LrNumber) ? "-" : item.LrNumber)</td>
+                                <td class="history-col-status"><span class="status-pill @AllocationClass(item.Status)">@item.Status</span></td>
+                                <td class="text-end history-number-column history-col-lines">@item.LineCount</td>
+                                <td class="text-end fw-semibold history-number-column history-col-quantity">@item.TotalQuantityBoxes.ToString("N0")</td>
                                 <td class="table-actions history-actions-column">
                                     <div class="history-row-actions">
                                         <button type="button" class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {item.ReferenceNumber}")" aria-label="@($"View {item.ReferenceNumber}")" @onclick="() => OpenDetailAsync(item.Id)">
@@ -561,7 +565,7 @@
 
     private async Task DownloadDetailExcelAsync(InwardDetailDto detail)
     {
-        var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.FromDetail(detail));
+        var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.PackageFromDetail(detail));
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"inward-{detail.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }

@@ -92,6 +92,39 @@ public class ImportInwardWorkbookHandlerTests
     }
 
     [Fact]
+    public async Task Import_StoresFirstSevenRowsOfTheSheet_AndKeepsVehicleAndLrOnTheGrn()
+    {
+        var (db, handler) = CreateHandler();
+        using var upload = BuildWorkbook(("Sheet1", "11223344", "MH04AB1234", "NAGPUR", null, 40041315, 10, "SEP|2026"));
+        using (var workbook = new XLWorkbook(upload))
+        {
+            var ws = workbook.Worksheet(1);
+            ws.Cell(1, 1).Value = "UNLOADING SHEET";
+            ws.Range("A1:F1").Merge();
+            ws.Cell(2, 1).Value = "Invoice No:-";
+            ws.Cell(2, 2).Value = "INV-123";
+            ws.Cell(5, 1).Value = "TRANSPORT";
+            ws.Cell(5, 2).Value = "ABC TRANS. LTD";
+            using var edited = new MemoryStream();
+            workbook.SaveAs(edited);
+            edited.Position = 0;
+
+            await handler.Handle(new ImportInwardWorkbookCommand(edited, 1), CancellationToken.None);
+        }
+
+        var grn = db.InwardTransactions.Single();
+        Assert.Equal("MH04AB1234", grn.VehicleNumber);
+        Assert.Equal("11223344", grn.LrNumber);
+        var block = GodrejWMS.Application.Features.Inward.InwardUploadHeaderBlock.TryParse(grn.UploadHeaderJson);
+        Assert.NotNull(block);
+        Assert.Equal(7, block!.Rows.Count);
+        Assert.Equal("UNLOADING SHEET", block.Rows[0][0]);
+        Assert.Equal("INV-123", block.Rows[1][1]);
+        Assert.Equal("ABC TRANS. LTD", block.Rows[4][1]);
+        Assert.Contains("A1:F1", block.MergedRanges);
+    }
+
+    [Fact]
     public async Task TwoSheetsInSameRequest_NeverCollideOnReferenceNumber_RegressionForFormerTimestampReference()
     {
         // The old "GRN-{yyyyMMdd-HHmmss}" reference collided whenever two GRNs were created

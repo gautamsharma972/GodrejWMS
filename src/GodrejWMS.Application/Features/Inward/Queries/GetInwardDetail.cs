@@ -57,7 +57,11 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
             IsRejected: transaction.IsRejected,
             RejectedAt: transaction.RejectedAt,
             RejectedByUserName: transaction.RejectedByUserName,
-            RejectionReason: transaction.RejectionReason);
+            RejectionReason: transaction.RejectionReason,
+            VehicleNumber: transaction.VehicleNumber,
+            LrNumber: transaction.LrNumber,
+            UploadHeaderJson: transaction.UploadHeaderJson,
+            ReceivedFrom: transaction.ReceivedFrom);
     }
 }
 

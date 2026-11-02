@@ -603,6 +603,9 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("varchar(450)");
 
+                    b.Property<string>("UploadHeaderJson")
+                        .HasColumnType("longtext");
+
                     b.Property<string>("VehicleNumber")
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)");

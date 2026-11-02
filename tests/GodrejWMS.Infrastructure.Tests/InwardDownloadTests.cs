@@ -50,18 +50,18 @@ public class InwardDownloadTests
         using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
         var sheet = workbook.Worksheet("Inward Download");
 
-        Assert.Equal("GRN Reference", sheet.Cell("A1").GetString());
-        Assert.Equal("Put-away Status", sheet.Cell("J1").GetString());
-        Assert.Equal("Put-away ID", sheet.Cell("K1").GetString());
-        Assert.Equal("GRN-1", sheet.Cell("A2").GetString());
-        Assert.Equal(40034354, sheet.Cell("B2").GetValue<long>());
-        Assert.Equal("SEP|2026", sheet.Cell("D2").GetString());
-        Assert.Equal(70m, sheet.Cell("E2").GetValue<decimal>());
-        Assert.Equal("A-01-01", sheet.Cell("H2").GetString());
-        Assert.Equal(40m, sheet.Cell("I2").GetValue<decimal>());
-        Assert.Equal("Confirmed", sheet.Cell("J2").GetString());
-        Assert.Equal(11, sheet.Cell("K2").GetValue<int>());
-        Assert.True(sheet.Column(11).IsHidden);
+        Assert.Equal("Material Code", sheet.Cell("A1").GetString());   // no GRN Reference column
+        Assert.DoesNotContain(sheet.Row(1).CellsUsed(), c => c.GetString().Contains("GRN Reference"));
+        Assert.Equal("Put-away Status", sheet.Cell("I1").GetString());
+        Assert.Equal("Put-away ID", sheet.Cell("J1").GetString());
+        Assert.Equal(40034354, sheet.Cell("A2").GetValue<long>());
+        Assert.Equal("SEP|2026", sheet.Cell("C2").GetString());
+        Assert.Equal(70m, sheet.Cell("D2").GetValue<decimal>());
+        Assert.Equal("A-01-01", sheet.Cell("G2").GetString());
+        Assert.Equal(40m, sheet.Cell("H2").GetValue<decimal>());
+        Assert.Equal("Confirmed", sheet.Cell("I2").GetString());
+        Assert.Equal(11, sheet.Cell("J2").GetValue<int>());
+        Assert.True(sheet.Column(10).IsHidden);
         Assert.Equal(4, sheet.LastRowUsed()!.RowNumber());
     }
 
@@ -74,7 +74,7 @@ public class InwardDownloadTests
         using (var source = new MemoryStream(bytes))
         using (var workbook = new ClosedXML.Excel.XLWorkbook(source))
         {
-            workbook.Worksheet("Inward Download").Cell("H3").Value = "B-07-05";
+            workbook.Worksheet("Inward Download").Cell("G3").Value = "B-07-05";
             workbook.SaveAs(editable);
         }
         editable.Position = 0;

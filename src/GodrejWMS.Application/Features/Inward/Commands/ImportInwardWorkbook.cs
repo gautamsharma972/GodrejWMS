@@ -101,7 +101,8 @@ public sealed class ImportInwardWorkbookHandler(IExcelService excel, IMediator m
 
                 var result = await mediator.Send(
                     new SubmitInwardCommand(lines, request.WarehouseId,
-                        VehicleNumber: sheet.VehicleNumber, LrNumber: sheet.LrNumber, ReceivedFrom: sheet.ReceivedFrom),
+                        VehicleNumber: sheet.VehicleNumber, LrNumber: sheet.LrNumber, ReceivedFrom: sheet.ReceivedFrom,
+                        UploadHeaderJson: sheet.HeaderBlockJson),
                     cancellationToken);
 
                 var skipped = InwardSkippedLineMapper.From(result.Lines);

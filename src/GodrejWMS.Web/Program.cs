@@ -153,14 +153,17 @@ app.MapAdditionalIdentityEndpoints();
 // role, or user seeders run during startup.
 await DatabaseMigrationRunner.ApplyPendingAsync(app.Services);
 
+#if DEBUG
 // Local development only: opt-in via DevSeed:Enabled (never set in appsettings.json). Needs
-// DevSeed:Password for the seeded logins; see DevelopmentDataSeeder.
+// DevSeed:Password for the seeded logins; see DevelopmentDataSeeder. Compiled out of Release builds,
+// so a published (production) build has no sample-data seeding at all.
 if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("DevSeed:Enabled"))
 {
     var devPassword = app.Configuration["DevSeed:Password"]
         ?? throw new InvalidOperationException("DevSeed:Enabled requires DevSeed:Password to be set.");
     await DevelopmentDataSeeder.SeedAsync(app.Services, devPassword);
 }
+#endif
 
 app.Run();
 
