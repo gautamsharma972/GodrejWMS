@@ -108,7 +108,7 @@
                         @foreach (var row in _turnaroundRows)
                         {
                             <tr>
-                                <td><a class="record-code" href="@($"/inward/{row.Id}")">@row.ReferenceNumber</a></td>
+                                <td><a class="record-code" href="@(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{row.Id}", "/reports/inward"))">@row.ReferenceNumber</a></td>
                                 <td>@row.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
                                 <td>
                                     @if (row.ConfirmedAt.HasValue)
@@ -148,7 +148,7 @@
                         @foreach (var row in _exceptionRows)
                         {
                             <tr>
-                                <td><a class="record-code" href="@($"/inward/{row.TransactionId}")">@row.ReferenceNumber</a></td>
+                                <td><a class="record-code" href="@(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{row.TransactionId}", "/reports/inward"))">@row.ReferenceNumber</a></td>
                                 <td>@row.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
                                 <td><span class="record-code">@row.MaterialNumber</span> @row.MaterialDescription</td>
                                 <td><ReportValueBadge Kind="pkm" Value="@row.MfgMonthLabel" /></td>

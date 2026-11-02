@@ -24,9 +24,9 @@
     else if (!string.IsNullOrEmpty(_error))
     {
         <div class="alert alert-danger mb-0">@_error</div>
-        <a class="btn btn-outline-secondary mt-3" href="/inward">
+        <a class="btn btn-outline-secondary mt-3" href="@BackUrl">
             <i class="bi bi-arrow-left" aria-hidden="true"></i>
-            Back to Inward
+            Back
         </a>
     }
     else if (_detail is not null)
@@ -44,7 +44,7 @@
                 @if (!_detail.IsConfirmed && !_detail.IsRejected)
                 {
                     <div class="inward-action-cluster inward-workflow-actions">
-                        <a class="btn btn-outline-primary" href="@($"/inward/{_detail.Id}/putaway")" title="Start put-away execution">
+                        <a class="btn btn-outline-primary" href="@(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{_detail.Id}/putaway", ReturnUrl))" title="Start put-away execution">
                             <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
                             Putaway
                         </a>
@@ -99,7 +99,7 @@
                         Reject GRN
                     </button>
                 }
-                <a class="btn btn-outline-secondary" href="/inward">
+                <a class="btn btn-outline-secondary" href="@BackUrl">
                     <i class="bi bi-arrow-left" aria-hidden="true"></i>
                     Back
                 </a>
@@ -189,7 +189,7 @@
                 <span class="putaway-step-icon"><i class="bi bi-receipt" aria-hidden="true"></i></span>
                 <div>
                     <strong>GRN received</strong>
-                    <span>@_detail.Lines.Sum(l => l.RequestedQuantityBoxes).ToString("N0") boxes captured</span>
+                    <span>@UploadedBoxes.ToString("N0") boxes captured</span>
                 </div>
             </div>
             <div class="putaway-step @StepClass(HasAnyAllocation())">
@@ -230,20 +230,41 @@
                     <span class="audit-summary-icon"><i class="bi bi-box-arrow-in-down" aria-hidden="true"></i></span>
                     <span class="audit-summary-status">Inbound volume</span>
                 </div>
-                <div class="audit-summary-value">@_detail.Lines.Sum(l => l.RequestedQuantityBoxes).ToString("N0")</div>
+                <div class="audit-summary-value">@UploadedBoxes.ToString("N0")</div>
                 <div class="audit-summary-label">Boxes received</div>
                 <div class="audit-summary-meta">Awaiting put-away confirmation</div>
             </div>
             <div class="audit-summary-card accent-green">
                 <div class="audit-summary-top">
                     <span class="audit-summary-icon"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i></span>
-                    <span class="audit-summary-status">@CompletionRate(_detail.Lines.Sum(l => l.AllocatedQuantityBoxes), _detail.Lines.Sum(l => l.RequestedQuantityBoxes)).ToString("0")% allocated</span>
+                    <span class="audit-summary-status">@CompletionRate(AllocatedBoxes, UploadedBoxes).ToString("0")% allocated</span>
                 </div>
-                <div class="audit-summary-value">@_detail.Lines.Sum(l => l.AllocatedQuantityBoxes).ToString("N0")</div>
+                <div class="audit-summary-value">@AllocatedBoxes.ToString("N0")</div>
                 <div class="audit-summary-label">Boxes put away</div>
-                <div class="audit-progress" aria-hidden="true"><span style="@($"width: {CompletionRate(_detail.Lines.Sum(l => l.AllocatedQuantityBoxes), _detail.Lines.Sum(l => l.RequestedQuantityBoxes)):0.##}%")"></span></div>
+                @if (UploadedBoxes > AllocatedBoxes)
+                {
+                    <div class="audit-summary-meta">@((UploadedBoxes - AllocatedBoxes).ToString("N0")) of @UploadedBoxes.ToString("N0") boxes not allocated</div>
+                }
+                <div class="audit-progress" aria-hidden="true"><span style="@($"width: {CompletionRate(AllocatedBoxes, UploadedBoxes):0.##}%")"></span></div>
             </div>
         </div>
+
+        @if (_detail.UnsavedLines is { Count: > 0 } unsaved)
+        {
+            <div class="feedback-bar warning mb-4" role="alert">
+                <div class="feedback-bar-icon"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i></div>
+                <div class="feedback-bar-content">
+                    <strong>@unsaved.Count uploaded line(s), @unsaved.Sum(u => u.QuantityBoxes).ToString("N0") boxes, could not be allocated</strong>
+                    <span>They are counted in the inbound volume but were not saved as GRN lines, so no location was reserved for them. Fix the material master or the sheet and upload them again.</span>
+                    <ul class="mb-0 mt-2">
+                        @foreach (var line in unsaved)
+                        {
+                            <li><span class="record-code">@line.CodeText</span>@(string.IsNullOrWhiteSpace(line.Description) ? "" : " " + line.Description) - @line.QuantityBoxes.ToString("N0") boxes - @line.Reason</li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        }
 
         <div class="panel putaway-summary-panel mb-4">
             <div class="panel-header">
@@ -752,6 +773,12 @@
 @code {
     [Parameter] public int TransactionId { get; set; }
 
+    /// <summary>The page that linked here (Inward History, Inward (No PKM) History, a report...). Back returns to it;
+    /// without one - a typed or bookmarked address - Back goes to Inward History.</summary>
+    [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+
+    private string BackUrl => global::GodrejWMS.Application.Common.LocalReturnUrl.Safe(ReturnUrl, "/inward/history");
+
     private InwardDetailDto? _detail;
     private bool _loading = true;
     private string? _error;
@@ -798,7 +825,13 @@
     private string _sortBy = "material";
     private bool _sortDescending;
 
-    private decimal TotalQtyBoxes => _detail?.Lines.Sum(l => l.RequestedQuantityBoxes) ?? 0;
+    /// <summary>Every box that was uploaded: the saved lines plus any line that could not be saved (unknown
+    /// material, unreadable row). The inbound volume and allocation percentage are measured against this.</summary>
+    private decimal UploadedBoxes => _detail is null ? 0 : global::GodrejWMS.Application.Features.Inward.InwardTotals.Uploaded(_detail);
+
+    private decimal AllocatedBoxes => _detail is null ? 0 : global::GodrejWMS.Application.Features.Inward.InwardTotals.Allocated(_detail);
+
+    private decimal TotalQtyBoxes => UploadedBoxes;
 
     private decimal PutawayQtyBoxes =>
         _detail?.Lines.SelectMany(l => l.Putaways).Where(p => p.IsConfirmed).Sum(p => p.QuantityBoxes) ?? 0;

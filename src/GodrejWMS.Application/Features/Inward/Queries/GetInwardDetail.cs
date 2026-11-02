@@ -25,6 +25,14 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
             .FirstOrDefaultAsync(t => t.Id == request.Id, cancellationToken)
             ?? throw new NotFoundException(nameof(InwardTransaction), request.Id);
 
+        // Loaded separately (not Included) so a GRN with many put-aways does not multiply its rows by the unsaved lines.
+        var unsavedLines = await db.InwardUnsavedLines
+            .AsNoTracking()
+            .Where(u => u.InwardTransactionId == transaction.Id)
+            .OrderBy(u => u.SourceRow ?? int.MaxValue).ThenBy(u => u.Id)
+            .Select(u => new InwardUnsavedLineDto(u.CodeText, u.QuantityBoxes, u.Kind, u.Reason, u.SourceRow, u.Description))
+            .ToListAsync(cancellationToken);
+
         var lines = transaction.Lines
             .OrderBy(l => l.Id)
             .Select(l => new InwardDetailLineDto(
@@ -61,7 +69,8 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
             VehicleNumber: transaction.VehicleNumber,
             LrNumber: transaction.LrNumber,
             UploadHeaderJson: transaction.UploadHeaderJson,
-            ReceivedFrom: transaction.ReceivedFrom);
+            ReceivedFrom: transaction.ReceivedFrom,
+            UnsavedLines: unsavedLines);
     }
 }
 

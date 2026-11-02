@@ -15,9 +15,10 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 public sealed record SubmitInwardCommand(
     IReadOnlyList<SubmitInwardLine> Lines, int WarehouseId,
     string? VehicleNumber = null, string? LrNumber = null, string? ReceivedFrom = null,
-    string? UploadHeaderJson = null) : IRequest<InwardResultDto>;
+    string? UploadHeaderJson = null,
+    IReadOnlyList<InwardUnsavedLineInput>? UnreadableRows = null) : IRequest<InwardResultDto>;
 
-public sealed record SubmitInwardLine(long MaterialCode, decimal QuantityBoxes, string MfgMonthText);
+public sealed record SubmitInwardLine(long MaterialCode, decimal QuantityBoxes, string MfgMonthText, string? Description = null);
 
 public sealed class SubmitInwardValidator : AbstractValidator<SubmitInwardCommand>
 {
@@ -87,8 +88,16 @@ public sealed class SubmitInwardHandler(
                     ? MfgMonthParser.Format(unknownMaterialMfgMonth)
                     : line.MfgMonthText;
                 resultLines.Add(new InwardLineResultDto(
-                    line.MaterialCode, "(unknown material)", mfgMonthLabel, line.QuantityBoxes, 0,
+                    line.MaterialCode, InwardDownloadMapper.NameOrPlaceholder(line.Description), mfgMonthLabel, line.QuantityBoxes, 0,
                     Domain.Enums.AllocationStatus.Failed, "Material code not found in Material Master.", [], IsConfirmed: true));
+                transaction.UnsavedLines.Add(new Domain.Entities.InwardUnsavedLine
+                {
+                    CodeText = line.MaterialCode.ToString(),
+                    Description = string.IsNullOrWhiteSpace(line.Description) ? null : line.Description.Trim(),
+                    QuantityBoxes = line.QuantityBoxes,
+                    Kind = Domain.Entities.InwardUnsavedLineKind.UnknownMaterial,
+                    Reason = "Material code not found in Material Master."
+                });
                 continue;
             }
 
@@ -117,6 +126,21 @@ public sealed class SubmitInwardHandler(
                 IsConfirmed: transactionLine.Putaways.Count == 0));
         }
 
+        // Sheet rows that could not even be read as a material line still carry boxes: record them against the
+        // GRN so the inbound volume is the whole upload and nothing disappears silently.
+        foreach (var unreadable in request.UnreadableRows ?? [])
+        {
+            transaction.UnsavedLines.Add(new Domain.Entities.InwardUnsavedLine
+            {
+                CodeText = unreadable.CodeText,
+                Description = string.IsNullOrWhiteSpace(unreadable.Description) ? null : unreadable.Description.Trim(),
+                QuantityBoxes = unreadable.QuantityBoxes,
+                Kind = Domain.Entities.InwardUnsavedLineKind.UnreadableRow,
+                Reason = unreadable.Reason,
+                SourceRow = unreadable.SourceRow
+            });
+        }
+
         await db.SaveChangesAsync(cancellationToken);
 
         return new InwardResultDto(
@@ -125,6 +149,7 @@ public sealed class SubmitInwardHandler(
             VehicleNumber: transaction.VehicleNumber,
             LrNumber: transaction.LrNumber,
             UploadHeaderJson: transaction.UploadHeaderJson,
-            ReceivedFrom: transaction.ReceivedFrom);
+            ReceivedFrom: transaction.ReceivedFrom,
+            UnsavedLines: InwardUnsavedLineMapper.From(transaction));
     }
 }

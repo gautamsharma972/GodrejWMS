@@ -35,7 +35,7 @@
                 <h1>@_detail.ReferenceNumber</h1>
                 <p class="page-kicker">Confirm one recommended location at a time.</p>
             </div>
-            <a class="btn btn-outline-secondary" href="@($"/inward/{_detail.Id}")">
+            <a class="btn btn-outline-secondary" href="@(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{_detail.Id}", ReturnUrl))">
                 <i class="bi bi-list-check" aria-hidden="true"></i>
                 Full Detail
             </a>
@@ -65,7 +65,7 @@
                 <i class="bi bi-check-circle" aria-hidden="true"></i>
                 <h2>All locations confirmed</h2>
                 <p>Every recommended put-away for this GRN has been confirmed.</p>
-                <a class="btn btn-primary" href="@($"/inward/{_detail.Id}")">
+                <a class="btn btn-primary" href="@(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{_detail.Id}", ReturnUrl))">
                     <i class="bi bi-list-check" aria-hidden="true"></i>
                     View Full Detail
                 </a>
@@ -144,7 +144,7 @@
                                     <span>Confirm This Location</span>
                                 }
                             </button>
-                            <a class="btn btn-outline-secondary" href="@($"/inward/{_detail.Id}")">
+                            <a class="btn btn-outline-secondary" href="@(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{_detail.Id}", ReturnUrl))">
                                 <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
                                 Re-route instead
                             </a>
@@ -210,6 +210,9 @@
 
 @code {
     [Parameter] public int TransactionId { get; set; }
+
+    /// <summary>Where the user originally came from; passed on to the full GRN detail so its Back button still works.</summary>
+    [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
 
     private InwardDetailDto? _detail;
     private PalletPositionDto? _currentPosition;

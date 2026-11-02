@@ -39,6 +39,7 @@ public static class InwardResultMapper
             VehicleNumber: transaction.VehicleNumber,
             LrNumber: transaction.LrNumber,
             UploadHeaderJson: transaction.UploadHeaderJson,
-            ReceivedFrom: transaction.ReceivedFrom);
+            ReceivedFrom: transaction.ReceivedFrom,
+            UnsavedLines: InwardUnsavedLineMapper.From(transaction));
     }
 }

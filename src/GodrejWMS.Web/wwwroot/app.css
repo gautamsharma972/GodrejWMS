@@ -3265,6 +3265,44 @@ h2 {
         align-items: center;
     }
 
+    /* Vehicle No. and LR No.: two labelled cells straight under the reference, so the delivery can be
+       recognised at a glance. Long values are cut with an ellipsis (full text on press-and-hold). */
+    .no-pkm-mobile-history-ids {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+        margin: 0;
+    }
+
+    .no-pkm-mobile-history-ids > div {
+        min-width: 0;
+        padding: 0.4rem 0.55rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: #f8fafc;
+    }
+
+    .no-pkm-mobile-history-ids dt {
+        margin: 0;
+        color: #64748b;
+        font-size: 0.6rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        line-height: 1.2;
+        text-transform: uppercase;
+    }
+
+    .no-pkm-mobile-history-ids dd {
+        margin: 0.1rem 0 0;
+        overflow: hidden;
+        color: #0f172a;
+        font-size: 0.8rem;
+        font-weight: 600;
+        line-height: 1.25;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
     .no-pkm-mobile-history-actions {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4094,6 +4132,31 @@ h2 {
 .feedback-bar.danger .feedback-bar-content strong,
 .feedback-bar.danger .feedback-bar-content span {
     color: #7f1d1d;
+}
+
+.feedback-bar.warning {
+    border-color: #fcd34d;
+    border-left: 4px solid #d97706;
+    background:
+        linear-gradient(135deg, rgba(254, 243, 199, 0.98), rgba(255, 251, 235, 0.98)),
+        radial-gradient(circle at 100% 0%, rgba(217, 119, 6, 0.14), transparent 34%);
+    box-shadow: 0 5px 14px rgba(180, 83, 9, 0.08);
+}
+
+.feedback-bar.warning .feedback-bar-icon {
+    border-color: #d97706;
+    background: #d97706;
+    color: #fff;
+}
+
+.feedback-bar.warning .feedback-bar-content strong,
+.feedback-bar.warning .feedback-bar-content span,
+.feedback-bar.warning .feedback-bar-content li {
+    color: #78350f;
+}
+
+.feedback-bar.warning .feedback-bar-content li {
+    font-size: 0.84rem;
 }
 
 .feedback-bar.success {
@@ -6874,4 +6937,9 @@ h2 {
     margin: 1.25rem 0 0;
     color: var(--wms-muted);
     font-size: 0.82rem;
+}
+
+.reservation-location-select {
+    position: relative;
+    min-width: 220px;
 }

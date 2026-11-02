@@ -98,7 +98,7 @@
                         @foreach (var item in _history.Items)
                         {
                             <tr>
-                                <td class="history-col-reference"><a class="record-code history-reference" href="@($"/inward/{item.Id}")">@item.ReferenceNumber</a></td>
+                                <td class="history-col-reference"><a class="record-code history-reference" href="@(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{item.Id}", "/inward/history"))">@item.ReferenceNumber</a></td>
                                 <td class="history-created history-col-created">@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
                                 <td class="history-col-vehicle" title="@item.VehicleNumber">@(string.IsNullOrWhiteSpace(item.VehicleNumber) ? "-" : item.VehicleNumber)</td>
                                 <td class="history-col-lr" title="@item.LrNumber">@(string.IsNullOrWhiteSpace(item.LrNumber) ? "-" : item.LrNumber)</td>
@@ -121,7 +121,7 @@
                                 <td class="text-end fw-semibold history-number-column history-col-quantity">@item.TotalQuantityBoxes.ToString("N0")</td>
                                 <td class="table-actions history-actions-column">
                                     <div class="history-row-actions">
-                                        <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {item.ReferenceNumber}")" aria-label="@($"View {item.ReferenceNumber}")" href="@($"/inward/{item.Id}")">
+                                        <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"View {item.ReferenceNumber}")" aria-label="@($"View {item.ReferenceNumber}")" href="@(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{item.Id}", "/inward/history"))">
                                             <i class="bi bi-eye" aria-hidden="true"></i>
                                         </a>
                                         @if (!item.IsRejected)
@@ -132,7 +132,7 @@
                                         }
                                         @if (!item.IsConfirmed && !item.IsRejected)
                                         {
-                                            <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"Putaway {item.ReferenceNumber}")" aria-label="@($"Putaway {item.ReferenceNumber}")" href="@($"/inward/{item.Id}/putaway")">
+                                            <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"Putaway {item.ReferenceNumber}")" aria-label="@($"Putaway {item.ReferenceNumber}")" href="@(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{item.Id}/putaway", "/inward/history"))">
                                                 <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
                                             </a>
                                         }

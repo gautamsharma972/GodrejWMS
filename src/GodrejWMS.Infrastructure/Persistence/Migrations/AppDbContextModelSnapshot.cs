@@ -664,6 +664,48 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.ToTable("InwardTransactionLines", (string)null);
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.InwardUnsavedLine", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CodeText")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<int>("InwardTransactionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("QuantityBoxes")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<int?>("SourceRow")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InwardTransactionId");
+
+                    b.ToTable("InwardUnsavedLines", (string)null);
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.LocationSubtype", b =>
                 {
                     b.Property<int>("Id")
@@ -2337,6 +2379,17 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Navigation("Material");
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.InwardUnsavedLine", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.InwardTransaction", "InwardTransaction")
+                        .WithMany("UnsavedLines")
+                        .HasForeignKey("InwardTransactionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("InwardTransaction");
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.Material", b =>
                 {
                     b.HasOne("GodrejWMS.Domain.Entities.AopDescription", "AopDescription")
@@ -2690,6 +2743,8 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("GodrejWMS.Domain.Entities.InwardTransaction", b =>
                 {
                     b.Navigation("Lines");
+
+                    b.Navigation("UnsavedLines");
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.InwardTransactionLine", b =>

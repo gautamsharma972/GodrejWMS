@@ -1,9 +1,10 @@
+using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
 
 namespace GodrejWMS.Application.Features.Inward.Dtos;
 
 /// <summary>One parsed row from an "inward" Excel upload: Material Code, Total Stock in CFB(qty), Mfg Month.</summary>
-public sealed record InwardImportRow(long MaterialCode, decimal QuantityBoxes, string MfgMonthText, int RowNumber);
+public sealed record InwardImportRow(long MaterialCode, decimal QuantityBoxes, string MfgMonthText, int RowNumber, string? Description = null);
 
 /// <summary>One worksheet's worth of data from a multi-sheet Unloading Sheet workbook upload (see
 /// <see cref="GodrejWMS.Application.Common.Interfaces.IExcelService.ReadInwardWorkbook"/>) - the
@@ -20,7 +21,15 @@ public sealed record InwardSheetUploadData(
     string? ReceivedFrom,
     string? ExistingGrnReference,
     IReadOnlyList<int> RowsMissingPkm,
-    string? HeaderBlockJson = null);
+    string? HeaderBlockJson = null,
+    IReadOnlyList<InwardUnsavedLineInput>? UnreadableRows = null);
+
+/// <summary>An uploaded sheet row that cannot become a GRN line (its code is not a valid material number) but
+/// carries a quantity, so it is recorded against the GRN instead of being dropped silently.</summary>
+public sealed record InwardUnsavedLineInput(string CodeText, decimal QuantityBoxes, string Reason, int? SourceRow, string? Description = null);
+
+/// <summary>An uploaded line the GRN could not put away because it was never saved as a line.</summary>
+public sealed record InwardUnsavedLineDto(string CodeText, decimal QuantityBoxes, InwardUnsavedLineKind Kind, string Reason, int? SourceRow, string? Description = null);
 
 public enum InwardSheetImportStatus
 {
@@ -77,7 +86,8 @@ public sealed record InwardResultDto(
     string? VehicleNumber = null,
     string? LrNumber = null,
     string? UploadHeaderJson = null,
-    string? ReceivedFrom = null);
+    string? ReceivedFrom = null,
+    IReadOnlyList<InwardUnsavedLineDto>? UnsavedLines = null);
 
 public sealed record InwardHistoryDto(
     int Id,
@@ -126,7 +136,8 @@ public sealed record InwardDetailDto(
     string? VehicleNumber = null,
     string? LrNumber = null,
     string? UploadHeaderJson = null,
-    string? ReceivedFrom = null);
+    string? ReceivedFrom = null,
+    IReadOnlyList<InwardUnsavedLineDto>? UnsavedLines = null);
 /// <summary>
 /// One row of the inward Excel download: one put-away location of one GRN line, or a single row with
 /// no location for a line that received none.
@@ -157,7 +168,7 @@ public sealed record InwardDownloadHeaderDto(
 /// <summary>One uploaded line on the Unloading Sheet, with the system's allocation verdict in
 /// <see cref="Remarks"/> ("Fully allocated", "Partially allocated" or "Not allocated").</summary>
 public sealed record InwardUnloadingSheetRowDto(
-    long MaterialNumber,
+    string Code,
     string MaterialDescription,
     decimal RequestedQuantityBoxes,
     string MfgMonthLabel,

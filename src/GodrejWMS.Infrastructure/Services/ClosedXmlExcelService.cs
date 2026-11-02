@@ -552,6 +552,7 @@ public class ClosedXmlExcelService : IExcelService
             var pkmColumn = FindHeaderColumn(ws, InwardWorkbookHeaderRow, "Pkd/Batch") ?? 6;
             var rows = new List<InwardImportRow>();
             var rowsMissingPkm = new List<int>();
+            var unreadableRows = new List<InwardUnsavedLineInput>();
             for (var row = InwardWorkbookHeaderRow + 1; ; row++)
             {
                 var codeCell = ws.Cell(row, 1);
@@ -572,6 +573,19 @@ public class ClosedXmlExcelService : IExcelService
                 }
                 if (codeText.Length == 0 || !long.TryParse(codeText, out var materialCode) || materialCode <= 0)
                 {
+                    // A row with a code-like entry that is not a material number, but with boxes against it, would
+                    // otherwise vanish from the GRN. Record it. Blank rows, repeated headers and total lines are not data.
+                    if (codeText.Length > 0 && !LooksLikeNonDataRow(codeText))
+                    {
+                        var unreadableQuantity = ReadDecimal(ws.Cell(row, 3));
+                        if (unreadableQuantity > 0)
+                        {
+                            unreadableRows.Add(new InwardUnsavedLineInput(
+                                codeText, unreadableQuantity, $"Row {row}: \"{codeText}\" is not a valid material code.", row,
+                                NullIfEmpty(ws.Cell(row, 2).GetString())));
+                        }
+                    }
+
                     continue;
                 }
 
@@ -585,15 +599,20 @@ public class ClosedXmlExcelService : IExcelService
                     MaterialCode: materialCode,
                     QuantityBoxes: ReadDecimal(ws.Cell(row, 3)),
                     MfgMonthText: pkmText ?? string.Empty,
-                    RowNumber: row));
+                    RowNumber: row,
+                    Description: NullIfEmpty(ws.Cell(row, 2).GetString())));
             }
 
             results.Add(new InwardSheetUploadData(ws.Name, true, rows, vehicleNumber, lrNumber, receivedFrom, existingGrnReference, rowsMissingPkm,
-                ReadInwardHeaderBlock(ws).ToJson()));
+                ReadInwardHeaderBlock(ws).ToJson(), unreadableRows));
         }
 
         return results;
     }
+
+    private static bool LooksLikeNonDataRow(string codeText) =>
+        new[] { "code", "total", "remark", "sr", "s.no", "sum" }
+            .Any(marker => codeText.Contains(marker, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>The first seven rows of an order sheet, as the client typed them (display text, so dates
     /// read as "02/11/26"), plus the merged ranges inside those rows. Repeated at the top of the GRN
@@ -1947,7 +1966,7 @@ public class ClosedXmlExcelService : IExcelService
         var row = tableHeaderRow + 1;
         foreach (var line in download.UnloadingRows)
         {
-            ws.Cell(row, 1).Value = line.MaterialNumber.ToString();
+            ws.Cell(row, 1).Value = line.Code;
             ws.Cell(row, 1).Style.NumberFormat.Format = "@";
             ws.Cell(row, 2).Value = line.MaterialDescription;
             ws.Cell(row, 3).Value = line.RequestedQuantityBoxes;

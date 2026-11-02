@@ -639,7 +639,10 @@
     {
         if (_result is null) return;
 
-        var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.PackageFromResult(_result));
+        // Read the saved GRN back (rather than reusing the on-screen result) so the file is current after a confirm or
+        // a change, and always includes the lines that could not be saved.
+        var detail = await Mediator.Send(new GetInwardDetailQuery(_result.Id));
+        var bytes = ExcelService.WriteInwardDownload(global::GodrejWMS.Application.Features.Inward.InwardDownloadMapper.PackageFromDetail(detail));
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"inward-{_result.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }

@@ -99,7 +99,7 @@
                                     }
                                     else
                                     {
-                                        <a class="record-code history-reference" href="@($"/inward/{item.Id}")">@item.ReferenceNumber</a>
+                                        <a class="record-code history-reference" href="@(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{item.Id}", "/inward-no-pkm/history"))">@item.ReferenceNumber</a>
                                     }
                                 </td>
                                 <td class="history-created history-col-created">@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
@@ -118,7 +118,7 @@
                                         </button>
                                         @if (!_pickerMode && !item.IsConfirmed && !item.IsRejected)
                                         {
-                                            <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"Putaway {item.ReferenceNumber}")" aria-label="@($"Putaway {item.ReferenceNumber}")" href="@($"/inward/{item.Id}/putaway")">
+                                            <a class="btn btn-sm btn-outline-primary table-action-btn" title="@($"Putaway {item.ReferenceNumber}")" aria-label="@($"Putaway {item.ReferenceNumber}")" href="@(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{item.Id}/putaway", "/inward-no-pkm/history"))">
                                                 <i class="bi bi-box-arrow-in-down" aria-hidden="true"></i>
                                             </a>
                                         }
@@ -137,6 +137,16 @@
                             <span class="record-code">@item.ReferenceNumber</span>
                             <span class="status-pill @AllocationClass(item.Status)">@item.Status</span>
                         </div>
+                        <dl class="no-pkm-mobile-history-ids">
+                            <div>
+                                <dt>Vehicle No.</dt>
+                                <dd title="@item.VehicleNumber">@(string.IsNullOrWhiteSpace(item.VehicleNumber) ? "-" : item.VehicleNumber)</dd>
+                            </div>
+                            <div>
+                                <dt>LR No.</dt>
+                                <dd title="@item.LrNumber">@(string.IsNullOrWhiteSpace(item.LrNumber) ? "-" : item.LrNumber)</dd>
+                            </div>
+                        </dl>
                         <div class="no-pkm-mobile-history-meta">
                             <span><i class="bi bi-clock" aria-hidden="true"></i>@item.CreatedAt.ToLocalTime().ToString("dd MMM, hh:mm tt")</span>
                             <span><strong>@item.LineCount</strong> line(s)</span>
@@ -523,7 +533,7 @@
         // Confirm, Reject, Download/Upload allocation. Pickers keep the one-location-at-a-time flow.
         if (!_pickerMode)
         {
-            Navigation.NavigateTo($"/inward/{id}");
+            Navigation.NavigateTo(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{id}", "/inward-no-pkm/history"));
             return;
         }
 
