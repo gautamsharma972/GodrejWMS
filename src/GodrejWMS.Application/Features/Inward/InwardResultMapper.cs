@@ -35,6 +35,11 @@ public static class InwardResultMapper
             transaction.CreatedAt,
             lines,
             IsConfirmed: lines.Count > 0 && lines.All(l => l.IsConfirmed),
-            IsRejected: transaction.IsRejected);
+            IsRejected: transaction.IsRejected,
+            VehicleNumber: transaction.VehicleNumber,
+            LrNumber: transaction.LrNumber,
+            UploadHeaderJson: transaction.UploadHeaderJson,
+            ReceivedFrom: transaction.ReceivedFrom,
+            UnsavedLines: InwardUnsavedLineMapper.From(transaction));
     }
 }

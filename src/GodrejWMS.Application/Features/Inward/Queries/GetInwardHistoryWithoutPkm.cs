@@ -38,6 +38,8 @@ public sealed class GetInwardHistoryWithoutPkmHandler(IApplicationDbContext db)
             var term = request.Search.Trim();
             transactions = transactions.Where(t =>
                 t.ReferenceNumber.Contains(term) ||
+                (t.VehicleNumber != null && t.VehicleNumber.Contains(term)) ||
+                (t.LrNumber != null && t.LrNumber.Contains(term)) ||
                 t.Lines.Any(l =>
                     l.Material.MaterialNumber.ToString().Contains(term) ||
                     l.Material.Description.Contains(term)));
@@ -64,7 +66,9 @@ public sealed class GetInwardHistoryWithoutPkmHandler(IApplicationDbContext db)
             (AllocationStatus)(t.Lines.Max(l => (int?)l.Status) ?? (int)AllocationStatus.Failed),
             false, // these GRNs are pending by construction of the query above
             t.IsRejected,
-            IsPkmless: true));
+            IsPkmless: true,
+            VehicleNumber: t.VehicleNumber,
+            LrNumber: t.LrNumber));
 
         return PaginatedList<InwardHistoryDto>.CreateAsync(query, request.PageNumber, request.PageSize);
     }

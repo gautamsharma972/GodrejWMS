@@ -36,9 +36,54 @@ public class InwardTransaction : AuditableEntity
     /// every line's <see cref="InwardTransactionLine.MfgMonth"/> is null until someone assigns a
     /// real PKM. Used to show the receiving/confirming screens a "PKM needed" flag, and to scope
     /// the Pickers-only history view to just these (still-pending) GRNs.</summary>
+    /// <summary>The first seven rows of the uploaded Unloading Sheet (invoice, LR/vehicle, transport,
+    /// dock, dates...), stored as JSON so the GRN Excel download can repeat them at the top exactly as
+    /// the client typed them. See <c>InwardUploadHeaderBlock</c>. Null for manual entry, the plain
+    /// single-sheet upload, and GRNs created before this was captured.</summary>
+    public string? UploadHeaderJson { get; set; }
+
     public bool IsPkmless { get; set; }
 
     public ICollection<InwardTransactionLine> Lines { get; set; } = new List<InwardTransactionLine>();
+
+    /// <summary>Uploaded lines that could not become a <see cref="InwardTransactionLine"/> (the material code is not
+    /// in the Material Master, or the sheet row's code could not be read). Kept so the GRN still accounts for every
+    /// box that was uploaded - they count towards the inbound volume and show as not allocated.</summary>
+    public ICollection<InwardUnsavedLine> UnsavedLines { get; set; } = new List<InwardUnsavedLine>();
+}
+
+/// <summary>One uploaded line that was not saved as a GRN line. See <see cref="InwardTransaction.UnsavedLines"/>.</summary>
+public class InwardUnsavedLine
+{
+    public int Id { get; set; }
+
+    public int InwardTransactionId { get; set; }
+
+    public InwardTransaction InwardTransaction { get; set; } = null!;
+
+    /// <summary>The code exactly as uploaded (text, because an unreadable row has no valid number).</summary>
+    public string CodeText { get; set; } = string.Empty;
+
+    /// <summary>The name typed next to the code in the uploaded sheet, if there was one.</summary>
+    public string? Description { get; set; }
+
+    public decimal QuantityBoxes { get; set; }
+
+    public InwardUnsavedLineKind Kind { get; set; }
+
+    public string Reason { get; set; } = string.Empty;
+
+    /// <summary>Row number in the uploaded sheet, when the line came from a workbook upload.</summary>
+    public int? SourceRow { get; set; }
+}
+
+public enum InwardUnsavedLineKind
+{
+    /// <summary>The material code is not in the Material Master.</summary>
+    UnknownMaterial = 0,
+
+    /// <summary>The sheet row's code was not a valid material number, so the row could not be read.</summary>
+    UnreadableRow = 1
 }
 
 /// <summary>

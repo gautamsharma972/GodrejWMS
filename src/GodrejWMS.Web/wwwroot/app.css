@@ -3265,6 +3265,44 @@ h2 {
         align-items: center;
     }
 
+    /* Vehicle No. and LR No.: two labelled cells straight under the reference, so the delivery can be
+       recognised at a glance. Long values are cut with an ellipsis (full text on press-and-hold). */
+    .no-pkm-mobile-history-ids {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+        margin: 0;
+    }
+
+    .no-pkm-mobile-history-ids > div {
+        min-width: 0;
+        padding: 0.4rem 0.55rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: #f8fafc;
+    }
+
+    .no-pkm-mobile-history-ids dt {
+        margin: 0;
+        color: #64748b;
+        font-size: 0.6rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        line-height: 1.2;
+        text-transform: uppercase;
+    }
+
+    .no-pkm-mobile-history-ids dd {
+        margin: 0.1rem 0 0;
+        overflow: hidden;
+        color: #0f172a;
+        font-size: 0.8rem;
+        font-weight: 600;
+        line-height: 1.25;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
     .no-pkm-mobile-history-actions {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3488,45 +3526,56 @@ h2 {
     width: 9%;
 }
 
-/* Inward History has an extra "Put-away" status column (7 total) that the base 6-column
-   layout above doesn't account for - override with widths sized for all 7 columns. */
-.inward-history-table th:first-child,
-.inward-history-table td:first-child {
-    width: 25%;
+/* Inward History (9 columns) and Inward (No PKM) History (8 columns, no Put-away) size their columns by
+   class, not position, so adding or removing a column can never push another column's width onto the
+   wrong one (the old nth-child rules did exactly that when Vehicle No. / LR No. were added). The
+   .history-table.inward-history-table prefix out-ranks the generic positional .history-table widths. */
+.history-table.inward-history-table {
+    min-width: 1280px;
 }
 
-.inward-history-table {
-    min-width: 960px;
+.no-pkm-history-page .history-table.inward-history-table {
+    min-width: 1130px;
 }
 
-.inward-history-table th:nth-child(2),
-.inward-history-table td:nth-child(2) {
-    width: 20%;
+.history-table.inward-history-table thead th {
+    white-space: nowrap;
 }
 
-.inward-history-table th:nth-child(3),
-.inward-history-table td:nth-child(3) {
-    width: 13%;
-}
+.history-table.inward-history-table th.history-col-reference,
+.history-table.inward-history-table td.history-col-reference { width: 190px; }
 
-.inward-history-table th:nth-child(4),
-.inward-history-table td:nth-child(4) {
-    width: 13%;
-}
+.history-table.inward-history-table th.history-col-created,
+.history-table.inward-history-table td.history-col-created { width: 200px; }
 
-.inward-history-table th:nth-child(5),
-.inward-history-table td:nth-child(5) {
-    width: 72px;
-}
+.history-table.inward-history-table th.history-col-vehicle,
+.history-table.inward-history-table td.history-col-vehicle { width: 140px; }
 
-.inward-history-table th:nth-child(6),
-.inward-history-table td:nth-child(6) {
-    width: 150px;
-}
+.history-table.inward-history-table th.history-col-lr,
+.history-table.inward-history-table td.history-col-lr { width: 130px; }
 
-.inward-history-table th:last-child,
-.inward-history-table td:last-child {
-    width: 150px;
+.history-table.inward-history-table th.history-col-status,
+.history-table.inward-history-table td.history-col-status { width: 110px; }
+
+.history-table.inward-history-table th.history-col-putaway,
+.history-table.inward-history-table td.history-col-putaway { width: 150px; }
+
+.history-table.inward-history-table th.history-col-lines,
+.history-table.inward-history-table td.history-col-lines { width: 80px; }
+
+.history-table.inward-history-table th.history-col-quantity,
+.history-table.inward-history-table td.history-col-quantity { width: 140px; }
+
+.history-table.inward-history-table th.history-actions-column,
+.history-table.inward-history-table td.history-actions-column { width: 150px; }
+
+/* Long vehicle / LR values are cut with an ellipsis (full text is in the cell's tooltip) rather than
+   spilling into the next column. */
+.history-table.inward-history-table td.history-col-vehicle,
+.history-table.inward-history-table td.history-col-lr {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .history-table .history-number-column {
@@ -4083,6 +4132,31 @@ h2 {
 .feedback-bar.danger .feedback-bar-content strong,
 .feedback-bar.danger .feedback-bar-content span {
     color: #7f1d1d;
+}
+
+.feedback-bar.warning {
+    border-color: #fcd34d;
+    border-left: 4px solid #d97706;
+    background:
+        linear-gradient(135deg, rgba(254, 243, 199, 0.98), rgba(255, 251, 235, 0.98)),
+        radial-gradient(circle at 100% 0%, rgba(217, 119, 6, 0.14), transparent 34%);
+    box-shadow: 0 5px 14px rgba(180, 83, 9, 0.08);
+}
+
+.feedback-bar.warning .feedback-bar-icon {
+    border-color: #d97706;
+    background: #d97706;
+    color: #fff;
+}
+
+.feedback-bar.warning .feedback-bar-content strong,
+.feedback-bar.warning .feedback-bar-content span,
+.feedback-bar.warning .feedback-bar-content li {
+    color: #78350f;
+}
+
+.feedback-bar.warning .feedback-bar-content li {
+    font-size: 0.84rem;
 }
 
 .feedback-bar.success {
@@ -6863,4 +6937,9 @@ h2 {
     margin: 1.25rem 0 0;
     color: var(--wms-muted);
     font-size: 0.82rem;
+}
+
+.reservation-location-select {
+    position: relative;
+    min-width: 220px;
 }

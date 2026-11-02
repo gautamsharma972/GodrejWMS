@@ -27,6 +27,25 @@ public class InwardTransactionConfiguration : IEntityTypeConfiguration<InwardTra
             .WithOne(l => l.InwardTransaction)
             .HasForeignKey(l => l.InwardTransactionId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(t => t.UnsavedLines)
+            .WithOne(l => l.InwardTransaction)
+            .HasForeignKey(l => l.InwardTransactionId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class InwardUnsavedLineConfiguration : IEntityTypeConfiguration<InwardUnsavedLine>
+{
+    public void Configure(EntityTypeBuilder<InwardUnsavedLine> builder)
+    {
+        builder.ToTable("InwardUnsavedLines");
+
+        builder.Property(l => l.CodeText).HasMaxLength(100).IsRequired();
+        builder.Property(l => l.Description).HasMaxLength(300);
+        builder.Property(l => l.QuantityBoxes).HasPrecision(14, 3);
+        builder.Property(l => l.Reason).HasMaxLength(300).IsRequired();
+        builder.HasIndex(l => l.InwardTransactionId);
     }
 }
 

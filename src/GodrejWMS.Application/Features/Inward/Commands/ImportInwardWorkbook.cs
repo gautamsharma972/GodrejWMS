@@ -96,18 +96,26 @@ public sealed class ImportInwardWorkbookHandler(IExcelService excel, IMediator m
             try
             {
                 var lines = sheet.Rows
-                    .Select(r => new SubmitInwardLine(r.MaterialCode, r.QuantityBoxes, r.MfgMonthText))
+                    .Select(r => new SubmitInwardLine(r.MaterialCode, r.QuantityBoxes, r.MfgMonthText, r.Description))
                     .ToList();
 
                 var result = await mediator.Send(
                     new SubmitInwardCommand(lines, request.WarehouseId,
-                        VehicleNumber: sheet.VehicleNumber, LrNumber: sheet.LrNumber, ReceivedFrom: sheet.ReceivedFrom),
+                        VehicleNumber: sheet.VehicleNumber, LrNumber: sheet.LrNumber, ReceivedFrom: sheet.ReceivedFrom,
+                        UploadHeaderJson: sheet.HeaderBlockJson,
+                        UnreadableRows: sheet.UnreadableRows),
                     cancellationToken);
 
                 var skipped = InwardSkippedLineMapper.From(result.Lines);
                 var message = skipped.Count == 0
                     ? $"GRN {result.ReferenceNumber} created with {sheet.Rows.Count} line(s)."
                     : $"GRN {result.ReferenceNumber} created, but {skipped.Count} of {sheet.Rows.Count} line(s) were skipped or only partly allocated - see below.";
+                if (sheet.UnreadableRows is { Count: > 0 } unreadable)
+                {
+                    message += $" {unreadable.Count} sheet row(s) with {unreadable.Sum(r => r.QuantityBoxes):N0} box(es) have a material code that is not a valid number " +
+                        $"(row {string.Join(", ", unreadable.Select(r => r.SourceRow))}) - they are recorded on the GRN as not allocated.";
+                }
+
                 outcomes.Add(new InwardSheetImportOutcome(sheet.SheetName, InwardSheetImportStatus.Created, result.ReferenceNumber, message, skipped));
             }
             catch (Exception ex)

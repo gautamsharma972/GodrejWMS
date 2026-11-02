@@ -1,6 +1,7 @@
 using ClosedXML.Excel;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Features.Inward;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Application.Features.InventoryMovement.Dtos;
 using GodrejWMS.Application.Features.Locations.Dtos;
@@ -551,6 +552,7 @@ public class ClosedXmlExcelService : IExcelService
             var pkmColumn = FindHeaderColumn(ws, InwardWorkbookHeaderRow, "Pkd/Batch") ?? 6;
             var rows = new List<InwardImportRow>();
             var rowsMissingPkm = new List<int>();
+            var unreadableRows = new List<InwardUnsavedLineInput>();
             for (var row = InwardWorkbookHeaderRow + 1; ; row++)
             {
                 var codeCell = ws.Cell(row, 1);
@@ -571,6 +573,19 @@ public class ClosedXmlExcelService : IExcelService
                 }
                 if (codeText.Length == 0 || !long.TryParse(codeText, out var materialCode) || materialCode <= 0)
                 {
+                    // A row with a code-like entry that is not a material number, but with boxes against it, would
+                    // otherwise vanish from the GRN. Record it. Blank rows, repeated headers and total lines are not data.
+                    if (codeText.Length > 0 && !LooksLikeNonDataRow(codeText))
+                    {
+                        var unreadableQuantity = ReadDecimal(ws.Cell(row, 3));
+                        if (unreadableQuantity > 0)
+                        {
+                            unreadableRows.Add(new InwardUnsavedLineInput(
+                                codeText, unreadableQuantity, $"Row {row}: \"{codeText}\" is not a valid material code.", row,
+                                NullIfEmpty(ws.Cell(row, 2).GetString())));
+                        }
+                    }
+
                     continue;
                 }
 
@@ -584,13 +599,43 @@ public class ClosedXmlExcelService : IExcelService
                     MaterialCode: materialCode,
                     QuantityBoxes: ReadDecimal(ws.Cell(row, 3)),
                     MfgMonthText: pkmText ?? string.Empty,
-                    RowNumber: row));
+                    RowNumber: row,
+                    Description: NullIfEmpty(ws.Cell(row, 2).GetString())));
             }
 
-            results.Add(new InwardSheetUploadData(ws.Name, true, rows, vehicleNumber, lrNumber, receivedFrom, existingGrnReference, rowsMissingPkm));
+            results.Add(new InwardSheetUploadData(ws.Name, true, rows, vehicleNumber, lrNumber, receivedFrom, existingGrnReference, rowsMissingPkm,
+                ReadInwardHeaderBlock(ws).ToJson(), unreadableRows));
         }
 
         return results;
+    }
+
+    private static bool LooksLikeNonDataRow(string codeText) =>
+        new[] { "code", "total", "remark", "sr", "s.no", "sum" }
+            .Any(marker => codeText.Contains(marker, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The first seven rows of an order sheet, as the client typed them (display text, so dates
+    /// read as "02/11/26"), plus the merged ranges inside those rows. Repeated at the top of the GRN
+    /// Excel download - see <see cref="WriteUploadHeaderBlock"/>.</summary>
+    private static InwardUploadHeaderBlock ReadInwardHeaderBlock(IXLWorksheet ws)
+    {
+        var lastColumn = Math.Clamp(ws.LastColumnUsed()?.ColumnNumber() ?? 6, 6, 12);
+        var rows = new List<IReadOnlyList<string>>();
+        for (var r = 1; r <= InwardUploadHeaderBlock.RowCount; r++)
+        {
+            var cells = new List<string>(lastColumn);
+            for (var c = 1; c <= lastColumn; c++)
+            {
+                cells.Add(ws.Cell(r, c).GetFormattedString().Trim());
+            }
+            rows.Add(cells);
+        }
+
+        var merges = ws.MergedRanges
+            .Where(m => m.RangeAddress.LastAddress.RowNumber <= InwardUploadHeaderBlock.RowCount)
+            .Select(m => m.RangeAddress.ToStringRelative())
+            .ToList();
+        return new InwardUploadHeaderBlock(rows, merges);
     }
 
     /// <summary>Sample workbook for the multi-sheet Inward upload (<see cref="ReadInwardWorkbook"/>):
@@ -1220,6 +1265,11 @@ public class ClosedXmlExcelService : IExcelService
     {
         using var workbook = new XLWorkbook();
 
+        // Both sheets list rows alphabetically by material description (A-Z, case-insensitive). The sort is
+        // stable (LINQ OrderBy), so rows with the same description keep their existing relative order.
+        rows = rows.OrderBy(r => r.MaterialDescription?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase).ToList();
+        loadingSheetRows = loadingSheetRows.OrderBy(r => r.MaterialDescription?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase).ToList();
+
         // Sheet 1: printable Picklist layout with the transport header followed by one row per
         // allocated pallet position. The underlying pick data and column order stay unchanged.
         var downloadSheet = workbook.Worksheets.Add("Pullout Download");
@@ -1231,7 +1281,8 @@ public class ClosedXmlExcelService : IExcelService
             downloadSheet.Cell(rowNum, 1).Style.NumberFormat.Format = "@";
             downloadSheet.Cell(rowNum, 2).Value = i.MaterialDescription;
             downloadSheet.Cell(rowNum, 3).Value = i.QuantityBoxes;
-            downloadSheet.Cell(rowNum, 3).Style.NumberFormat.Format = "0.###";
+            // "General" shows 40 / 28.5 - "0.###" would render whole numbers with a trailing dot ("40.").
+            downloadSheet.Cell(rowNum, 3).Style.NumberFormat.Format = "General";
             downloadSheet.Cell(rowNum, 4).Value = i.MfgMonthLabel;
             downloadSheet.Cell(rowNum, 5).Value = i.PalletPositionCode;
             downloadSheet.Cell(rowNum, 6).Value = i.PlantName;
@@ -1735,85 +1786,291 @@ public class ClosedXmlExcelService : IExcelService
 
     public byte[] WriteInwardDownload(IReadOnlyList<InwardDownloadRow> rows)
     {
+        var first = rows.FirstOrDefault();
+        return WriteInwardDownload(new InwardDownloadDto(
+            rows,
+            new InwardDownloadHeaderDto(first?.ReferenceNumber ?? string.Empty, first?.VehicleNumber, first?.LrNumber, null),
+            []));
+    }
+
+    /// <summary>Two sheets, like the Pullout download: "Inward Download" (the allocation rows, editable and
+    /// re-uploadable for location reassignment) and "Unloading Sheet" (the uploaded lines with a remark on
+    /// whether each was fully, partly or not allocated). Both repeat the first seven rows of the original
+    /// upload at the top when the GRN came from an upload. There is no GRN Reference column: the GRN number is on
+    /// the Unloading Sheet and in the file name, and <see cref="ReadInwardPutawayReassignment"/> ties each row to its
+    /// GRN through the hidden Put-away ID (column 10) instead.</summary>
+    public byte[] WriteInwardDownload(InwardDownloadDto download)
+    {
         string[] headers =
         [
-            "GRN Reference", "Material Code", "Material Desc.", "Mfg Month", "Requested (CFB)", "Allocated (CFB)",
-            "Line Status", "Pallet Position", "Qty at Position (CFB)", "Put-away Status"
-            , "Put-away ID"
+            "Material Code", "Material Desc.", "Mfg Month", "Requested (CFB)", "Allocated (CFB)",
+            "Line Status", "Pallet Position", "Qty at Position (CFB)", "Put-away Status",
+            "Put-away ID", "Vehicle No.", "LR No."
         ];
+
+        var block = InwardUploadHeaderBlock.TryParse(download.Header.UploadHeaderJson);
 
         using var workbook = new XLWorkbook();
         var ws = workbook.Worksheets.Add("Inward Download");
-        WriteHeader(ws, headers);
 
-        var rowNum = 2;
-        foreach (var item in rows)
+        // The reassignment reader finds the table by scanning the first ten rows for "GRN Reference", so
+        // seven copied rows plus one blank row (table header on row 9) keeps that round-trip working.
+        var headerRow = 1;
+        if (block is not null)
         {
-            ws.Cell(rowNum, 1).Value = item.ReferenceNumber;
-            ws.Cell(rowNum, 2).Value = item.MaterialNumber;
-            ws.Cell(rowNum, 3).Value = item.MaterialDescription;
-            ws.Cell(rowNum, 4).Value = item.MfgMonthLabel;
-            ws.Cell(rowNum, 5).Value = item.RequestedQuantityBoxes;
-            ws.Cell(rowNum, 6).Value = item.AllocatedQuantityBoxes;
-            ws.Cell(rowNum, 7).Value = item.LineStatus;
-            ws.Cell(rowNum, 8).Value = item.LocationCode;
-            ws.Cell(rowNum, 9).Value = item.QuantityBoxes;
-            ws.Cell(rowNum, 10).Value = item.PutawayStatus;
-            ws.Cell(rowNum, 11).Value = XLCellValue.FromObject(item.PutawayId);
+            // This sheet is the put-away plan, so the client's "UNLOADING SHEET" title becomes "PUTAWAY SHEET";
+            // the Unloading Sheet itself keeps the client's original wording.
+            WriteUploadHeaderBlock(ws, block, renameUnloadingTitleTo: "PUTAWAY SHEET");
+            headerRow = InwardUploadHeaderBlock.RowCount + 2;
+        }
+
+        for (var c = 0; c < headers.Length; c++)
+        {
+            var cell = ws.Cell(headerRow, c + 1);
+            cell.Value = headers[c];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#F8FAFC");
+            cell.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
+        }
+
+        var rowNum = headerRow + 1;
+        foreach (var item in download.Rows)
+        {
+            ws.Cell(rowNum, 1).Value = item.MaterialNumber;
+            ws.Cell(rowNum, 2).Value = item.MaterialDescription;
+            ws.Cell(rowNum, 3).Value = item.MfgMonthLabel;
+            ws.Cell(rowNum, 4).Value = item.RequestedQuantityBoxes;
+            ws.Cell(rowNum, 5).Value = item.AllocatedQuantityBoxes;
+            ws.Cell(rowNum, 6).Value = item.LineStatus;
+            ws.Cell(rowNum, 7).Value = item.LocationCode;
+            ws.Cell(rowNum, 8).Value = item.QuantityBoxes;
+            ws.Cell(rowNum, 9).Value = item.PutawayStatus;
+            ws.Cell(rowNum, 10).Value = XLCellValue.FromObject(item.PutawayId);
+            ws.Cell(rowNum, 11).Value = item.VehicleNumber ?? string.Empty;
+            ws.Cell(rowNum, 12).Value = item.LrNumber ?? string.Empty;
+            ws.Cell(rowNum, 11).Style.NumberFormat.Format = "@";
+            ws.Cell(rowNum, 12).Style.NumberFormat.Format = "@";
             var editableFill = item.PutawayStatus.Equals("Reserved", StringComparison.OrdinalIgnoreCase)
                 ? XLColor.FromHtml("#EAF2FF")
                 : XLColor.FromHtml("#F1F5F9");
+            ws.Cell(rowNum, 7).Style.Fill.BackgroundColor = editableFill;
             ws.Cell(rowNum, 8).Style.Fill.BackgroundColor = editableFill;
-            ws.Cell(rowNum, 9).Style.Fill.BackgroundColor = editableFill;
             rowNum++;
         }
 
-        ws.SheetView.FreezeRows(1);
-        ws.RangeUsed()?.SetAutoFilter();
-        ws.Column(11).Hide();
-        ws.Columns().AdjustToContents();
+        ws.SheetView.FreezeRows(headerRow);
+        ws.Range(headerRow, 1, Math.Max(rowNum - 1, headerRow), headers.Length).SetAutoFilter();
+        ws.Column(10).Hide();
+        ws.Columns().AdjustToContents(headerRow);
+
+        if (download.UnloadingRows.Count > 0)
+        {
+            WriteUnloadingSheet(workbook, download, block);
+        }
 
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
         return stream.ToArray();
     }
 
+    /// <summary>The upload's first seven rows, cell for cell, with its merged ranges and a plain bordered
+    /// look; labels (anything ending in ":" or ":-", or written in capitals) are bold and the title row is
+    /// centred, as on the client's own sheet.</summary>
+    private static void WriteUploadHeaderBlock(IXLWorksheet ws, InwardUploadHeaderBlock block, string? renameUnloadingTitleTo = null)
+    {
+        var lastColumn = Math.Max(block.Rows.Max(r => r.Count), 1);
+        for (var r = 0; r < block.Rows.Count && r < InwardUploadHeaderBlock.RowCount; r++)
+        {
+            for (var c = 0; c < block.Rows[r].Count; c++)
+            {
+                var text = block.Rows[r][c];
+                if (string.IsNullOrEmpty(text))
+                {
+                    continue;
+                }
+
+                if (renameUnloadingTitleTo is not null && text.Trim().Equals("UNLOADING SHEET", StringComparison.OrdinalIgnoreCase))
+                {
+                    text = renameUnloadingTitleTo;
+                }
+
+                var cell = ws.Cell(r + 1, c + 1);
+                cell.Value = text;
+                cell.Style.NumberFormat.Format = "@";
+                var isLabel = text.EndsWith(':') || text.EndsWith(":-") || (text.Any(char.IsLetter) && text == text.ToUpperInvariant());
+                cell.Style.Font.Bold = isLabel;
+            }
+        }
+
+        foreach (var merged in block.MergedRanges)
+        {
+            try
+            {
+                ws.Range(merged).Merge();
+            }
+            catch (ArgumentException)
+            {
+                // A merged range that no longer parses is cosmetic only - skip it, keep the values.
+            }
+        }
+
+        var title = ws.Cell(1, 1);
+        title.Style.Font.FontSize = 14;
+        title.Style.Font.Bold = true;
+        title.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        var area = ws.Range(1, 1, InwardUploadHeaderBlock.RowCount, lastColumn);
+        area.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+        area.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+    }
+
+    private static void WriteUnloadingSheet(XLWorkbook workbook, InwardDownloadDto download, InwardUploadHeaderBlock? block)
+    {
+        var ws = workbook.Worksheets.Add("Unloading Sheet");
+        const int tableHeaderRow = InwardUploadHeaderBlock.RowCount + 1;
+        const int columnCount = 7;
+
+        if (block is not null)
+        {
+            WriteUploadHeaderBlock(ws, block);
+        }
+        else
+        {
+            // Manual entry or a single-sheet upload has no original header to repeat, so write a minimal
+            // one at the client's own cell positions (LR No at D2, Vehicle No at D3).
+            ws.Cell(1, 1).Value = "UNLOADING SHEET";
+            ws.Range(1, 1, 1, 6).Merge();
+            ws.Cell(2, 3).Value = "LR NO :-";
+            ws.Cell(2, 4).Value = download.Header.LrNumber ?? string.Empty;
+            ws.Cell(3, 3).Value = "Vehicle No:-";
+            ws.Cell(3, 4).Value = download.Header.VehicleNumber ?? string.Empty;
+            ws.Cell(2, 3).Style.Font.Bold = true;
+            ws.Cell(3, 3).Style.Font.Bold = true;
+            ws.Cell(1, 1).Style.Font.FontSize = 14;
+            ws.Cell(1, 1).Style.Font.Bold = true;
+            ws.Cell(1, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            var area = ws.Range(1, 1, InwardUploadHeaderBlock.RowCount, 6);
+            area.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            area.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+        }
+
+        // The system's GRN number sits beside the copied block (outside the client's A-F columns).
+        var referenceColumn = Math.Max(8, (block?.Rows.Max(r => r.Count) ?? 6) + 2);
+        ws.Cell(1, referenceColumn).Value = "GRN Reference";
+        ws.Cell(1, referenceColumn).Style.Font.Bold = true;
+        ws.Cell(2, referenceColumn).Value = download.Header.ReferenceNumber;
+
+        string[] headers = ["Code", "Desc", "Qty", "Inbound Delv No", "Physical Qty", "Pkd/Batch", "Remarks"];
+        for (var c = 0; c < headers.Length; c++)
+        {
+            var cell = ws.Cell(tableHeaderRow, c + 1);
+            cell.Value = headers[c];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#F8FAFC");
+        }
+
+        var row = tableHeaderRow + 1;
+        foreach (var line in download.UnloadingRows)
+        {
+            ws.Cell(row, 1).Value = line.Code;
+            ws.Cell(row, 1).Style.NumberFormat.Format = "@";
+            ws.Cell(row, 2).Value = line.MaterialDescription;
+            ws.Cell(row, 3).Value = line.RequestedQuantityBoxes;
+            ws.Cell(row, 3).Style.NumberFormat.Format = "0";
+            ws.Cell(row, 6).Value = line.MfgMonthLabel;
+            ws.Cell(row, 7).Value = line.Remarks;
+            ws.Cell(row, 7).Style.Fill.BackgroundColor = line.Remarks switch
+            {
+                "Fully allocated" => XLColor.FromHtml("#DCFCE7"),
+                "Partially allocated" => XLColor.FromHtml("#FEF3C7"),
+                _ => XLColor.FromHtml("#FEE2E2")
+            };
+            row++;
+        }
+
+        var table = ws.Range(tableHeaderRow, 1, row - 1, columnCount);
+        table.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+        table.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+        ws.Column(1).Width = 14;
+        ws.Column(2).Width = 52;
+        ws.Column(3).Width = 10;
+        ws.Column(4).Width = 18;
+        ws.Column(5).Width = 14;
+        ws.Column(6).Width = 14;
+        ws.Column(7).Width = 22;
+        ws.Column(referenceColumn).AdjustToContents();
+    }
+
+    /// <summary>Reads a GRN's Inward Download sheet back for location reassignment. Understands both layouts: the
+    /// current one (starts at "Material Code", Put-away ID in column 10) and the earlier one that began with a
+    /// "GRN Reference" column (everything one column to the right, Put-away ID in column 11), so a file downloaded
+    /// before that column was removed still uploads. Rows above the table (the repeated upload header) are skipped.</summary>
     public IReadOnlyList<InwardPutawayReassignmentImportRow> ReadInwardPutawayReassignment(Stream fileStream)
     {
         using var workbook = LoadWorkbook(fileStream);
         var ws = workbook.Worksheets.First();
-        var headerRow = FindHeaderRow(ws, "GRN Reference");
 
-        if (!ws.Cell(headerRow, 11).GetString().Trim().Equals("Put-away ID", StringComparison.OrdinalIgnoreCase))
+        int? headerRow = null;
+        var legacyLayout = false;
+        for (var row = 1; row <= 10 && headerRow is null; row++)
+        {
+            var text = ws.Cell(row, 1).GetString();
+            if (text.Contains("GRN Reference", StringComparison.OrdinalIgnoreCase))
+            {
+                headerRow = row;
+                legacyLayout = true;
+            }
+            else if (text.Contains("Material Code", StringComparison.OrdinalIgnoreCase))
+            {
+                headerRow = row;
+            }
+        }
+
+        if (headerRow is null)
+        {
+            throw new InvalidOperationException(
+                "This workbook is not a GRN allocation download. Download the GRN Excel again, edit only Pallet Position and Qty at Position, and re-upload it.");
+        }
+
+        var shift = legacyLayout ? 1 : 0;
+        int Col(int currentLayoutColumn) => currentLayoutColumn + shift;
+
+        if (!ws.Cell(headerRow.Value, Col(10)).GetString().Trim().Equals("Put-away ID", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
                 "This workbook does not contain put-away identifiers. Download the GRN Excel again, edit only Pallet Position and Qty at Position, and re-upload it.");
         }
 
         var rows = new List<InwardPutawayReassignmentImportRow>();
-        for (var row = headerRow + 1; ; row++)
+        for (var row = headerRow.Value + 1; ; row++)
         {
-            var reference = ws.Cell(row, 1).GetString().Trim();
-            if (string.IsNullOrWhiteSpace(reference)) break;
+            // The first column (GRN Reference in the old layout, Material Code in the current one) ends the table when blank.
+            if (string.IsNullOrWhiteSpace(ws.Cell(row, 1).GetString()))
+            {
+                break;
+            }
 
-            if (!ws.Cell(row, 2).TryGetValue(out long materialNumber) || materialNumber <= 0)
+            var reference = legacyLayout ? ws.Cell(row, 1).GetString().Trim() : null;
+
+            if (!ws.Cell(row, Col(1)).TryGetValue(out long materialNumber) || materialNumber <= 0)
             {
                 throw new InvalidOperationException($"Row {row}: Material Code is missing or invalid.");
             }
 
-            var putawayId = ws.Cell(row, 11).TryGetValue(out int parsedId) && parsedId > 0
+            var putawayId = ws.Cell(row, Col(10)).TryGetValue(out int parsedId) && parsedId > 0
                 ? parsedId
                 : (int?)null;
 
             rows.Add(new InwardPutawayReassignmentImportRow(
                 reference,
                 materialNumber,
-                ws.Cell(row, 4).GetString().Trim(),
-                ReadDecimal(ws.Cell(row, 5)),
-                ReadDecimal(ws.Cell(row, 6)),
-                ws.Cell(row, 8).GetString().Trim(),
-                ReadDecimal(ws.Cell(row, 9)),
-                ws.Cell(row, 10).GetString().Trim(),
+                ws.Cell(row, Col(3)).GetString().Trim(),
+                ReadDecimal(ws.Cell(row, Col(4))),
+                ReadDecimal(ws.Cell(row, Col(5))),
+                ws.Cell(row, Col(7)).GetString().Trim(),
+                ReadDecimal(ws.Cell(row, Col(8))),
+                ws.Cell(row, Col(9)).GetString().Trim(),
                 putawayId,
                 row));
         }

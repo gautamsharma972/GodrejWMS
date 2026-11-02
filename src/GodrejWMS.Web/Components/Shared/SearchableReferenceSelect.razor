@@ -1,0 +1,71 @@
+<div class="input-group search-control searchable-reference-select" @onfocusout="OnBlur">
+    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+    <input class="form-control" value="@Value" @oninput="OnInputAsync" @onfocus="OnFocus"
+           placeholder="@Placeholder" autocomplete="off" aria-label="@AriaLabel" />
+    @if (_showSuggestions)
+    {
+        <div class="location-suggestions">
+            @if (FilteredOptions.Count == 0)
+            {
+                <div class="searchable-reference-empty">No matching reference. Press Search to look up what you typed.</div>
+            }
+            else
+            {
+                @foreach (var option in FilteredOptions)
+                {
+                    <button type="button" class="location-suggestion-item @(option.Reference == Value ? "selected" : null)"
+                            @onmousedown="() => SelectAsync(option.Reference)" @onmousedown:preventDefault="true">
+                        <span class="record-code">@option.Reference</span>
+                        @if (!string.IsNullOrEmpty(option.Hint))
+                        {
+                            <span class="location-suggestion-meta">@option.Hint</span>
+                        }
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ReferenceOption> Options { get; set; } = [];
+    [Parameter] public string Value { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Search reference...";
+    [Parameter] public string AriaLabel { get; set; } = "Search reference";
+
+    private bool _showSuggestions;
+
+    public sealed record ReferenceOption(string Reference, string? Hint = null);
+
+    private List<ReferenceOption> FilteredOptions =>
+        (string.IsNullOrWhiteSpace(Value)
+            ? Options
+            : Options.Where(x => x.Reference.Contains(Value.Trim(), StringComparison.OrdinalIgnoreCase)
+                                 || (x.Hint?.Contains(Value.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)).ToList())
+        .Take(100)
+        .ToList();
+
+    private async Task OnInputAsync(ChangeEventArgs args)
+    {
+        Value = args.Value?.ToString() ?? string.Empty;
+        _showSuggestions = true;
+        await ValueChanged.InvokeAsync(Value);
+    }
+
+    private void OnFocus() => _showSuggestions = true;
+
+    private async Task SelectAsync(string reference)
+    {
+        Value = reference;
+        _showSuggestions = false;
+        await ValueChanged.InvokeAsync(reference);
+    }
+
+    private async Task OnBlur()
+    {
+        await Task.Delay(120);
+        _showSuggestions = false;
+        StateHasChanged();
+    }
+}

@@ -114,6 +114,9 @@ public interface IExcelService
     /// <summary>Writes an inward (GRN) allocation workbook: one row per put-away location.</summary>
     byte[] WriteInwardDownload(IReadOnlyList<InwardDownloadRow> rows);
 
+    /// <summary>The two-sheet GRN workbook: Inward Download plus the Unloading Sheet with per-line allocation remarks.</summary>
+    byte[] WriteInwardDownload(InwardDownloadDto download);
+
     /// <summary>Reads a previously downloaded GRN allocation workbook after pallet locations were edited.</summary>
     IReadOnlyList<InwardPutawayReassignmentImportRow> ReadInwardPutawayReassignment(Stream fileStream);
 

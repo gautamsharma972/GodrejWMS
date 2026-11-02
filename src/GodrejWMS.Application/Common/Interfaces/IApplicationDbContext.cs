@@ -48,6 +48,8 @@ public interface IApplicationDbContext : IAsyncDisposable
 
     DbSet<InwardTransactionLine> InwardTransactionLines { get; }
 
+    DbSet<InwardUnsavedLine> InwardUnsavedLines { get; }
+
     DbSet<InwardPutaway> InwardPutaways { get; }
 
     DbSet<PulloutTransaction> PulloutTransactions { get; }

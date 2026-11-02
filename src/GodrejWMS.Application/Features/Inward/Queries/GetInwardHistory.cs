@@ -35,6 +35,8 @@ public sealed class GetInwardHistoryHandler(IApplicationDbContext db)
             var term = request.Search.Trim();
             transactions = transactions.Where(t =>
                 t.ReferenceNumber.Contains(term) ||
+                (t.VehicleNumber != null && t.VehicleNumber.Contains(term)) ||
+                (t.LrNumber != null && t.LrNumber.Contains(term)) ||
                 t.Lines.Any(l =>
                     l.Material.MaterialNumber.ToString().Contains(term) ||
                     l.Material.Description.Contains(term)));
@@ -83,7 +85,9 @@ public sealed class GetInwardHistoryHandler(IApplicationDbContext db)
                 // a rejected/unconfirmed GRN never also shows as Confirmed in this list.
                 t.Lines.SelectMany(l => l.Putaways).Any() && t.Lines.SelectMany(l => l.Putaways).All(p => p.IsConfirmed),
                 t.IsRejected,
-                t.IsPkmless));
+                t.IsPkmless,
+                t.VehicleNumber,
+                t.LrNumber));
 
         return PaginatedList<InwardHistoryDto>.CreateAsync(query, request.PageNumber, request.PageSize);
     }

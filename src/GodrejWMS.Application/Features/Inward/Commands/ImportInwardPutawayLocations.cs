@@ -88,7 +88,10 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
         var targetPlans = new Dictionary<int, (string Code, decimal QuantityBoxes, int RowNumber)>();
         foreach (var row in identifiedRows)
         {
-            if (!row.ReferenceNumber.Equals(transaction.ReferenceNumber, StringComparison.OrdinalIgnoreCase))
+            // Older downloads carried a GRN Reference column; current ones do not, and rely on the Put-away ID
+            // check below (an ID from another GRN is rejected) plus the complete-plan count above.
+            if (!string.IsNullOrWhiteSpace(row.ReferenceNumber)
+                && !row.ReferenceNumber.Equals(transaction.ReferenceNumber, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException(
                     $"Row {row.RowNumber}: GRN Reference {row.ReferenceNumber} does not match {transaction.ReferenceNumber}.");
