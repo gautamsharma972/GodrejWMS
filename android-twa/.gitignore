@@ -1,0 +1,8 @@
+# Bubblewrap build output and signing material - never commit the keystore.
+*.keystore
+*.jks
+app-release-signed.apk
+app-release-unsigned.apk
+/twa-manifest.json
+/app/
+/node_modules/

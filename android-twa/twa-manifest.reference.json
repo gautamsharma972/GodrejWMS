@@ -1,0 +1,23 @@
+{
+  "_readme": "Reference only - NOT fed directly to bubblewrap build. Run `bubblewrap init --manifest=https://gcpl.logivue.in/manifest.webmanifest` instead (see README.md); when it prompts for these values, answer with what's below. Bubblewrap's exact twa-manifest.json schema can shift between CLI versions, so letting `init` generate the real file (reading the live PWA manifest) is the safe path - this file just documents the intended answers so nobody has to re-derive them.",
+  "packageId": "in.logivue.gcpl.wms.pickers",
+  "host": "gcpl.logivue.in",
+  "name": "LogiVue WMS",
+  "launcherName": "WMS Pickers",
+  "display": "standalone",
+  "themeColor": "#2563EB",
+  "navigationColor": "#2563EB",
+  "backgroundColor": "#F4F7FB",
+  "startUrl": "/",
+  "iconUrl": "https://gcpl.logivue.in/icons/icon-512.png",
+  "maskableIconUrl": "https://gcpl.logivue.in/icons/icon-512-maskable.png",
+  "webManifestUrl": "https://gcpl.logivue.in/manifest.webmanifest",
+  "fullScopeUrl": "https://gcpl.logivue.in/",
+  "orientation": "portrait",
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "android"
+  }
+}

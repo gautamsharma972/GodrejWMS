@@ -78,11 +78,15 @@ public sealed class GetRackLayoutHandler(IApplicationDbContext db) : IRequestHan
                 ip.QuantityBoxes
             }).ToListAsync(cancellationToken);
 
+        // Grouped once up front instead of re-scanning the whole reservations list per position
+        // (an O(positions x reservations) linear scan inside the Select below otherwise).
+        var reservationsByPosition = reservations.ToLookup(r => r.PalletPositionId);
+
         var dtoPositions = positions
             .OrderBy(p => p.Level).ThenBy(p => p.Column)
             .Select(p =>
             {
-                var positionReservations = reservations.Where(r => r.PalletPositionId == p.Id).ToList();
+                var positionReservations = reservationsByPosition[p.Id].ToList();
                 var palletCapacity = p.OccupyingPalletCapacityBoxes
                     ?? positionReservations.Select(r => (int?)r.PalletCapacityBoxes).FirstOrDefault();
                 var capacityBoxes = palletCapacity is { } capacityPerPallet
