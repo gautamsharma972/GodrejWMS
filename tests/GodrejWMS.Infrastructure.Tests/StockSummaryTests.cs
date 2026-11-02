@@ -35,6 +35,37 @@ public class StockSummaryTests
         Assert.Equal(1, result.PendingPulloutTransactions);
     }
 
+    [Fact]
+    public async Task Capacity_CountsEmptyLocationsAtDefaultPalletSize_AndUsedLocationsAtTheirMaterial()
+    {
+        await using var db = TestDbContextFactory.Create();
+        var rack = new Rack { Code = "A", Columns = 1, Levels = 3, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
+        var used = new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 1 };
+        var empty1 = new PalletPosition { Column = 1, Level = 2, LocationCode = "A-01-02", MaxPallets = 1 };
+        var empty2 = new PalletPosition { Column = 1, Level = 3, LocationCode = "A-01-03", MaxPallets = 2 };
+        rack.PalletPositions.Add(used);
+        rack.PalletPositions.Add(empty1);
+        rack.PalletPositions.Add(empty2);
+        db.Racks.Add(rack);
+        var material = new Material
+        {
+            MaterialNumber = 1, Description = "M", DesignType = "X", PackSize = 24, GrossWeightKg = 0.5m,
+            LengthMm = 100, WidthMm = 100, HeightMm = 100, PalletCapacityBoxes = 60, SeasonId = SeasonIds.Rainy
+        };
+        db.Materials.Add(material);
+        await db.SaveChangesAsync();
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = used.Id, MfgMonth = 202610, QuantityBoxes = 50 });
+        await db.SaveChangesAsync();
+
+        var result = await new GetStockSummaryHandler(db).Handle(new GetStockSummaryQuery(), CancellationToken.None);
+
+        // used: 1 pallet x 60 boxes; empty: (1 + 2 pallets) x default 40
+        Assert.Equal(2, result.EmptyLocationCount);
+        Assert.Equal(120, result.EmptyCapacityBoxes);
+        Assert.Equal(180, result.TotalCapacityBoxes);
+        Assert.Equal(130m, result.FreeCapacityBoxes); // 180 - 50 stock - 0 pending
+    }
+
     private static InwardTransaction Inward(string reference, DateTimeOffset createdAt, decimal boxes, bool confirmed)
     {
         var transaction = new InwardTransaction { ReferenceNumber = reference, CreatedAt = createdAt };

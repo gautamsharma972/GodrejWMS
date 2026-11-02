@@ -6,7 +6,7 @@
 @inject IJSRuntime JsRuntime
 @inject Microsoft.Extensions.Options.IOptions<GodrejWMS.Web.Services.IdleSessionOptions> SessionOptions
 
-<form id="idle-logout-form" action="Account/Logout" method="post" style="display:none" aria-hidden="true">
+<form id="idle-logout-form" action="Account/Logout?idle=1" method="post" style="display:none" aria-hidden="true">
     <AntiforgeryToken />
     <input type="hidden" name="ReturnUrl" value="Account/Login?reason=idle" />
 </form>

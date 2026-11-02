@@ -53,7 +53,10 @@ public sealed record StockSummaryDto(
     int FullLocationCount,
     decimal FreeCapacityBoxes,
     int LowStockLocationCount,
-    IReadOnlyList<SeasonBreakdownDto> BySeason);
+    IReadOnlyList<SeasonBreakdownDto> BySeason,
+    int EmptyLocationCount = 0,
+    int EmptyCapacityBoxes = 0,
+    int DefaultPalletCapacityBoxes = 0);
 
 public sealed record LowStockLocationDto(
     int MaterialId,

@@ -1296,6 +1296,7 @@ h2 {
 }
 
 .material-option:hover,
+.material-option.is-active,
 .material-option:focus-visible {
     background: #eff6ff;
     color: var(--wms-primary);

@@ -112,7 +112,7 @@ else
                     <div class="metric-icon"><i class="bi bi-box-seam"></i></div>
                     <h6 class="card-subtitle">Total Stock</h6>
                     <p class="card-text metric-value">@_summary.TotalStockBoxes.ToString("N0")</p>
-                    <p class="card-text text-muted">Capacity: @_summary.TotalCapacityBoxes.ToString("N0") boxes</p>
+                    <p class="card-text text-muted" title="@CapacityBreakdown()">Capacity: @_summary.TotalCapacityBoxes.ToString("N0") boxes</p>
                 </div>
             </div>
         </div>
@@ -206,7 +206,7 @@ else
             </div>
             <div class="audit-summary-value">@_summary.FreeCapacityBoxes.ToString("N0")</div>
             <div class="audit-summary-label">Boxes free after reservations</div>
-            <div class="audit-summary-meta">@FreeCapacityPercent().ToString("0.#")% of configured capacity available</div>
+            <div class="audit-summary-meta" title="@CapacityBreakdown()">@FreeCapacityPercent().ToString("0.#")% of total capacity available</div>
             <div class="audit-progress" aria-hidden="true"><span style="@($"width: {FreeCapacityPercent():0.##}%")"></span></div>
         </div>
     </div>
@@ -333,6 +333,12 @@ else
 
     private int PendingConfirmationCount() =>
         _summary is null ? 0 : _summary.PendingPutawayTransactions + _summary.PendingPulloutTransactions;
+
+    private string CapacityBreakdown() => _summary is null
+        ? string.Empty
+        : $"Locations in use or reserved: {(_summary.TotalCapacityBoxes - _summary.EmptyCapacityBoxes):N0} boxes. " +
+          $"Empty locations: {_summary.EmptyLocationCount:N0} x {_summary.DefaultPalletCapacityBoxes} boxes = {_summary.EmptyCapacityBoxes:N0}. " +
+          $"Free = capacity - stock - pending put-away.";
 
     private decimal FreeCapacityPercent() =>
         _summary is null || _summary.TotalCapacityBoxes <= 0 ? 0 : Math.Clamp(_summary.FreeCapacityBoxes / _summary.TotalCapacityBoxes * 100, 0, 100);

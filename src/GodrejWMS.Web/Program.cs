@@ -43,6 +43,7 @@ builder.Services.AddDataProtection()
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 
 builder.Services.Configure<IdleSessionOptions>(builder.Configuration.GetSection("Session"));
+builder.Services.Configure<GodrejWMS.Application.Features.StockMaster.Queries.StockCapacityOptions>(builder.Configuration.GetSection("Capacity"));
 var idleSessionOptions = builder.Configuration.GetSection("Session").Get<IdleSessionOptions>() ?? new IdleSessionOptions();
 var idleTimeout = TimeSpan.FromMinutes(Math.Max(1, idleSessionOptions.IdleTimeoutMinutes));
 
@@ -114,11 +115,8 @@ app.Use(async (context, next) =>
     }
     catch (Exception ex) when (!context.Response.HasStarted && IsAntiforgeryFailure(ex))
     {
-        app.Logger.LogWarning(ex,
-            "Rejected invalid antiforgery form submission (thrown) for {Method} {Path}; redirecting to sign in.",
-            context.Request.Method,
-            context.Request.Path);
-        context.Response.Redirect("/Account/Login");
+        app.Logger.LogDebug(ex, "Antiforgery validation threw for {Method} {Path}.", context.Request.Method, context.Request.Path);
+        await RedirectAfterRejectedAntiforgeryAsync(context, app.Logger);
     }
 });
 
@@ -132,11 +130,7 @@ app.Use(async (context, next) =>
 {
     if (context.Features.Get<IAntiforgeryValidationFeature>() is { IsValid: false })
     {
-        app.Logger.LogWarning(
-            "Rejected stale or invalid antiforgery form submission for {Method} {Path}; redirecting to sign in.",
-            context.Request.Method,
-            context.Request.Path);
-        context.Response.Redirect("/Account/Login");
+        await RedirectAfterRejectedAntiforgeryAsync(context, app.Logger);
         return;
     }
 
@@ -166,6 +160,35 @@ if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("DevSeed
 #endif
 
 app.Run();
+
+// Shared recovery for a rejected (stale/invalid) antiforgery form post, whether the middleware recorded a failed
+// verdict or threw.
+//  - Logout: the user asked to leave, and the usual reasons for a stale token - the idle timer's hidden form posting
+//    after the cookie expired, or an old tab from a previous sign-in (another user on this browser) - are exactly when
+//    they want out. Sign out anyway and go to the sign-in page (with ?reason=idle when the idle timer posted it). A forged logout is only a nuisance, never a data risk.
+//  - Anything else: a second submit of a form whose first submit already worked (double click, Enter + click) arrives
+//    signed in but carrying a token issued for the anonymous page. Send a signed-in user back to the app rather than
+//    to the sign-in page; everyone else gets a fresh sign-in request.
+static async Task RedirectAfterRejectedAntiforgeryAsync(HttpContext context, Microsoft.Extensions.Logging.ILogger logger)
+{
+    if (HttpMethods.IsPost(context.Request.Method)
+        && context.Request.Path.Equals("/Account/Logout", StringComparison.OrdinalIgnoreCase))
+    {
+        await context.RequestServices.GetRequiredService<SignInManager<ApplicationUser>>().SignOutAsync();
+        logger.LogInformation("Logout submitted with a stale antiforgery token; signed the user out anyway.");
+        // The form body can't be read once validation failed, so the idle timer's form flags itself in the query string.
+        context.Response.Redirect(context.Request.Query.ContainsKey("idle") ? "/Account/Login?reason=idle" : "/Account/Login");
+        return;
+    }
+
+    var signedIn = context.User.Identity?.IsAuthenticated == true;
+    logger.LogWarning(
+        "Rejected stale or invalid antiforgery form submission for {Method} {Path}; redirecting to {Target}.",
+        context.Request.Method,
+        context.Request.Path,
+        signedIn ? "home" : "sign in");
+    context.Response.Redirect(signedIn ? "/" : "/Account/Login");
+}
 
 // Covers every shape an invalid/stale antiforgery token has been observed to throw as: the
 // documented AntiforgeryValidationException, a BadHttpRequestException whose message names

@@ -3,13 +3,23 @@ using GodrejWMS.Application.Features.StockMaster.Dtos;
 using GodrejWMS.Domain.Enums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace GodrejWMS.Application.Features.StockMaster.Queries;
 
 /// <summary>Dashboard KPIs: capacity utilization, active materials, stock breakdown, and live operation signals.</summary>
 public sealed record GetStockSummaryQuery : IRequest<StockSummaryDto>;
 
-public sealed class GetStockSummaryHandler(IApplicationDbContext db) : IRequestHandler<GetStockSummaryQuery, StockSummaryDto>
+/// <summary>Bound from the "Capacity" config section.</summary>
+public sealed class StockCapacityOptions
+{
+    /// <summary>Boxes assumed for one pallet of an empty location (no stock, no pending put-away), whose material
+    /// - and so its real pallet size - is not known yet.</summary>
+    public int DefaultPalletCapacityBoxes { get; set; } = 40;
+}
+
+public sealed class GetStockSummaryHandler(IApplicationDbContext db, IOptions<StockCapacityOptions>? capacityOptions = null)
+    : IRequestHandler<GetStockSummaryQuery, StockSummaryDto>
 {
     public async Task<StockSummaryDto> Handle(GetStockSummaryQuery request, CancellationToken cancellationToken)
     {
@@ -19,9 +29,10 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db) : IRequestH
         var totalRacks = await db.Racks.CountAsync(r => r.IsActive, cancellationToken);
         var totalPositions = await db.PalletPositions.CountAsync(p => p.IsActive, cancellationToken);
 
-        // Capacity is driven entirely by whichever material occupies (or is reserved against, via
-        // a pending put-away) a position - a position only ever holds one material at a time. A
-        // position with neither has no material context, so it contributes 0.
+        // Capacity of a position is driven by whichever material occupies (or is reserved against, via
+        // a pending put-away) it - a position only ever holds one material at a time. A position with
+        // neither has no material context, so it is counted at the default pallet size instead
+        // (MaxPallets x DefaultPalletCapacityBoxes) - otherwise empty racks would look like zero room.
         var positionCapacities = await db.PalletPositions
             .Where(p => p.IsActive)
             .Select(p => new
@@ -35,7 +46,10 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db) : IRequestH
             })
             .ToListAsync(cancellationToken);
 
-        var totalCapacityBoxes = (int)positionCapacities.Sum(p => p.MaxPallets * (p.PalletCapacityBoxes ?? 0));
+        var defaultPalletCapacity = Math.Max(0, capacityOptions?.Value.DefaultPalletCapacityBoxes ?? new StockCapacityOptions().DefaultPalletCapacityBoxes);
+        var emptyLocations = positionCapacities.Where(p => p.PalletCapacityBoxes is null).ToList();
+        var emptyCapacityBoxes = emptyLocations.Sum(p => p.MaxPallets * defaultPalletCapacity);
+        var totalCapacityBoxes = (int)positionCapacities.Sum(p => p.MaxPallets * (p.PalletCapacityBoxes ?? 0)) + emptyCapacityBoxes;
         var fullLocationCount = positionCapacities.Count(p =>
             p.PalletCapacityBoxes is { } cap && p.Occupied + p.Reserved >= p.MaxPallets * cap);
 
@@ -138,6 +152,9 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db) : IRequestH
             fullLocationCount,
             freeCapacityBoxes,
             lowStockLocationCount,
-            bySeason);
+            bySeason,
+            emptyLocations.Count,
+            emptyCapacityBoxes,
+            defaultPalletCapacity);
     }
 }

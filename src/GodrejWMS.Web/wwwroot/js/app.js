@@ -208,3 +208,129 @@ function scheduleTooltipRescan() {
 
 new MutationObserver(scheduleTooltipRescan)
     .observe(document.body, { childList: true, subtree: true });
+
+
+// Keyboard flow for the line-entry screens (Inward, Inward No PKM, Pullout): Up/Down + Enter pick a material from
+// the suggestion menu, Enter moves on to the next field of the row, and Add Line focuses the new row's material box.
+(function () {
+    const rowControls = (row) => [...row.querySelectorAll('input:not([type=hidden]), select, textarea')]
+        .filter((el) => !el.disabled && el.offsetParent !== null);
+
+    const focusControl = (el) => {
+        el.focus();
+        if (el.tagName === 'INPUT') {
+            try { el.select(); } catch { /* not selectable */ }
+        }
+    };
+
+    // Blazor re-renders asynchronously after an event, so poll briefly for the DOM change we are waiting on.
+    const waitFor = (test, done, timeoutMs = 2000) => {
+        const start = performance.now();
+        const tick = () => {
+            const result = test();
+            if (result) { done(result); return; }
+            if (performance.now() - start < timeoutMs) requestAnimationFrame(tick);
+        };
+        tick();
+    };
+
+    document.addEventListener('keydown', (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLElement) || !target.closest('.line-table')) return;
+
+        const combo = target.closest('.material-combobox');
+        if (combo && target.tagName === 'INPUT') {
+            const options = [...combo.querySelectorAll('.material-menu .material-option')];
+            if (options.length === 0) return;
+
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                const current = options.findIndex((o) => o.classList.contains('is-active'));
+                const next = e.key === 'ArrowDown'
+                    ? (current + 1) % options.length
+                    : (current <= 0 ? options.length - 1 : current - 1);
+                options.forEach((o) => o.classList.remove('is-active'));
+                options[next].classList.add('is-active');
+                options[next].scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'Enter') {
+                const typed = target.value.trim();
+                const pick = options.find((o) => o.classList.contains('is-active'))
+                    ?? options.find((o) => o.querySelector('.record-code')?.textContent.trim() === typed)
+                    ?? (options.length === 1 ? options[0] : null);
+                if (pick) {
+                    e.preventDefault();
+                    pick.click();
+                }
+            }
+            return;
+        }
+
+        // Enter in any other field of the row moves to the next field in that row.
+        if (e.key === 'Enter' && (target.tagName === 'INPUT' || target.tagName === 'SELECT')) {
+            const row = target.closest('tr');
+            const controls = row ? rowControls(row) : [];
+            const index = controls.indexOf(target);
+            if (index >= 0 && index < controls.length - 1) {
+                e.preventDefault();
+                focusControl(controls[index + 1]);
+            }
+        }
+    });
+
+    document.addEventListener('input', (e) => {
+        // A new search text gives a new list: drop any stale highlight.
+        if (e.target instanceof HTMLElement && e.target.closest('.material-combobox')) {
+            e.target.closest('.material-combobox').querySelectorAll('.material-option.is-active')
+                .forEach((o) => o.classList.remove('is-active'));
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!(e.target instanceof HTMLElement)) return;
+
+        // Material chosen (mouse click or the keyboard path above): continue to the Qty field of the same row.
+        const option = e.target.closest('.material-option');
+        const combo = option?.closest('.material-combobox');
+        const row = option?.closest('tr');
+        if (option && combo && row) {
+            const input = combo.querySelector('input');
+            waitFor(() => !row.querySelector('.material-menu .material-option'), () => {
+                const controls = rowControls(row);
+                const index = controls.indexOf(input);
+                if (index >= 0 && index < controls.length - 1) focusControl(controls[index + 1]);
+            });
+            return;
+        }
+
+        const addLine = e.target.closest('[data-add-line]');
+        const table = document.querySelector('.line-table');
+        if (addLine && table) {
+            const before = table.querySelectorAll('tbody tr').length;
+            waitFor(() => {
+                const rows = table.querySelectorAll('tbody tr');
+                return rows.length > before ? rows[rows.length - 1] : null;
+            }, (newRow) => {
+                const input = newRow.querySelector('.material-combobox input');
+                if (input) focusControl(input);
+            });
+        }
+    });
+})();
+
+// A form that posts to the server (login, change password, ...) must only be submitted once: a double click or
+// Enter + click sends a second POST whose antiforgery token no longer matches the (now signed-in) user and is
+// rejected. Swallow repeat submits, and re-arm the form when the page is restored or enhanced navigation re-renders it.
+(function () {
+    const armed = new WeakSet();
+    document.addEventListener('submit', (e) => {
+        const form = e.target;
+        if (!(form instanceof HTMLFormElement) || (form.method || '').toLowerCase() !== 'post') return;
+        if (armed.has(form)) {
+            e.preventDefault();
+            return;
+        }
+        armed.add(form);
+        setTimeout(() => armed.delete(form), 4000);
+    }, true);
+    window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
+})();

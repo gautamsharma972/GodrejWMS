@@ -179,12 +179,37 @@
         await LoadHistoryPage(1);
     }
 
+    // The search box reloads on every key-up. Blazor Server shares one DbContext/connection per circuit, so two
+    // overlapping queries corrupt the MySQL reader (NullReferenceException in MySqlConnector). Run one query at a
+    // time; a request that arrives meanwhile just records the latest page and is run once the current one ends.
+    private bool _historyLoading;
+    private bool _historyReloadQueued;
+
     private async Task LoadHistoryPage(int page)
     {
         if (page < 1) return;
 
         _historyPageNumber = page;
-        _history = await Mediator.Send(CreateHistoryQuery(page, 10));
+        if (_historyLoading)
+        {
+            _historyReloadQueued = true;
+            return;
+        }
+
+        _historyLoading = true;
+        try
+        {
+            do
+            {
+                _historyReloadQueued = false;
+                _history = await Mediator.Send(CreateHistoryQuery(_historyPageNumber, 10));
+            }
+            while (_historyReloadQueued);
+        }
+        finally
+        {
+            _historyLoading = false;
+        }
     }
 
     private GetInwardHistoryQuery CreateHistoryQuery(int page, int pageSize) =>
