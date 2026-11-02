@@ -1265,6 +1265,11 @@ public class ClosedXmlExcelService : IExcelService
     {
         using var workbook = new XLWorkbook();
 
+        // Both sheets list rows alphabetically by material description (A-Z, case-insensitive). The sort is
+        // stable (LINQ OrderBy), so rows with the same description keep their existing relative order.
+        rows = rows.OrderBy(r => r.MaterialDescription?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase).ToList();
+        loadingSheetRows = loadingSheetRows.OrderBy(r => r.MaterialDescription?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase).ToList();
+
         // Sheet 1: printable Picklist layout with the transport header followed by one row per
         // allocated pallet position. The underlying pick data and column order stay unchanged.
         var downloadSheet = workbook.Worksheets.Add("Pullout Download");
@@ -1276,7 +1281,8 @@ public class ClosedXmlExcelService : IExcelService
             downloadSheet.Cell(rowNum, 1).Style.NumberFormat.Format = "@";
             downloadSheet.Cell(rowNum, 2).Value = i.MaterialDescription;
             downloadSheet.Cell(rowNum, 3).Value = i.QuantityBoxes;
-            downloadSheet.Cell(rowNum, 3).Style.NumberFormat.Format = "0.###";
+            // "General" shows 40 / 28.5 - "0.###" would render whole numbers with a trailing dot ("40.").
+            downloadSheet.Cell(rowNum, 3).Style.NumberFormat.Format = "General";
             downloadSheet.Cell(rowNum, 4).Value = i.MfgMonthLabel;
             downloadSheet.Cell(rowNum, 5).Value = i.PalletPositionCode;
             downloadSheet.Cell(rowNum, 6).Value = i.PlantName;
