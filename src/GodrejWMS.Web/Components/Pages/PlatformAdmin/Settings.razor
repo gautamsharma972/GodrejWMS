@@ -1,0 +1,107 @@
+@page "/platform-admin/settings"
+@attribute [Authorize(Roles = "Platform Admin")]
+@using GodrejWMS.Application.Features.OrganizationSettings.Commands
+@using GodrejWMS.Application.Features.OrganizationSettings.Dtos
+@using GodrejWMS.Application.Features.OrganizationSettings.Queries
+@inject IMediator Mediator
+@inject ILogger<Settings> Logger
+
+<PageTitle>Organization Limits - Platform Admin</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Vendor Console</div>
+            <h1>Organization Limits</h1>
+            <p class="page-kicker">
+                Null means unlimited. Changes apply immediately.
+                <a href="/platform-admin">&larr; Back to Platform Admin</a>
+            </p>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-body">
+            @if (_settings is null)
+            {
+                <div class="loading-panel">
+                    <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                    Loading...
+                </div>
+            }
+            else
+            {
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Max Users</label>
+                        <input type="number" min="1" class="form-control" value="@_maxUsersInput"
+                               @onchange="e => _maxUsersInput = e.Value?.ToString() ?? string.Empty" />
+                        <div class="form-text">Currently @_settings.CurrentUserCount active user(s). Leave blank for unlimited.</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Max Warehouses</label>
+                        <input type="number" min="1" class="form-control" value="@_maxWarehousesInput"
+                               @onchange="e => _maxWarehousesInput = e.Value?.ToString() ?? string.Empty" />
+                        <div class="form-text">Currently @_settings.CurrentWarehouseCount warehouse(s). Leave blank for unlimited.</div>
+                    </div>
+                </div>
+                @if (_settingsError is not null)
+                {
+                    <div class="alert alert-danger mt-3 mb-0">@_settingsError</div>
+                }
+                @if (_settingsSaved)
+                {
+                    <div class="alert alert-success mt-3 mb-0">Saved.</div>
+                }
+                <div class="mt-3">
+                    <button type="button" class="btn btn-primary" @onclick="SaveSettingsAsync" disabled="@_savingSettings">
+                        <i class="bi bi-check2" aria-hidden="true"></i>
+                        Save Limits
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private OrganizationSettingsDto? _settings;
+    private string _maxUsersInput = string.Empty;
+    private string _maxWarehousesInput = string.Empty;
+    private bool _savingSettings;
+    private bool _settingsSaved;
+    private string? _settingsError;
+
+    protected override async Task OnInitializedAsync() => await LoadSettingsAsync();
+
+    private async Task LoadSettingsAsync()
+    {
+        _settings = await Mediator.Send(new GetOrganizationSettingsQuery());
+        _maxUsersInput = _settings.MaxUsers?.ToString() ?? string.Empty;
+        _maxWarehousesInput = _settings.MaxWarehouses?.ToString() ?? string.Empty;
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        _savingSettings = true;
+        _settingsError = null;
+        _settingsSaved = false;
+        try
+        {
+            int? maxUsers = int.TryParse(_maxUsersInput, out var mu) ? mu : null;
+            int? maxWarehouses = int.TryParse(_maxWarehousesInput, out var mw) ? mw : null;
+            await Mediator.Send(new UpdateOrganizationSettingsCommand(maxUsers, maxWarehouses));
+            await LoadSettingsAsync();
+            _settingsSaved = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save organization settings");
+            _settingsError = ex.Message;
+        }
+        finally
+        {
+            _savingSettings = false;
+        }
+    }
+}

@@ -224,7 +224,12 @@
     private async Task<string> LandingPageAsync(ApplicationUser signedInUser)
     {
         var roles = await UserManager.GetRolesAsync(signedInUser);
-        if (roles.Contains(GodrejWMS.Infrastructure.Identity.RoleNames.PlatformAdmin) || roles.Contains("Superadmin"))
+        if (roles.Contains(GodrejWMS.Infrastructure.Identity.RoleNames.PlatformAdmin))
+        {
+            return "platform-admin";
+        }
+
+        if (roles.Contains("Superadmin"))
         {
             return "";
         }

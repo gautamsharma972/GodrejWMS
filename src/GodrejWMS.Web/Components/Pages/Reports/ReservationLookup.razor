@@ -4,11 +4,13 @@
 @using GodrejWMS.Application.Features.Reports.Queries
 @using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Dtos
 @using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Queries
+@using GodrejWMS.Application.Features.Materials.Dtos
+@using GodrejWMS.Application.Features.Materials.Queries
 @inject IMediator Mediator
 
 <PageTitle>Reservation Lookup - Godrej WMS</PageTitle>
 
-<div class="page-shell report-page">
+<div class="page-shell report-page reservation-lookup-page">
     <div class="page-header">
         <div>
             <div class="eyebrow">Reports</div>
@@ -17,20 +19,33 @@
         </div>
     </div>
 
-    <div class="panel">
-        <form class="toolbar-panel panel-toolbar" @onsubmit="SearchAsync">
+    <div class="panel reservation-lookup-panel">
+        <div class="reservation-search-heading">
+            <div>
+                <h2>Find reservations</h2>
+                <p>Use any one or a combination of the filters below.</p>
+            </div>
+            <i class="bi bi-search" aria-hidden="true"></i>
+        </div>
+        <form class="toolbar-panel panel-toolbar reservation-filter-panel" @onsubmit="SearchAsync">
             <div class="toolbar-group">
-                <input class="form-control filter-control" placeholder="Material code" inputmode="numeric" aria-label="Material code" @bind="_material" />
-                <div class="reservation-location-select">
+                <div class="reservation-location-select reservation-filter-field">
+                    <span class="reservation-filter-label">Material</span>
+                    <SearchableMaterialSelect Options="_materialOptions" @bind-Value="_materialId" Placeholder="Material code" />
+                </div>
+                <div class="reservation-location-select reservation-filter-field">
+                    <span class="reservation-filter-label">Location</span>
                     <SearchableLocationSelect Options="_locationOptions" @bind-Value="_locationId" Placeholder="Location e.g. A-25-01" AriaLabel="Search and select location" />
                 </div>
-                <div class="reservation-location-select">
+                <div class="reservation-location-select reservation-filter-field">
+                    <span class="reservation-filter-label">GRN reference</span>
                     <SearchableReferenceSelect Options="_grnOptions" @bind-Value="_grnReference" Placeholder="GRN Reference No." AriaLabel="Search GRN reference number" />
                 </div>
-                <div class="reservation-location-select">
+                <div class="reservation-location-select reservation-filter-field">
+                    <span class="reservation-filter-label">Pick reference</span>
                     <SearchableReferenceSelect Options="_pickOptions" @bind-Value="_pickReference" Placeholder="Pick Reference No." AriaLabel="Search pick reference number" />
                 </div>
-                <div class="form-check">
+                <div class="form-check reservation-confirmed-toggle">
                     <input class="form-check-input" type="checkbox" id="incConfirmed" @bind="_includeConfirmed" />
                     <label class="form-check-label" for="incConfirmed">Include confirmed</label>
                 </div>
@@ -58,24 +73,36 @@
         }
         else
         {
-            <div class="sync-chip">
-                @_result.Outbound.Count pick row(s) · @_result.Outbound.Sum(r => r.QuantityBoxes).ToString("0.###") boxes &nbsp;|&nbsp;
-                @_result.Inbound.Count GRN row(s) · @_result.Inbound.Sum(r => r.QuantityBoxes).ToString("0.###") boxes
+            <div class="reservation-result-summary">
+                <div class="reservation-summary-item outbound">
+                    <span class="reservation-summary-icon"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></span>
+                    <span><strong>@_result.Outbound.Count</strong> pick row(s)</span>
+                    <b>@_result.Outbound.Sum(r => r.QuantityBoxes).ToString("0.###") boxes</b>
+                </div>
+                <div class="reservation-summary-item inbound">
+                    <span class="reservation-summary-icon"><i class="bi bi-box-arrow-in-down" aria-hidden="true"></i></span>
+                    <span><strong>@_result.Inbound.Count</strong> GRN row(s)</span>
+                    <b>@_result.Inbound.Sum(r => r.QuantityBoxes).ToString("0.###") boxes</b>
+                </div>
             </div>
             @if (_result.Truncated)
             {
                 <div class="feedback-bar warning">Showing the first @GetReservationLookupHandler.MaxRowsPerSide rows per side. Narrow the search to see the rest.</div>
             }
 
-            <h2 class="h6 mt-3">Pullout picks (Pick Reference No.)</h2>
-            @if (_result.Outbound.Count == 0)
-            {
-                <div class="empty-state">No pullout pick found.</div>
-            }
-            else
-            {
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle">
+            <section class="reservation-result-section">
+                <div class="reservation-section-heading">
+                    <div><span class="reservation-section-icon outbound"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></span><div><h2>Pullout picks</h2><p>Matched by Pick Reference Number</p></div></div>
+                    <span class="sync-chip">@_result.Outbound.Count row(s)</span>
+                </div>
+                @if (_result.Outbound.Count == 0)
+                {
+                    <div class="empty-state">No pullout pick found.</div>
+                }
+                else
+                {
+                    <div class="table-responsive reservation-table-wrap">
+                    <table class="table table-sm align-middle reservation-table">
                         <thead>
                             <tr><th>Pick Reference No.</th><th>Indent No.</th><th>Destination</th><th>Vehicle No.</th><th>Material</th><th>Location</th><th>PKM</th><th class="text-end">Boxes</th><th>Status</th><th>Created</th></tr>
                         </thead>
@@ -83,32 +110,37 @@
                             @foreach (var r in _result.Outbound)
                             {
                                 <tr>
-                                    <td><a href="@LocalReturnUrl.Append($"pullout/{r.TransactionId}", ReturnUrl)">@r.PickReference</a></td>
+                                    <td><a class="record-code reservation-reference" href="@LocalReturnUrl.Append($"pullout/{r.TransactionId}", ReturnUrl)">@r.PickReference</a></td>
                                     <td>@(r.IndentNumber ?? "-")</td>
                                     <td>@(r.Destination ?? "-")</td>
                                     <td>@(r.VehicleNumber ?? "-")</td>
-                                    <td title="@r.MaterialDescription">@r.MaterialCode</td>
-                                    <td>@r.LocationCode</td>
-                                    <td>@r.MfgMonth</td>
+                                    <td title="@r.MaterialDescription"><span class="record-code">@r.MaterialCode</span></td>
+                                    <td><span class="location-badge"><i class="bi bi-geo-alt" aria-hidden="true"></i>@r.LocationCode</span></td>
+                                    <td><span class="status-pill neutral">@r.MfgMonth</span></td>
                                     <td class="text-end">@r.QuantityBoxes.ToString("0.###")</td>
-                                    <td>@(r.IsConfirmed ? "Confirmed" : "Pending")</td>
+                                    <td><span class="status-pill @(r.IsConfirmed ? "success" : "warning")">@(r.IsConfirmed ? "Confirmed" : "Pending")</span></td>
                                     <td>@r.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")</td>
                                 </tr>
                             }
                         </tbody>
                     </table>
-                </div>
-            }
+                    </div>
+                }
+            </section>
 
-            <h2 class="h6 mt-3">Inward put-aways (GRN Reference No.)</h2>
-            @if (_result.Inbound.Count == 0)
-            {
-                <div class="empty-state">No inward reservation found.</div>
-            }
-            else
-            {
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle">
+            <section class="reservation-result-section">
+                <div class="reservation-section-heading">
+                    <div><span class="reservation-section-icon inbound"><i class="bi bi-box-arrow-in-down" aria-hidden="true"></i></span><div><h2>Inward put-aways</h2><p>Matched by GRN Reference Number</p></div></div>
+                    <span class="sync-chip">@_result.Inbound.Count row(s)</span>
+                </div>
+                @if (_result.Inbound.Count == 0)
+                {
+                    <div class="empty-state">No inward reservation found.</div>
+                }
+                else
+                {
+                    <div class="table-responsive reservation-table-wrap">
+                    <table class="table table-sm align-middle reservation-table">
                         <thead>
                             <tr><th>GRN Reference No.</th><th>LR No.</th><th>Vehicle No.</th><th>Material</th><th>Location</th><th>PKM</th><th class="text-end">Boxes</th><th>Status</th><th>Created</th></tr>
                         </thead>
@@ -116,27 +148,29 @@
                             @foreach (var r in _result.Inbound)
                             {
                                 <tr>
-                                    <td><a href="@LocalReturnUrl.Append($"inward/{r.TransactionId}", ReturnUrl)">@r.GrnNumber</a></td>
+                                    <td><a class="record-code reservation-reference" href="@LocalReturnUrl.Append($"inward/{r.TransactionId}", ReturnUrl)">@r.GrnNumber</a></td>
                                     <td>@(r.LrNumber ?? "-")</td>
                                     <td>@(r.VehicleNumber ?? "-")</td>
-                                    <td title="@r.MaterialDescription">@r.MaterialCode</td>
-                                    <td>@r.LocationCode</td>
-                                    <td>@(r.MfgMonth?.ToString() ?? "No PKM")</td>
+                                    <td title="@r.MaterialDescription"><span class="record-code">@r.MaterialCode</span></td>
+                                    <td><span class="location-badge"><i class="bi bi-geo-alt" aria-hidden="true"></i>@r.LocationCode</span></td>
+                                    <td><span class="status-pill neutral">@(r.MfgMonth?.ToString() ?? "No PKM")</span></td>
                                     <td class="text-end">@r.QuantityBoxes.ToString("0.###")</td>
-                                    <td>@(r.IsConfirmed ? "Confirmed" : "Reserved")</td>
+                                    <td><span class="status-pill @(r.IsConfirmed ? "success" : "info")">@(r.IsConfirmed ? "Confirmed" : "Reserved")</span></td>
                                     <td>@r.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")</td>
                                 </tr>
                             }
                         </tbody>
                     </table>
-                </div>
-            }
+                    </div>
+                }
+            </section>
         }
     </div>
 </div>
 
 @code {
-    private string _material = string.Empty;
+    private int _materialId;
+    private IReadOnlyList<MaterialDto> _materialOptions = [];
     private int _locationId;
     private IReadOnlyList<AopLocationOptionDto> _locationOptions = [];
     private string _location => _locationOptions.FirstOrDefault(o => o.Id == _locationId)?.LocationCode ?? string.Empty;
@@ -153,6 +187,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _materialOptions = (await Mediator.Send(new GetMaterialsQuery(IsActive: true, PageSize: 5000))).Items;
         _locationOptions = await Mediator.Send(new GetAopLocationOptionsQuery());
         var refs = await Mediator.Send(new GetReservationReferenceOptionsQuery());
         _grnOptions = refs.Grns.Select(x => new SearchableReferenceSelect.ReferenceOption(x.Reference, x.Hint)).ToList();
@@ -162,16 +197,7 @@
     private async Task SearchAsync()
     {
         _error = null;
-        long? material = null;
-        if (!string.IsNullOrWhiteSpace(_material))
-        {
-            if (!long.TryParse(_material.Trim(), out var parsed) || parsed <= 0)
-            {
-                _error = "Material code must be a number.";
-                return;
-            }
-            material = parsed;
-        }
+        long? material = _materialOptions.FirstOrDefault(o => o.Id == _materialId)?.MaterialNumber;
 
         if (material is null && string.IsNullOrWhiteSpace(_location) && string.IsNullOrWhiteSpace(_grnReference) && string.IsNullOrWhiteSpace(_pickReference))
         {

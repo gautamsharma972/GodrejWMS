@@ -1,0 +1,296 @@
+@page "/platform-admin/logs"
+@attribute [Authorize(Roles = "Platform Admin")]
+@using GodrejWMS.Application.Features.PlatformAdmin.Logs.Dtos
+@using GodrejWMS.Application.Features.PlatformAdmin.Logs.Queries
+@inject IMediator Mediator
+
+<PageTitle>Server Logs - Platform Admin</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Vendor Console</div>
+            <h1>Server Logs</h1>
+            <p class="page-kicker">
+                The same rolling log files the server writes under its Logs folder, by date - not visible to any client role.
+                <a href="/platform-admin">&larr; Back to Platform Admin</a>
+            </p>
+        </div>
+    </div>
+
+    @if (_files is null)
+    {
+        <div class="loading-panel">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            Loading...
+        </div>
+    }
+    else if (_files.Count == 0)
+    {
+        <div class="empty-state">No log files found on disk.</div>
+    }
+    else
+    {
+        <div class="panel mb-3">
+            <div class="panel-body">
+                <div class="toolbar-group">
+                    <select class="form-select filter-control" style="max-width: 220px;" value="@_selectedDate" @onchange="OnDateChangedAsync">
+                        @foreach (var file in _files)
+                        {
+                            <option value="@file.Date.ToString("yyyy-MM-dd")">@file.Date.ToString("dd MMM yyyy") (@FormatSize(file.SizeBytes))</option>
+                        }
+                    </select>
+
+                    <select class="form-select filter-control" style="max-width: 160px;" value="@_levelFilter" @onchange="OnLevelFilterChangedAsync">
+                        <option value="All">All levels</option>
+                        <option value="ERR">Error</option>
+                        <option value="WRN">Warning</option>
+                        <option value="INF">Info</option>
+                        <option value="DBG">Debug</option>
+                        <option value="FTL">Fatal</option>
+                    </select>
+
+                    <input class="form-control filter-control" placeholder="Search message text" value="@_search" @oninput="OnSearchChangedAsync" />
+                </div>
+            </div>
+        </div>
+
+        @if (_analytics is not null)
+        {
+            <div class="row row-cols-1 row-cols-md-4 g-3 mb-3 metric-grid">
+                <div class="col">
+                    <div class="card metric-card h-100">
+                        <div class="card-body">
+                            <div class="metric-icon"><i class="bi bi-journal-text"></i></div>
+                            <h6 class="card-subtitle">Total Entries</h6>
+                            <p class="card-text metric-value">@_analytics.TotalEntries.ToString("N0")</p>
+                        </div>
+                    </div>
+                </div>
+                @foreach (var levelCount in _analytics.LevelCounts)
+                {
+                    <div class="col">
+                        <div class="card metric-card h-100">
+                            <div class="card-body">
+                                <div class="metric-icon"><i class="bi @LevelIcon(levelCount.Level)"></i></div>
+                                <h6 class="card-subtitle">@LevelLabel(levelCount.Level)</h6>
+                                <p class="card-text metric-value">@levelCount.Count.ToString("N0")</p>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="panel mb-3">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">Entries by Hour</h2>
+                        <p class="panel-subtitle">@_analytics.Date.ToString("dd MMM yyyy"), local server time.</p>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    @{
+                        var maxHourly = Math.Max(1, _analytics.HourlyCounts.Max());
+                    }
+                    <div style="display:flex; align-items:flex-end; gap:3px; height:120px;">
+                        @for (var hour = 0; hour < _analytics.HourlyCounts.Count; hour++)
+                        {
+                            var count = _analytics.HourlyCounts[hour];
+                            var heightPercent = count == 0 ? 0 : Math.Max(4, (int)(count * 100.0 / maxHourly));
+                            <div title="@hour:00 - @(count) entries" style="flex:1; display:flex; flex-direction:column; justify-content:flex-end; height:100%;">
+                                <div style="background:#2563eb; border-radius:3px 3px 0 0; width:100%; height:@(heightPercent)%;"></div>
+                            </div>
+                        }
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:11px; color:#64748b; margin-top:4px;">
+                        <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span>
+                    </div>
+                </div>
+            </div>
+
+            @if (_analytics.TopWarningsAndErrors.Count > 0)
+            {
+                <div class="panel mb-3">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title">Most Frequent Warnings &amp; Errors</h2>
+                        </div>
+                    </div>
+                    <div class="table-responsive panel-table">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr><th>Level</th><th>Message</th><th class="text-end">Count</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var issue in _analytics.TopWarningsAndErrors)
+                                {
+                                    <tr>
+                                        <td><span class="status-pill @(issue.Level == "ERR" || issue.Level == "FTL" ? "danger" : "warning")">@LevelLabel(issue.Level)</span></td>
+                                        <td style="max-width: 640px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="@issue.Message">@issue.Message</td>
+                                        <td class="text-end">@issue.Count</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        }
+
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">Entries</h2>
+                    <p class="panel-subtitle">@(_entries?.TotalCount.ToString("N0") ?? "0") matching entries.</p>
+                </div>
+            </div>
+            @if (_entries is null)
+            {
+                <div class="loading-panel">
+                    <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                    Loading...
+                </div>
+            }
+            else if (_entries.Items.Count == 0)
+            {
+                <div class="empty-state">No matching entries.</div>
+            }
+            else
+            {
+                <div class="table-responsive panel-table">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr><th style="width:160px;">Time</th><th style="width:90px;">Level</th><th>Message</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var entry in _entries.Items)
+                            {
+                                <tr>
+                                    <td>@entry.Timestamp.ToLocalTime().ToString("dd MMM HH:mm:ss")</td>
+                                    <td><span class="status-pill @(entry.Level == "ERR" || entry.Level == "FTL" ? "danger" : entry.Level == "WRN" ? "warning" : "success")">@LevelLabel(entry.Level)</span></td>
+                                    <td style="white-space: pre-wrap;">@entry.Message</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <nav class="pagination-bar" aria-label="Log entries pagination">
+                    <ul class="pagination mb-0">
+                        <li class="page-item @(_entries.HasPreviousPage ? "" : "disabled")">
+                            <button class="page-link" @onclick="() => LoadEntriesAsync(_pageNumber - 1)">Previous</button>
+                        </li>
+                        <li class="page-item disabled"><span class="page-link">Page @_entries.PageNumber of @Math.Max(1, _entries.TotalPages)</span></li>
+                        <li class="page-item @(_entries.HasNextPage ? "" : "disabled")">
+                            <button class="page-link" @onclick="() => LoadEntriesAsync(_pageNumber + 1)">Next</button>
+                        </li>
+                    </ul>
+                </nav>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<LogFileSummaryDto>? _files;
+    private string _selectedDate = string.Empty;
+    private string _levelFilter = "All";
+    private string _search = string.Empty;
+    private int _pageNumber = 1;
+    private const int PageSize = 50;
+
+    private LogAnalyticsDto? _analytics;
+    private GodrejWMS.Application.Common.Models.PaginatedList<LogEntryDto>? _entries;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _files = await Mediator.Send(new GetLogFileDatesQuery());
+        if (_files.Count > 0)
+        {
+            _selectedDate = _files[0].Date.ToString("yyyy-MM-dd");
+            await LoadForSelectedDateAsync();
+        }
+    }
+
+    private async Task OnDateChangedAsync(ChangeEventArgs args)
+    {
+        _selectedDate = args.Value?.ToString() ?? string.Empty;
+        _pageNumber = 1;
+        await LoadForSelectedDateAsync();
+    }
+
+    private async Task OnLevelFilterChangedAsync(ChangeEventArgs args)
+    {
+        _levelFilter = args.Value?.ToString() ?? "All";
+        _pageNumber = 1;
+        await LoadEntriesAsync(1);
+    }
+
+    private CancellationTokenSource? _searchDebounce;
+
+    private async Task OnSearchChangedAsync(ChangeEventArgs args)
+    {
+        _search = args.Value?.ToString() ?? string.Empty;
+        _searchDebounce?.Cancel();
+        var cts = new CancellationTokenSource();
+        _searchDebounce = cts;
+        try
+        {
+            await Task.Delay(300, cts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+        _pageNumber = 1;
+        await LoadEntriesAsync(1);
+    }
+
+    private async Task LoadForSelectedDateAsync()
+    {
+        if (!DateOnly.TryParse(_selectedDate, out var date))
+        {
+            return;
+        }
+
+        _analytics = await Mediator.Send(new GetLogAnalyticsQuery(date));
+        await LoadEntriesAsync(1);
+    }
+
+    private async Task LoadEntriesAsync(int pageNumber)
+    {
+        if (!DateOnly.TryParse(_selectedDate, out var date))
+        {
+            return;
+        }
+
+        _pageNumber = Math.Max(1, pageNumber);
+        _entries = await Mediator.Send(new GetLogEntriesQuery(date, _levelFilter, _search, _pageNumber, PageSize));
+    }
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        _ => $"{bytes / (1024.0 * 1024.0):0.#} MB",
+    };
+
+    private static string LevelLabel(string level) => level switch
+    {
+        "INF" => "Info",
+        "WRN" => "Warning",
+        "ERR" => "Error",
+        "FTL" => "Fatal",
+        "DBG" => "Debug",
+        "VRB" => "Verbose",
+        _ => level,
+    };
+
+    private static string LevelIcon(string level) => level switch
+    {
+        "ERR" or "FTL" => "bi-exclamation-octagon",
+        "WRN" => "bi-exclamation-triangle",
+        "DBG" or "VRB" => "bi-bug",
+        _ => "bi-info-circle",
+    };
+}

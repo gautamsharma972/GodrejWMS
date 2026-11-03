@@ -7,6 +7,8 @@
 @using GodrejWMS.Application.Features.Seasons.Queries
 @inject IMediator Mediator
 @inject IPermissionService PermissionService
+@inject NavigationManager NavManager
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Dashboard - Godrej WMS</PageTitle>
 
@@ -276,6 +278,13 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.IsInRole(GodrejWMS.Infrastructure.Identity.RoleNames.PlatformAdmin))
+        {
+            NavManager.NavigateTo("/platform-admin", forceLoad: true);
+            return;
+        }
+
         _hasDashboardAccess = await PermissionService.HasPermissionAsync(PermissionKeys.Menu.ViewDashboard);
         if (!_hasDashboardAccess)
         {
