@@ -29,7 +29,7 @@ public sealed record InwardSheetUploadData(
 public sealed record InwardUnsavedLineInput(string CodeText, decimal QuantityBoxes, string Reason, int? SourceRow, string? Description = null);
 
 /// <summary>An uploaded line the GRN could not put away because it was never saved as a line.</summary>
-public sealed record InwardUnsavedLineDto(string CodeText, decimal QuantityBoxes, InwardUnsavedLineKind Kind, string Reason, int? SourceRow, string? Description = null);
+public sealed record InwardUnsavedLineDto(string CodeText, decimal QuantityBoxes, InwardUnsavedLineKind Kind, string Reason, int? SourceRow, string? Description = null, int? MfgMonth = null);
 
 public enum InwardSheetImportStatus
 {
@@ -137,7 +137,8 @@ public sealed record InwardDetailDto(
     string? LrNumber = null,
     string? UploadHeaderJson = null,
     string? ReceivedFrom = null,
-    IReadOnlyList<InwardUnsavedLineDto>? UnsavedLines = null);
+    IReadOnlyList<InwardUnsavedLineDto>? UnsavedLines = null,
+    bool IsPkmless = false);
 /// <summary>
 /// One row of the inward Excel download: one put-away location of one GRN line, or a single row with
 /// no location for a line that received none.

@@ -294,6 +294,9 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<bool>("RequiresGroundFloor")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -685,6 +688,9 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasColumnType("int");
 
                     b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MfgMonth")
                         .HasColumnType("int");
 
                     b.Property<decimal>("QuantityBoxes")

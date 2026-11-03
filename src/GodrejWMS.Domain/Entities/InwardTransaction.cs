@@ -75,6 +75,11 @@ public class InwardUnsavedLine
 
     /// <summary>Row number in the uploaded sheet, when the line came from a workbook upload.</summary>
     public int? SourceRow { get; set; }
+
+    /// <summary>The line's Mfg Month (yyyymm) as uploaded - kept so the line can be allocated later, once its material
+    /// exists in the master, without asking for the PKM again. Null for no-PKM uploads and for lines saved before this
+    /// was recorded.</summary>
+    public int? MfgMonth { get; set; }
 }
 
 public enum InwardUnsavedLineKind

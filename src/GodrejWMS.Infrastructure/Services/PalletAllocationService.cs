@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
@@ -95,9 +96,15 @@ public class PalletAllocationService(
         // nudge and every position here remains eligible.)
         var requiredZoneTypeId = material.RequirePreferredZone ? material.PreferredZoneTypeId : null;
 
+        // Same kind of hard constraint for a Design Type flagged "ground floor only": its materials are never placed
+        // above level 1, whatever room is free upstairs. The tiers below then run unchanged over ground positions only
+        // (a ground position that already holds another material is skipped by them, as for any material).
+        var groundFloorOnly = await GroundFloorRule.IsRestrictedAsync(db, material.DesignType, cancellationToken);
+
         var candidatePositions = await db.PalletPositions
             .Where(p => p.IsActive && p.LocationSubtypeId == stockSubtypeId && p.Rack.WarehouseId == warehouseId
-                && (requiredZoneTypeId == null || p.ZoneTypeId == requiredZoneTypeId))
+                && (requiredZoneTypeId == null || p.ZoneTypeId == requiredZoneTypeId)
+                && (!groundFloorOnly || p.Level == GroundFloorRule.GroundLevel))
             .Include(p => p.Rack)
             .Include(p => p.StockBatches)
             .ToListAsync(cancellationToken);
@@ -143,11 +150,41 @@ public class PalletAllocationService(
 
         var remarks = status == AllocationStatus.Fulfilled
             ? null
+            : groundFloorOnly
+                ? GroundFloorRule.NoEmptyGroundMessage(material.DesignType, remaining,
+                    DescribeGroundLocations(candidatePositions, pendingReservations, reservedByPosition, material))
             : requiredZoneTypeId.HasValue
                 ? $"No eligible capacity in this SKU's required zone - {remaining:0.###} box(es) could not be reserved in a matching {stockSubtypeCode} location."
                 : $"Warehouse at capacity - {remaining:0.###} box(es) could not be reserved in a matching {stockSubtypeCode} location.";
 
         return new InwardAllocationResult(status, allocated, lines, remarks);
+    }
+
+    /// <summary>Why the ground-floor locations could not take more of a ground-floor-only material: of the ground
+    /// locations considered, how many hold another material, how many are full, and how many are otherwise unusable.</summary>
+    private static string DescribeGroundLocations(
+        List<PalletPosition> groundPositions,
+        IReadOnlyList<PendingReservation> pendingReservations,
+        Dictionary<int, decimal> reservedByPosition,
+        Material material)
+    {
+        if (groundPositions.Count == 0)
+        {
+            return "There are no active ground-floor locations available for this material in this warehouse"
+                + (material.RequirePreferredZone ? " and its required zone." : ".");
+        }
+
+        var otherMaterial = groundPositions.Count(p =>
+            p.StockBatches.Any(b => b.QuantityBoxes > 0 && b.MaterialId != material.Id)
+            || pendingReservations.Any(r => r.PalletPositionId == p.Id && r.QuantityBoxes > 0 && r.MaterialId != material.Id));
+        var full = groundPositions.Count(p =>
+            !(p.StockBatches.Any(b => b.QuantityBoxes > 0 && b.MaterialId != material.Id)
+              || pendingReservations.Any(r => r.PalletPositionId == p.Id && r.QuantityBoxes > 0 && r.MaterialId != material.Id))
+            && SpareCapacity(p, material, pendingReservations, reservedByPosition) <= 0);
+        var other = groundPositions.Count - otherMaterial - full;
+
+        return $"Of {groundPositions.Count} ground-floor location(s): {otherMaterial} hold another material or reservation, {full} are full"
+            + (other > 0 ? $", {other} cannot take it (for example a different PKM where PKM mixing is off)." : ".");
     }
 
     private static decimal AllocateCandidatePhase(
@@ -200,7 +237,8 @@ public class PalletAllocationService(
         }
 
         foreach (var position in positions
-            .Where(p => !p.StockBatches.Any() && !HasAnyReservation(p.Id, pendingReservations) && !reservedByPosition.ContainsKey(p.Id))
+            // A depleted batch row (quantity 0, e.g. left behind after stock was moved out) does not make a location non-empty.
+            .Where(p => !p.StockBatches.Any(b => b.QuantityBoxes > 0) && !HasAnyReservation(p.Id, pendingReservations) && !reservedByPosition.ContainsKey(p.Id))
             .OrderBy(p => ScoreLocation(p, material, activeSeasonId, incomingMfgMonth, oldestMfgMonth))
             .ThenByDescending(p => racksWithSameDesignType.Contains(p.RackId))
             .ThenBy(p => p.Rack.Code)

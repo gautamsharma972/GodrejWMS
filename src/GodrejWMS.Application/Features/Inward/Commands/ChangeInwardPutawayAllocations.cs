@@ -1,6 +1,8 @@
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
+using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
@@ -33,7 +35,7 @@ public sealed class ChangeInwardPutawayAllocationsValidator : AbstractValidator<
     }
 }
 
-public sealed class ChangeInwardPutawayAllocationsHandler(IApplicationDbContext db)
+public sealed class ChangeInwardPutawayAllocationsHandler(IApplicationDbContext db, IPermissionService? permissions = null)
     : IRequestHandler<ChangeInwardPutawayAllocationsCommand, InwardResultDto>
 {
     public async Task<InwardResultDto> Handle(ChangeInwardPutawayAllocationsCommand request, CancellationToken cancellationToken)
@@ -89,6 +91,7 @@ public sealed class ChangeInwardPutawayAllocationsHandler(IApplicationDbContext 
             if (line.Material.RequirePreferredZone && line.Material.PreferredZoneTypeId.HasValue
                 && position.ZoneTypeId != line.Material.PreferredZoneTypeId.Value)
                 throw new InvalidOperationException($"Location {position.LocationCode} is outside this SKU's required zone.");
+            await GroundFloorRule.EnsureAllowedAsync(db, permissions, line.Material.DesignType, position, cancellationToken);
             if (otherReservations.Any(r => r.PalletPositionId == position.Id && r.MaterialId != line.MaterialId)
                 || batches.Any(b => b.PalletPositionId == position.Id && b.MaterialId != line.MaterialId))
                 throw new InvalidOperationException($"Location {position.LocationCode} already holds a different material.");

@@ -15,7 +15,7 @@ public sealed class GetDesignTypesHandler(IApplicationDbContext db)
         return await db.DesignTypes
             .AsNoTracking()
             .OrderBy(d => d.Code)
-            .Select(d => new DesignTypeDto(d.Id, d.Code, d.Description, d.IsActive))
+            .Select(d => new DesignTypeDto(d.Id, d.Code, d.Description, d.IsActive, d.RequiresGroundFloor))
             .ToListAsync(cancellationToken);
     }
 }

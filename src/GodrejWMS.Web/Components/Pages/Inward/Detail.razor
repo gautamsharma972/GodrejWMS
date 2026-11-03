@@ -5,6 +5,7 @@
 @using GodrejWMS.Application.Features.Inward.Queries
 @using GodrejWMS.Application.Features.Racks.Dtos
 @using GodrejWMS.Application.Features.Racks.Queries
+@using GodrejWMS.Domain.Entities
 @using GodrejWMS.Domain.Enums
 @inject IMediator Mediator
 @inject ILogger<Detail> Logger
@@ -255,13 +256,38 @@
                 <div class="feedback-bar-icon"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i></div>
                 <div class="feedback-bar-content">
                     <strong>@unsaved.Count uploaded line(s), @unsaved.Sum(u => u.QuantityBoxes).ToString("N0") boxes, could not be allocated</strong>
-                    <span>They are counted in the inbound volume but were not saved as GRN lines, so no location was reserved for them. Fix the material master or the sheet and upload them again.</span>
+                    <span>They are counted in the inbound volume but were not saved as GRN lines, so no location was reserved for them. Add the missing material to the Material Master, then use <strong>Retry allocation</strong> to reserve locations for them on this GRN.</span>
                     <ul class="mb-0 mt-2">
                         @foreach (var line in unsaved)
                         {
                             <li><span class="record-code">@line.CodeText</span>@(string.IsNullOrWhiteSpace(line.Description) ? "" : " " + line.Description) - @line.QuantityBoxes.ToString("N0") boxes - @line.Reason</li>
                         }
                     </ul>
+                    @if (!_detail.IsRejected && unsaved.Any(u => u.Kind == InwardUnsavedLineKind.UnknownMaterial))
+                    {
+                        <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+                            @if (!_detail.IsPkmless && unsaved.Any(u => u.Kind == InwardUnsavedLineKind.UnknownMaterial && u.MfgMonth is null))
+                            {
+                                <span class="text-muted">Mfg Month for these lines:</span>
+                                <select class="form-select w-auto" aria-label="Mfg year" @bind="_retryYear">
+                                    @for (var year = DateTime.Today.Year - 3; year <= DateTime.Today.Year + 1; year++)
+                                    {
+                                        <option value="@year">@year</option>
+                                    }
+                                </select>
+                                <select class="form-select w-auto" aria-label="Mfg month" @bind="_retryMonth">
+                                    @for (var month = 1; month <= 12; month++)
+                                    {
+                                        <option value="@month">@System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetAbbreviatedMonthName(month)</option>
+                                    }
+                                </select>
+                            }
+                            <button type="button" class="btn btn-outline-secondary" @onclick="RetryUnsavedAsync" disabled="@_retryingUnsaved">
+                                <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+                                @(_retryingUnsaved ? "Allocating..." : "Retry allocation")
+                            </button>
+                        </div>
+                    }
                 </div>
             </div>
         }
@@ -384,13 +410,17 @@
                                 <td class="text-end fw-semibold">@row.AllocatedQuantityBoxes.ToString("N0")</td>
                                 <td>
                                     <span class="status-pill @AllocationClass(row.Line.Status)">@row.Line.Status</span>
-                                    @if (!string.IsNullOrWhiteSpace(row.Line.Remarks))
+                                    @if (!string.IsNullOrWhiteSpace(row.Line.Remarks) && row.Putaway is null)
                                     {
                                         <span class="text-muted ms-2">@row.Line.Remarks</span>
                                     }
                                 </td>
                                 <td>
-                                    @if (row.Putaway is null)
+                                    @if (row.ShortfallBoxes is { } shortfall)
+                                    {
+                                        <span class="text-danger">No location reserved for @shortfall.ToString("N0") box(es)</span>
+                                    }
+                                    else if (row.Putaway is null)
                                     {
                                         <span class="text-muted">No location audit captured for this older transaction.</span>
                                     }
@@ -790,6 +820,9 @@
     private bool _rejecting;
     private string? _rejectError;
     private bool _reallocating;
+    private bool _retryingUnsaved;
+    private int _retryYear = DateTime.Today.Year;
+    private int _retryMonth = DateTime.Today.Month;
     private string? _reallocationMessage;
     private string? _reallocationError;
     private bool _refreshingPutaway;
@@ -1065,10 +1098,15 @@
     {
         get
         {
+            // A line that got some locations but not all of its boxes gets one extra row for the boxes that have no
+            // location, so the shortfall message sits on that row and not on the rows that did get a location.
             var rows = (_detail?.Lines ?? Array.Empty<InwardDetailLineDto>()).SelectMany(line =>
             line.Putaways.Count == 0
                 ? [new PutawayDetailRow(line, null)]
-                : line.Putaways.Select(putaway => new PutawayDetailRow(line, putaway)));
+                : line.Putaways.Select(putaway => new PutawayDetailRow(line, putaway))
+                    .Concat(line.RequestedQuantityBoxes - line.AllocatedQuantityBoxes > 0
+                        ? [new PutawayDetailRow(line, null, line.RequestedQuantityBoxes - line.AllocatedQuantityBoxes)]
+                        : []));
 
             return (_sortBy, _sortDescending) switch
             {
@@ -1306,6 +1344,49 @@
         }
     }
 
+    private async Task RetryUnsavedAsync()
+    {
+        if (_detail is null || _retryingUnsaved)
+        {
+            return;
+        }
+
+        _retryingUnsaved = true;
+        _reallocationMessage = null;
+        _reallocationError = null;
+        try
+        {
+            var result = await Mediator.Send(new RetryInwardUnsavedLinesCommand(_detail.Id, (_retryYear * 100) + _retryMonth));
+            _detail = await Mediator.Send(new GetInwardDetailQuery(TransactionId));
+
+            var parts = new List<string>();
+            if (result.PlacedLines > 0)
+            {
+                parts.Add($"{result.PlacedLines} line(s) allocated, {result.PlacedBoxes:0.###} box(es) reserved.");
+            }
+            if (result.StillMissingLines > 0)
+            {
+                parts.Add($"{result.StillMissingLines} line(s) still have a material code that is not in the Material Master.");
+            }
+            if (result.NeedsPkmLines > 0)
+            {
+                parts.Add($"{result.NeedsPkmLines} line(s) need a Mfg Month.");
+            }
+
+            _reallocationMessage = string.Join(" ", parts);
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", _reallocationMessage);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to retry unallocated lines for GRN {TransactionId}", _detail.Id);
+            _reallocationError = ex.Message;
+        }
+        finally
+        {
+            _retryingUnsaved = false;
+        }
+    }
+
     private async Task ReallocateAsync()
     {
         if (_detail is null)
@@ -1481,9 +1562,10 @@
         _ => "danger"
     };
 
-    private sealed record PutawayDetailRow(InwardDetailLineDto Line, InwardPutawayDto? Putaway)
+    /// <summary><paramref name="ShortfallBoxes"/> is set only on the extra row that carries a line's boxes with no location.</summary>
+    private sealed record PutawayDetailRow(InwardDetailLineDto Line, InwardPutawayDto? Putaway, decimal? ShortfallBoxes = null)
     {
-        public decimal AllocatedQuantityBoxes => Putaway?.QuantityBoxes ?? Line.AllocatedQuantityBoxes;
+        public decimal AllocatedQuantityBoxes => ShortfallBoxes.HasValue ? 0 : Putaway?.QuantityBoxes ?? Line.AllocatedQuantityBoxes;
     }
 }
 

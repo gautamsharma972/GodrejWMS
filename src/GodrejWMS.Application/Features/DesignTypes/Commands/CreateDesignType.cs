@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.DesignTypes.Commands;
 
-public sealed record CreateDesignTypeCommand(string Code, string? Description) : IRequest<int>;
+public sealed record CreateDesignTypeCommand(string Code, string? Description, bool RequiresGroundFloor = false) : IRequest<int>;
 
 public sealed class CreateDesignTypeValidator : AbstractValidator<CreateDesignTypeCommand>
 {
@@ -32,6 +32,7 @@ public sealed class CreateDesignTypeHandler(IApplicationDbContext db, IDateTimeP
             Code = request.Code.Trim(),
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
             IsActive = true,
+            RequiresGroundFloor = request.RequiresGroundFloor,
             CreatedAt = clock.UtcNow,
             CreatedByUserId = currentUser.UserId
         };

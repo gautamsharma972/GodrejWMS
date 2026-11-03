@@ -80,8 +80,11 @@ public sealed class ReallocateInwardHandler(
     {
         var originalAllocated = line.AllocatedQuantityBoxes;
 
+        // Bounded on purpose (3 attempts): endless retries against a hot location could pile up waiting requests. The
+        // short growing pause keeps competing reallocations from colliding in lockstep.
         for (var attempt = 1; attempt <= MaxAllocationAttempts; attempt++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var allocation = await allocator.AllocateAsync(line.MaterialId, remaining, line.MfgMonth, warehouseId, cancellationToken: cancellationToken);
 
             var addedPutaways = new List<InwardPutaway>();
@@ -134,6 +137,8 @@ public sealed class ReallocateInwardHandler(
                 {
                     await entry.ReloadAsync(cancellationToken);
                 }
+
+                await Task.Delay(Random.Shared.Next(10, 60) * attempt, cancellationToken);
             }
         }
 

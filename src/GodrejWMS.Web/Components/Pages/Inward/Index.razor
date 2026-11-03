@@ -428,10 +428,17 @@
                                             <span class="status-pill @AllocationClass(row.Line.Status)">
                                                 @row.Line.Status
                                             </span>
-                                            @row.Line.Remarks
+                                            @if (row.Allocation is null)
+                                            {
+                                                @row.Line.Remarks
+                                            }
                                         </td>
                                         <td>
-                                            @if (row.Allocation is null)
+                                            @if (row.ShortfallBoxes is { } shortfall)
+                                            {
+                                                <span class="text-danger small">No location reserved for @shortfall.ToString("0.###") box(es)</span>
+                                            }
+                                            else if (row.Allocation is null)
                                             {
                                                 <span class="text-muted small">No location reserved</span>
                                             }
@@ -1552,10 +1559,15 @@
     {
         get
         {
+            // Same as the GRN page: boxes of a partly allocated line that got no location sit on their own row, which
+            // is where the shortfall message is shown.
             var rows = DisplayResultLines.SelectMany(line =>
                 line.AllocatedTo.Count == 0
                     ? [new AllocationResultRow(line, null)]
-                    : line.AllocatedTo.Select(allocation => new AllocationResultRow(line, allocation)));
+                    : line.AllocatedTo.Select(allocation => new AllocationResultRow(line, allocation))
+                        .Concat(line.RequestedQuantityBoxes - line.AllocatedQuantityBoxes > 0
+                            ? [new AllocationResultRow(line, null, line.RequestedQuantityBoxes - line.AllocatedQuantityBoxes)]
+                            : []));
 
             return (_sortBy, _sortDescending) switch
             {
@@ -1720,7 +1732,7 @@
 
     private sealed record MonthOption(int Value, string Label);
 
-    private sealed record AllocationResultRow(InwardLineResultDto Line, InwardAllocationLineDto? Allocation)
+    private sealed record AllocationResultRow(InwardLineResultDto Line, InwardAllocationLineDto? Allocation, decimal? ShortfallBoxes = null)
     {
         public decimal AllocatedQuantityBoxes => Allocation?.QuantityBoxes ?? 0;
     }

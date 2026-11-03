@@ -30,7 +30,7 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
             .AsNoTracking()
             .Where(u => u.InwardTransactionId == transaction.Id)
             .OrderBy(u => u.SourceRow ?? int.MaxValue).ThenBy(u => u.Id)
-            .Select(u => new InwardUnsavedLineDto(u.CodeText, u.QuantityBoxes, u.Kind, u.Reason, u.SourceRow, u.Description))
+            .Select(u => new InwardUnsavedLineDto(u.CodeText, u.QuantityBoxes, u.Kind, u.Reason, u.SourceRow, u.Description, u.MfgMonth))
             .ToListAsync(cancellationToken);
 
         var lines = transaction.Lines
@@ -70,7 +70,8 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
             LrNumber: transaction.LrNumber,
             UploadHeaderJson: transaction.UploadHeaderJson,
             ReceivedFrom: transaction.ReceivedFrom,
-            UnsavedLines: unsavedLines);
+            UnsavedLines: unsavedLines,
+            IsPkmless: transaction.IsPkmless);
     }
 }
 

@@ -25,6 +25,8 @@ public sealed class RefreshInwardPutawayHandler(
     IApplicationDbContext db,
     IPalletAllocationService allocator) : IRequestHandler<RefreshInwardPutawayCommand, InwardResultDto>
 {
+    private const int MaxAllocationAttempts = 3;
+
     public async Task<InwardResultDto> Handle(RefreshInwardPutawayCommand request, CancellationToken cancellationToken)
     {
         var transaction = await db.InwardTransactions
@@ -47,7 +49,22 @@ public sealed class RefreshInwardPutawayHandler(
             throw new InvalidOperationException("This GRN has already been fully confirmed.");
         }
 
-        foreach (var line in transaction.Lines.OrderBy(x => x.Id))
+        // GRNs created before upload rows were merged can carry the same material + PKM on several lines, which splits
+        // one pallet across rows (e.g. 7 + 3 on one location). Fold them into one line first, so the allocation below
+        // lays the combined quantity out the way a fresh upload would.
+        MergeDuplicateLines(transaction);
+
+        var orderedLines = transaction.Lines.OrderBy(x => x.Id).ToList();
+
+        // Release every pending reservation of this GRN before allocating anything. Refreshing line by line while the
+        // later lines still held their old reservations made each earlier line top up around space that was about to be
+        // freed, so one pallet ended up split across lines in odd amounts (e.g. 42 on a 54-box pallet already carrying
+        // 12 from the next line). With the GRN's own pending space released first, the lines are re-allocated in order
+        // exactly as they were when the GRN was first submitted. A failure from here on leaves lines under-reserved
+        // (and marked so), never double-booked, and a second refresh recovers it.
+        await ReleasePendingAsync(orderedLines, cancellationToken);
+
+        foreach (var line in orderedLines)
         {
             await RefreshLineAsync(line, transaction.WarehouseId, cancellationToken);
         }
@@ -55,51 +72,60 @@ public sealed class RefreshInwardPutawayHandler(
         return InwardResultMapper.ToResult(transaction);
     }
 
-    private async Task RefreshLineAsync(
-        InwardTransactionLine line,
-        int warehouseId,
-        CancellationToken cancellationToken)
+    /// <summary>Folds lines of the same material and Mfg Month into the oldest one: requested quantities are added
+    /// together and already-confirmed put-aways move to that line (confirmed stock is never touched or re-laid-out).
+    /// The duplicates' unconfirmed reservations are dropped here, since the refresh re-allocates them anyway.</summary>
+    private void MergeDuplicateLines(InwardTransaction transaction)
     {
-        var confirmedQuantity = line.Putaways.Where(x => x.IsConfirmed).Sum(x => x.QuantityBoxes);
-        var quantityToAllocate = Math.Max(0, line.RequestedQuantityBoxes - confirmedQuantity);
-        var oldPending = line.Putaways.Where(x => !x.IsConfirmed).ToList();
-
-        var allocation = quantityToAllocate > 0
-            ? await allocator.AllocateAsync(
-                line.MaterialId,
-                quantityToAllocate,
-                line.MfgMonth,
-                warehouseId,
-                excludeInwardTransactionLineId: line.Id,
-                cancellationToken: cancellationToken)
-            : new InwardAllocationResult(AllocationStatus.Fulfilled, 0, [], null);
-
-        foreach (var position in oldPending.Select(x => x.PalletPosition).DistinctBy(x => x.Id))
+        foreach (var group in transaction.Lines.GroupBy(l => (l.MaterialId, l.MfgMonth)).Where(g => g.Count() > 1).ToList())
         {
-            position.RowVersion++;
-        }
-        db.InwardPutaways.RemoveRange(oldPending);
+            var survivor = group.OrderBy(l => l.Id).First();
+            survivor.RequestedQuantityBoxes = group.Sum(l => l.RequestedQuantityBoxes);
 
-        foreach (var suggestion in allocation.Lines)
-        {
-            var position = await db.PalletPositions
-                .FirstAsync(x => x.LocationCode == suggestion.LocationCode, cancellationToken);
-            position.RowVersion++;
-            line.Putaways.Add(new InwardPutaway
+            foreach (var duplicate in group.Where(l => l != survivor).ToList())
             {
-                PalletPositionId = position.Id,
-                PalletPosition = position,
-                QuantityBoxes = suggestion.QuantityBoxes,
-                AllocationReason = suggestion.Reason,
-                IsConfirmed = false
-            });
-        }
+                foreach (var putaway in duplicate.Putaways.ToList())
+                {
+                    if (putaway.IsConfirmed)
+                    {
+                        putaway.InwardTransactionLine = survivor;
+                        putaway.InwardTransactionLineId = survivor.Id;
+                    }
+                    else
+                    {
+                        putaway.PalletPosition.RowVersion++;
+                        db.InwardPutaways.Remove(putaway);
+                    }
+                }
 
-        line.AllocatedQuantityBoxes = confirmedQuantity + allocation.AllocatedQuantityBoxes;
-        line.Status = line.AllocatedQuantityBoxes >= line.RequestedQuantityBoxes
-            ? AllocationStatus.Fulfilled
-            : line.AllocatedQuantityBoxes > 0 ? AllocationStatus.Partial : AllocationStatus.Failed;
-        line.Remarks = line.Status == AllocationStatus.Fulfilled ? null : allocation.Remarks;
+                transaction.Lines.Remove(duplicate);
+                db.InwardTransactionLines.Remove(duplicate);
+            }
+        }
+    }
+
+    private async Task ReleasePendingAsync(IReadOnlyList<InwardTransactionLine> lines, CancellationToken cancellationToken)
+    {
+        foreach (var line in lines)
+        {
+            var oldPending = line.Putaways.Where(x => !x.IsConfirmed).ToList();
+            foreach (var position in oldPending.Select(x => x.PalletPosition).DistinctBy(x => x.Id))
+            {
+                position.RowVersion++;
+            }
+
+            db.InwardPutaways.RemoveRange(oldPending);
+            foreach (var putaway in oldPending)
+            {
+                line.Putaways.Remove(putaway);
+            }
+
+            var confirmedQuantity = line.Putaways.Where(x => x.IsConfirmed).Sum(x => x.QuantityBoxes);
+            line.AllocatedQuantityBoxes = confirmedQuantity;
+            line.Status = confirmedQuantity >= line.RequestedQuantityBoxes
+                ? AllocationStatus.Fulfilled
+                : confirmedQuantity > 0 ? AllocationStatus.Partial : AllocationStatus.Failed;
+        }
 
         try
         {
@@ -111,5 +137,83 @@ public sealed class RefreshInwardPutawayHandler(
             throw new InvalidOperationException(
                 "A location changed while the put-away was being refreshed. Reload the GRN and refresh again.");
         }
+    }
+
+    private async Task RefreshLineAsync(
+        InwardTransactionLine line,
+        int warehouseId,
+        CancellationToken cancellationToken)
+    {
+        var confirmedQuantity = line.Putaways.Where(x => x.IsConfirmed).Sum(x => x.QuantityBoxes);
+        var quantityToAllocate = Math.Max(0, line.RequestedQuantityBoxes - confirmedQuantity);
+
+        // Same retry-on-conflict shape as ReallocateInwardHandler: a location's RowVersion moves whenever anyone
+        // reserves or releases space there, so another user's put-away landing on one of these locations while this
+        // runs is a normal event, not a failure. Reload the touched locations and allocate this line again rather than
+        // sending the user back to click Refresh once more.
+        // Bounded on purpose (3 attempts): endless retries against a hot location could pile up waiting requests. The
+        // short growing pause keeps competing refreshes from colliding in lockstep.
+        for (var attempt = 1; attempt <= MaxAllocationAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var allocation = quantityToAllocate > 0
+                ? await allocator.AllocateAsync(
+                    line.MaterialId,
+                    quantityToAllocate,
+                    line.MfgMonth,
+                    warehouseId,
+                    cancellationToken: cancellationToken)
+                : new InwardAllocationResult(AllocationStatus.Fulfilled, 0, [], null);
+
+            var added = new List<InwardPutaway>();
+            foreach (var suggestion in allocation.Lines)
+            {
+                var position = await db.PalletPositions
+                    .FirstAsync(x => x.LocationCode == suggestion.LocationCode, cancellationToken);
+                position.RowVersion++;
+                var putaway = new InwardPutaway
+                {
+                    PalletPositionId = position.Id,
+                    PalletPosition = position,
+                    QuantityBoxes = suggestion.QuantityBoxes,
+                    AllocationReason = suggestion.Reason,
+                    IsConfirmed = false
+                };
+                line.Putaways.Add(putaway);
+                added.Add(putaway);
+            }
+
+            line.AllocatedQuantityBoxes = confirmedQuantity + allocation.AllocatedQuantityBoxes;
+            line.Status = line.AllocatedQuantityBoxes >= line.RequestedQuantityBoxes
+                ? AllocationStatus.Fulfilled
+                : line.AllocatedQuantityBoxes > 0 ? AllocationStatus.Partial : AllocationStatus.Failed;
+            line.Remarks = line.Status == AllocationStatus.Fulfilled ? null : allocation.Remarks;
+
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+                return;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Remove() on a still-Added (never persisted) entity detaches it cleanly - see ReallocateInwardHandler.
+                foreach (var putaway in added)
+                {
+                    db.InwardPutaways.Remove(putaway);
+                }
+
+                line.AllocatedQuantityBoxes = confirmedQuantity;
+                foreach (var entry in db.ChangeTracker.Entries<PalletPosition>().Where(e => e.State == EntityState.Modified).ToList())
+                {
+                    await entry.ReloadAsync(cancellationToken);
+                }
+
+                await Task.Delay(Random.Shared.Next(10, 60) * attempt, cancellationToken);
+            }
+        }
+
+        db.ChangeTracker.Clear();
+        throw new InvalidOperationException(
+            "A location changed while the put-away was being refreshed. Reload the GRN and refresh again.");
     }
 }

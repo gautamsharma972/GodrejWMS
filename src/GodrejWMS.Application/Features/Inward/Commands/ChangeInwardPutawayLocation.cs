@@ -1,6 +1,8 @@
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
+using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
@@ -39,7 +41,7 @@ public sealed class ChangeInwardPutawayLocationValidator : AbstractValidator<Cha
     }
 }
 
-public sealed class ChangeInwardPutawayLocationHandler(IApplicationDbContext db)
+public sealed class ChangeInwardPutawayLocationHandler(IApplicationDbContext db, IPermissionService? permissions = null)
     : IRequestHandler<ChangeInwardPutawayLocationCommand, InwardResultDto>
 {
     public async Task<InwardResultDto> Handle(ChangeInwardPutawayLocationCommand request, CancellationToken cancellationToken)
@@ -102,6 +104,8 @@ public sealed class ChangeInwardPutawayLocationHandler(IApplicationDbContext db)
             throw new InvalidOperationException(
                 $"Location {newPosition.LocationCode} is outside this SKU's required zone and cannot receive this put-away.");
         }
+
+        await GroundFloorRule.EnsureAllowedAsync(db, permissions, material.DesignType, newPosition, cancellationToken);
 
         // Every OTHER unconfirmed reservation plus confirmed stock counts as occupied; this
         // putaway's own reservation is excluded since it is the one being moved off this line.

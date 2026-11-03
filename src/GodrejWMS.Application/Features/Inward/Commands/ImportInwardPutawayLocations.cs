@@ -1,7 +1,9 @@
 using FluentValidation;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Exceptions;
+using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
 using GodrejWMS.Domain.Services;
@@ -35,7 +37,7 @@ public sealed class ImportInwardPutawayLocationsValidator : AbstractValidator<Im
 /// complete final plan: every immutable value and every destination is validated before tracked
 /// put-aways are changed, followed by one SaveChanges call.
 /// </summary>
-public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db, IExcelService excel)
+public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db, IExcelService excel, IPermissionService? permissions = null)
     : IRequestHandler<ImportInwardPutawayLocationsCommand, ImportInwardPutawayLocationsResult>
 {
     public async Task<ImportInwardPutawayLocationsResult> Handle(
@@ -254,6 +256,8 @@ public sealed class ImportInwardPutawayLocationsHandler(IApplicationDbContext db
                 throw new InvalidOperationException(
                     $"Row {targetInfo.RowNumber}: location {target.LocationCode} is outside SKU {material.MaterialNumber}'s required zone.");
             }
+
+            await GroundFloorRule.EnsureAllowedAsync(db, permissions, material.DesignType, target, cancellationToken, $"Row {targetInfo.RowNumber}: ");
 
             if (materialIds[target.Id].Count > 0 && !materialIds[target.Id].SetEquals([material.Id]))
             {

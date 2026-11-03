@@ -1,6 +1,8 @@
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
+using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Services;
@@ -33,7 +35,7 @@ public sealed class ChangeInwardPutawayRackValidator : AbstractValidator<ChangeI
     }
 }
 
-public sealed class ChangeInwardPutawayRackHandler(IApplicationDbContext db)
+public sealed class ChangeInwardPutawayRackHandler(IApplicationDbContext db, IPermissionService? permissions = null)
     : IRequestHandler<ChangeInwardPutawayRackCommand, InwardResultDto>
 {
     public async Task<InwardResultDto> Handle(ChangeInwardPutawayRackCommand request, CancellationToken cancellationToken)
@@ -116,6 +118,7 @@ public sealed class ChangeInwardPutawayRackHandler(IApplicationDbContext db)
                 .Concat(otherReservations.Where(r => r.PalletPositionId == p.Id).Select(r => r.MfgMonth))
                 .ToHashSet());
 
+        var canOverrideGroundFloor = await GroundFloorRule.CanOverrideAsync(permissions, cancellationToken);
         var plan = new Dictionary<int, PalletPosition>();
         foreach (var putaway in putaways
                      .OrderBy(p => p.InwardTransactionLine.MaterialId)
@@ -123,7 +126,10 @@ public sealed class ChangeInwardPutawayRackHandler(IApplicationDbContext db)
                      .ThenBy(p => p.Id))
         {
             var material = putaway.InwardTransactionLine.Material;
+            // A ground-floor-only design is only moved to this rack's ground locations (unless the user may override).
+            var groundOnly = !canOverrideGroundFloor && await GroundFloorRule.IsRestrictedAsync(db, material.DesignType, cancellationToken);
             var candidate = positions
+                .Where(p => !groundOnly || GroundFloorRule.IsGround(p))
                 .Where(p => p.LocationSubtypeId == putaway.PalletPosition.LocationSubtypeId)
                 .Where(p => !material.RequirePreferredZone || !material.PreferredZoneTypeId.HasValue || p.ZoneTypeId == material.PreferredZoneTypeId.Value)
                 .Where(p => materialIds[p.Id].Count == 0 || materialIds[p.Id].SetEquals([material.Id]))

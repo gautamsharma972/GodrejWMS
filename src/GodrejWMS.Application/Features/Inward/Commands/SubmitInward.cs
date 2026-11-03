@@ -48,7 +48,19 @@ public sealed class SubmitInwardHandler(
 {
     public async Task<InwardResultDto> Handle(SubmitInwardCommand request, CancellationToken cancellationToken)
     {
-        var materialCodes = request.Lines.Select(l => l.MaterialCode).ToList();
+        // One GRN line per material + Mfg Month: sheet rows repeating the same material and PKM are added together
+        // before allocating. Left separate, each row would be allocated on its own and the same pallet would be split
+        // across rows (e.g. 38 + 16 on one 54-box location) instead of reading as a single 54.
+        var requestLines = request.Lines
+            .GroupBy(l => (l.MaterialCode, Pkm: MfgMonthParser.TryParse(l.MfgMonthText, out var key) ? key.ToString() : l.MfgMonthText.Trim().ToUpperInvariant()))
+            .Select(g => new SubmitInwardLine(
+                g.Key.MaterialCode,
+                g.Sum(l => l.QuantityBoxes),
+                g.First().MfgMonthText,
+                g.Select(l => l.Description).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d))))
+            .ToList();
+
+        var materialCodes = requestLines.Select(l => l.MaterialCode).ToList();
         var materialsByCode = await db.Materials
             .Where(m => materialCodes.Contains(m.MaterialNumber))
             .ToDictionaryAsync(m => m.MaterialNumber, cancellationToken);
@@ -74,7 +86,7 @@ public sealed class SubmitInwardHandler(
         // so this keeps a material's lines (and materials of one design) together in the rack
         // no matter how the sheet happened to be sorted. OrderBy is stable, so identical lines
         // keep their entered order.
-        var orderedLines = request.Lines
+        var orderedLines = requestLines
             .OrderBy(l => l.MaterialCode)
             .ThenBy(l => materialsByCode.TryGetValue(l.MaterialCode, out var m) ? m.DesignType : string.Empty, StringComparer.Ordinal)
             .ThenBy(l => MfgMonthParser.TryParse(l.MfgMonthText, out var pkm) ? pkm : int.MaxValue)
@@ -96,7 +108,8 @@ public sealed class SubmitInwardHandler(
                     Description = string.IsNullOrWhiteSpace(line.Description) ? null : line.Description.Trim(),
                     QuantityBoxes = line.QuantityBoxes,
                     Kind = Domain.Entities.InwardUnsavedLineKind.UnknownMaterial,
-                    Reason = "Material code not found in Material Master."
+                    Reason = "Material code not found in Material Master.",
+                    MfgMonth = MfgMonthParser.TryParse(line.MfgMonthText, out var unsavedMfgMonth) ? unsavedMfgMonth : null
                 });
                 continue;
             }

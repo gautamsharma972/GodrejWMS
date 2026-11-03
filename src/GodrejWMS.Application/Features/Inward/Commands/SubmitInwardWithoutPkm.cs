@@ -50,7 +50,17 @@ public sealed class SubmitInwardWithoutPkmHandler(
 {
     public async Task<InwardResultDto> Handle(SubmitInwardWithoutPkmCommand request, CancellationToken cancellationToken)
     {
-        var materialCodes = request.Lines.Select(l => l.MaterialCode).ToList();
+        // One GRN line per material: sheet rows repeating the same material are added together before allocating, so a
+        // pallet is not split across rows (see SubmitInwardHandler).
+        var requestLines = request.Lines
+            .GroupBy(l => l.MaterialCode)
+            .Select(g => new SubmitInwardWithoutPkmLine(
+                g.Key,
+                g.Sum(l => l.QuantityBoxes),
+                g.Select(l => l.Description).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d))))
+            .ToList();
+
+        var materialCodes = requestLines.Select(l => l.MaterialCode).ToList();
         var materialsByCode = await db.Materials
             .Where(m => materialCodes.Contains(m.MaterialNumber))
             .ToDictionaryAsync(m => m.MaterialNumber, cancellationToken);
@@ -75,7 +85,7 @@ public sealed class SubmitInwardWithoutPkmHandler(
         // Same deterministic ordering rationale as SubmitInwardHandler - by material code, then
         // design type, so a material's lines (and materials of one design) land together rather
         // than scattering by entry order. No PKM to order by here.
-        var orderedLines = request.Lines
+        var orderedLines = requestLines
             .OrderBy(l => l.MaterialCode)
             .ThenBy(l => materialsByCode.TryGetValue(l.MaterialCode, out var m) ? m.DesignType : string.Empty, StringComparer.Ordinal)
             .ToList();

@@ -34,6 +34,18 @@ public sealed class ConfirmInwardPutawayHandler(
             .FirstOrDefaultAsync(t => t.ReferenceNumber == reference, cancellationToken)
             ?? throw new NotFoundException(nameof(InwardTransaction), reference);
 
+        // The circuit's DbContext is long-lived and returns entities it already tracks without re-reading them, so a PKM
+        // the picker submitted from another session would still look missing here. Re-read the rows the check relies on.
+        // Iterate copies: reloading fixes up the navigation collections and would break a live enumeration.
+        foreach (var line in transaction.Lines.ToList())
+        {
+            await db.Entry(line).ReloadAsync(cancellationToken);
+            foreach (var putaway in line.Putaways.ToList())
+            {
+                await db.Entry(putaway).ReloadAsync(cancellationToken);
+            }
+        }
+
         var awaitingPkm = transaction.Lines
             .Where(l => l.MfgMonth is null)
             .SelectMany(l => l.Putaways.Where(p => !p.IsConfirmed))

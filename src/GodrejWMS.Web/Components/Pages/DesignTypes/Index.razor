@@ -49,6 +49,13 @@
                                 <label class="form-label">Description</label>
                                 <InputText class="form-control" @bind-Value="_form.Description" />
                             </div>
+                            <div class="col-12">
+                                <label class="form-label">Put-away restriction</label>
+                                <div class="form-check mt-2">
+                                    <InputCheckbox class="form-check-input" @bind-Value="_form.RequiresGroundFloor" />
+                                    <span class="form-check-label">Ground floor only - materials of this design are put away only on ground-floor (level 01) locations</span>
+                                </div>
+                            </div>
                             @if (_editingId is not null)
                             {
                                 <div class="col-12">
@@ -112,6 +119,7 @@
                     <tr>
                         <th><button class="sort-button" @onclick='@(() => SortBy("code"))'>Code <i class='bi @SortIcon("code")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("description"))'>Description <i class='bi @SortIcon("description")'></i></button></th>
+                        <th>Put-away</th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("active"))'>Active <i class='bi @SortIcon("active")'></i></button></th>
                         <th class="table-actions"></th>
                     </tr>
@@ -122,6 +130,7 @@
                         <tr>
                             <td><span class="status-pill @DesignTypeClass(d.Code)">@d.Code</span></td>
                             <td>@d.Description</td>
+                            <td>@if (d.RequiresGroundFloor) { <span class="status-pill warning">Ground floor only</span> } else { <span class="text-muted">Any location</span> }</td>
                             <td><span class="status-pill @(d.IsActive ? "success" : "inactive")">@(d.IsActive ? "Active" : "Inactive")</span></td>
                             <td class="table-actions">
                                 <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Edit">
@@ -174,7 +183,8 @@
             {
                 Code = designType.Code,
                 Description = designType.Description,
-                IsActive = designType.IsActive
+                IsActive = designType.IsActive,
+                RequiresGroundFloor = designType.RequiresGroundFloor
             };
         }
         _showForm = true;
@@ -193,11 +203,11 @@
         {
             if (_editingId is null)
             {
-                await Mediator.Send(new CreateDesignTypeCommand(_form.Code, _form.Description));
+                await Mediator.Send(new CreateDesignTypeCommand(_form.Code, _form.Description, _form.RequiresGroundFloor));
             }
             else
             {
-                await Mediator.Send(new UpdateDesignTypeCommand(_editingId.Value, _form.Code, _form.Description, _form.IsActive));
+                await Mediator.Send(new UpdateDesignTypeCommand(_editingId.Value, _form.Code, _form.Description, _form.IsActive, _form.RequiresGroundFloor));
             }
 
             _showForm = false;
@@ -270,6 +280,7 @@
         public string Code { get; set; } = string.Empty;
         public string? Description { get; set; }
         public bool IsActive { get; set; } = true;
+        public bool RequiresGroundFloor { get; set; }
     }
 }
 

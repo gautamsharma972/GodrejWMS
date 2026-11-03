@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.DesignTypes.Commands;
 
-public sealed record UpdateDesignTypeCommand(int Id, string Code, string? Description, bool IsActive) : IRequest;
+public sealed record UpdateDesignTypeCommand(int Id, string Code, string? Description, bool IsActive, bool RequiresGroundFloor = false) : IRequest;
 
 public sealed class UpdateDesignTypeValidator : AbstractValidator<UpdateDesignTypeCommand>
 {
@@ -38,6 +38,7 @@ public sealed class UpdateDesignTypeHandler(IApplicationDbContext db, IDateTimeP
         designType.Code = newCode;
         designType.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
         designType.IsActive = request.IsActive;
+        designType.RequiresGroundFloor = request.RequiresGroundFloor;
         designType.UpdatedAt = clock.UtcNow;
         designType.UpdatedByUserId = currentUser.UserId;
 

@@ -329,7 +329,13 @@
                             <td>@m.Description</td>
                             <td><span class="status-pill info">@(m.BrandCode ?? "Not assigned")</span></td>
                             <td><span class="status-pill slate">@(m.AopCode ?? "Not assigned")</span></td>
-                            <td><span class="status-pill @DesignTypeClass(m.DesignType)">@m.DesignType</span></td>
+                            <td>
+                                <span class="status-pill @DesignTypeClass(m.DesignType)">@m.DesignType</span>
+                                @if (_designTypes.Any(d => d.RequiresGroundFloor && string.Equals(d.Code, m.DesignType, StringComparison.Ordinal)))
+                                {
+                                    <span class="status-pill warning" title="Put away only on ground-floor (level 01) locations">Ground floor only</span>
+                                }
+                            </td>
                             <td>@(m.CharacteristicValue ?? "-")</td>
                             <td class="text-end">@m.PackSize</td>
                             <td class="text-end">@m.MrpPrice.ToString("N2")</td>
