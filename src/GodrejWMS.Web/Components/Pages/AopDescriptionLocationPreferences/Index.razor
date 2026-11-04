@@ -123,8 +123,8 @@
                             <td>@item.AopDescription</td>
                             <td>@item.WarehouseCode</td>
                             <td>@item.RackCode</td>
-                            <td><span class="location-pill"><i class="bi bi-geo-alt"></i>@item.FromLocationCode</span></td>
-                            <td><span class="location-pill"><i class="bi bi-geo-alt"></i>@item.ToLocationCode</span></td>
+                            <td><span class="location-badge"><i class="bi bi-geo-alt" aria-hidden="true"></i>@item.FromLocationCode</span></td>
+                            <td><span class="location-badge"><i class="bi bi-geo-alt" aria-hidden="true"></i>@item.ToLocationCode</span></td>
                             <td><span class="status-pill @(item.IsActive ? "success" : "inactive")">@(item.IsActive ? "Active" : "Inactive")</span></td>
                             <td class="table-actions"><div class="d-flex justify-content-end gap-2">
                                 <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Edit"><button class="btn btn-sm btn-outline-secondary" @onclick="() => ShowForm(item)" aria-label="Edit mapping"><i class="bi bi-pencil-square"></i></button></PermissionAuthorize>

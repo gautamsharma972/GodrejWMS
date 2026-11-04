@@ -18,6 +18,16 @@
 
 <div class="nav-scrollable">
     <nav class="nav flex-column">
+        <AuthorizeView Roles="Platform Admin">
+            <Authorized>
+                <div class="nav-section-label operate-nav-heading">Vendor Console</div>
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="platform-admin" Match="NavLinkMatch.All" aria-label="Platform Admin" data-bs-title="Platform Admin" data-bs-toggle="tooltip" data-bs-placement="right">
+                        <i class="bi bi-speedometer2" aria-hidden="true"></i> <span class="nav-link-text">Platform Admin</span>
+                    </NavLink>
+                </div>
+            </Authorized>
+        </AuthorizeView>
         <AuthorizeView>
             <Authorized>
                 <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewDashboard">
@@ -463,6 +473,8 @@
     private ElementReference _pulloutButton;
     private ElementReference _movementButton;
     private bool _showTransactionsLabel;
+    private bool _revealActiveItemPending = true;
+    private bool _previousSidebarCollapsed;
 
     protected override void OnInitialized()
     {
@@ -483,6 +495,27 @@
     {
         if (!SidebarCollapsed)
             _collapsedFlyout = null;
+
+        if (_previousSidebarCollapsed && !SidebarCollapsed)
+            _revealActiveItemPending = true;
+
+        _previousSidebarCollapsed = SidebarCollapsed;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_revealActiveItemPending || SidebarCollapsed)
+            return;
+
+        _revealActiveItemPending = false;
+        try
+        {
+            await JsRuntime.InvokeVoidAsync("godrejWms.revealActiveSidebarItem");
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is already closing; there is no sidebar left to reveal.
+        }
     }
 
     private string CurrentRelativeUrl => NavManager.ToBaseRelativePath(NavManager.Uri);
@@ -543,6 +576,7 @@
         _inwardNoPkmMenuExpanded = null;
         _pulloutMenuExpanded = null;
         _inventoryMovementMenuExpanded = null;
+        _revealActiveItemPending = true;
         _ = InvokeAsync(StateHasChanged);
     }
 

@@ -3,6 +3,7 @@
     <Project Path="src/GodrejWMS.Application/GodrejWMS.Application.csproj" />
     <Project Path="src/GodrejWMS.Domain/GodrejWMS.Domain.csproj" />
     <Project Path="src/GodrejWMS.Infrastructure/GodrejWMS.Infrastructure.csproj" />
+    <Project Path="src/GodrejWMS.PickersApi/GodrejWMS.PickersApi.csproj" />
     <Project Path="src/GodrejWMS.Web/GodrejWMS.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">

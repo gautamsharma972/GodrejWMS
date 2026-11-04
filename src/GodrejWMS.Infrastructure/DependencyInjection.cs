@@ -62,6 +62,7 @@ public static class DependencyInjection
         services.AddScoped<IPalletAllocationService, PalletAllocationService>();
         services.AddScoped<IPulloutAllocationService, PulloutAllocationService>();
         services.AddScoped<IInventoryMovementService, InventoryMovementService>();
+        services.AddScoped<ILogArchiveReader, FileSystemLogArchiveReader>();
 
         services.Configure<AiOptions>(configuration.GetSection("Ai"));
         services.AddHttpClient<IAiAssistantService, OllamaAiAssistantService>((sp, client) =>

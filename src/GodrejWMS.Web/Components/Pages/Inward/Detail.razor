@@ -35,11 +35,13 @@
         <div class="page-header">
             <div>
                 <div class="eyebrow">Goods Receipt Audit</div>
-                <h1>@_detail.ReferenceNumber</h1>
+                <div class="inward-detail-title-row">
+                    <h1>@_detail.ReferenceNumber</h1>
+                    <span class="status-pill @(_detail.IsRejected ? "danger" : _detail.IsConfirmed ? "success" : "warning")">
+                        @(_detail.IsRejected ? "Rejected" : _detail.IsConfirmed ? "Stock confirmed" : "Locations reserved")
+                    </span>
+                </div>
                 <p class="page-kicker">Created @_detail.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</p>
-                <span class="status-pill @(_detail.IsRejected ? "danger" : _detail.IsConfirmed ? "success" : "warning")">
-                    @(_detail.IsRejected ? "Rejected" : _detail.IsConfirmed ? "Stock confirmed" : "Locations reserved")
-                </span>
             </div>
             <div class="toolbar-group inward-detail-actions">
                 @if (!_detail.IsConfirmed && !_detail.IsRejected)
@@ -596,12 +598,6 @@
                             <div class="alert alert-danger mb-0">@_changeError</div>
                         }
 
-                        <div class="putaway-reason-field">
-                            <label class="form-label">Reason for override <span class="text-danger">*</span></label>
-                            <input class="form-control" placeholder="e.g. Damaged pallet in original slot"
-                                   @bind="_changeReason" @bind:event="oninput" />
-                        </div>
-
                         @if (_changeOptions is null)
                         {
                             <div class="loading-panel">
@@ -689,8 +685,15 @@
                             <strong>@SelectedChangeQuantity.ToString("0.###") / @_changeMaximumQuantityBoxes.ToString("0.###") boxes</strong>
                             <span>@_selectedChangePositionIds.Count location(s) selected</span>
                         </div>
-                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseChangeLocation">Cancel</button>
-                        <button type="button" class="btn btn-primary" disabled="@(!CanApplyChanges)" @onclick="ApplyAllocationsAsync">Apply changes</button>
+                        <div class="putaway-footer-reason">
+                            <label class="form-label" for="history-putaway-reason">Reason for override <span class="text-danger">*</span></label>
+                            <input id="history-putaway-reason" class="form-control" placeholder="e.g. Damaged pallet in original slot"
+                                   @bind="_changeReason" @bind:event="oninput" />
+                        </div>
+                        <div class="putaway-footer-actions">
+                            <button type="button" class="btn btn-outline-secondary" @onclick="CloseChangeLocation">Cancel</button>
+                            <button type="button" class="btn btn-primary" disabled="@(!CanApplyChanges)" @onclick="ApplyAllocationsAsync">Apply changes</button>
+                        </div>
                     </div>
                 </div>
             </div>

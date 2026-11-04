@@ -77,6 +77,38 @@ window.godrejWms = {
         return Math.max(12, Math.min(rect.top, window.innerHeight - 240));
     },
 
+    revealActiveSidebarItem: function () {
+        window.requestAnimationFrame(() => {
+            const scroller = document.querySelector('.sidebar .nav-scrollable');
+            if (!scroller || scroller.offsetParent === null) {
+                return;
+            }
+
+            const activeItem = scroller.querySelector('.nav-link.active');
+            if (!activeItem) {
+                return;
+            }
+
+            const scrollerRect = scroller.getBoundingClientRect();
+            const activeRect = activeItem.getBoundingClientRect();
+            const safeInset = 24;
+            const isVisible = activeRect.top >= scrollerRect.top + safeInset &&
+                activeRect.bottom <= scrollerRect.bottom - safeInset;
+
+            if (isVisible) {
+                return;
+            }
+
+            const targetTop = scroller.scrollTop + activeRect.top - scrollerRect.top -
+                ((scroller.clientHeight - activeRect.height) / 2);
+
+            scroller.scrollTo({
+                top: Math.max(0, targetTop),
+                behavior: 'smooth'
+            });
+        });
+    },
+
     downloadFile: function (fileName, base64Content, contentType) {
         const link = document.createElement('a');
         link.href = `data:${contentType};base64,${base64Content}`;

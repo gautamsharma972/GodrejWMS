@@ -19,6 +19,11 @@ public static class RoleNames
     /// <summary>Custom (data-driven) role for the Inward-without-PKM picker; created by migration, deliberately not in <see cref="All"/>.</summary>
     public const string Pickers = "Pickers";
 
+    /// <summary>Custom (data-driven) floor-level role: edit location + confirm for the
+    /// Inward-without-PKM putaway queue and the Pullout pick queue, nothing else. Created by
+    /// migration, deliberately not in <see cref="All"/> - same treatment as <see cref="Pickers"/>.</summary>
+    public const string FloorSupervisor = "Floor Supervisor";
+
     /// <summary>The vendor-level role above Superadmin - deliberately NOT in <see cref="All"/>,
     /// which represents the client-visible, Superadmin-assignable role set. Platform Admin is a
     /// fixed, code-level role (same treatment as Superadmin itself): never shown in the Role &amp;
