@@ -241,6 +241,11 @@
                                                               Placeholder="Search location, GIT or NO RACK" AriaLabel="Search new location" />
                                 </div>
 
+                                @if (_submitError is not null)
+                                {
+                                    <div class="alert alert-danger" role="alert"><i class="bi bi-x-octagon" aria-hidden="true"></i> @_submitError</div>
+                                }
+
                                 @if (_warning is not null)
                                 {
                                     <div class="alert alert-warning" role="alert"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> @_warning</div>
@@ -275,6 +280,7 @@
     private bool _isDetailOpen;
     private InwardDetailDto? _detail;
     private string? _detailError;
+    private string? _submitError;
     private int? _selectedPutawayId;
 
     private IReadOnlyList<AopLocationOptionDto> _locationOptions = [];
@@ -386,6 +392,7 @@
         _selectedPutawayId = row.Putaway.Id;
         _qty = row.Putaway.QuantityBoxes;
         _warning = null;
+        _submitError = null;
         _newLocationId = row.Putaway.ExcludedLocation switch { "GIT" => GitOptionId, "NO RACK" => NoRackOptionId, _ => row.Putaway.PalletPositionId };
         if (MfgMonthParser.TryParse(row.Line.MfgMonthLabel, out var pkm))
         {
@@ -403,6 +410,7 @@
     {
         _selectedPutawayId = null;
         _warning = null;
+        _submitError = null;
     }
 
     // Picking another location invalidates a warning that was raised for the previous one.
@@ -415,6 +423,7 @@
         var excluded = _newLocationId switch { GitOptionId => "GIT", NoRackOptionId => "NO RACK", _ => null };
         var pkmText = excluded is null && _pkmYear > 0 && _pkmMonth > 0 ? $"{MonthLabels[_pkmMonth - 1].Label}|{_pkmYear}" : null;
         _submitting = true;
+        _submitError = null;
         try
         {
             var result = await Mediator.Send(new PickerPlaceInwardPutawayCommand(
@@ -436,6 +445,7 @@
         }
         catch (Exception ex)
         {
+            _submitError = ex.Message;
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast", ex.Message, "danger");
         }
         finally

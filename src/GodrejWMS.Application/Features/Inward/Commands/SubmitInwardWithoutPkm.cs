@@ -62,7 +62,7 @@ public sealed class SubmitInwardWithoutPkmHandler(
 
         var materialCodes = requestLines.Select(l => l.MaterialCode).ToList();
         var materialsByCode = await db.Materials
-            .Where(m => materialCodes.Contains(m.MaterialNumber))
+            .Where(m => m.IsActive && materialCodes.Contains(m.MaterialNumber))
             .ToDictionaryAsync(m => m.MaterialNumber, cancellationToken);
 
         var createdAt = clock.UtcNow;

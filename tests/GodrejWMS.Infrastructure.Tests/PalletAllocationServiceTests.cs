@@ -438,6 +438,25 @@ public class PalletAllocationServiceTests
     }
 
     [Fact]
+    public async Task SubmitInwardAsync_InactiveMaterial_IsNotAllocatedAndIsReportedAsNotFound()
+    {
+        var (db, material, _) = SeedWarehouse(capacityBoxes: 40);
+        material.IsActive = false;
+        await db.SaveChangesAsync();
+        var sut = new SubmitInwardHandler(db, new PalletAllocationService(db, new TestClock()), new TestClock(), new TestCurrentUser());
+
+        var result = await sut.Handle(
+            new SubmitInwardCommand([new SubmitInwardLine(material.MaterialNumber, 10, "MAR|2010")], WarehouseId: 1),
+            CancellationToken.None);
+
+        Assert.Empty(db.InwardPutaways);
+        var line = Assert.Single(result.Lines);
+        Assert.Equal(0, line.AllocatedQuantityBoxes);
+        Assert.Equal("Material code not found in Material Master.", line.Remarks);
+        Assert.Equal("Material code not found in Material Master.", db.InwardUnsavedLines.Single().Reason);
+    }
+
+    [Fact]
     public async Task SubmitInwardAsync_AllocatesByMaterialCodeThenPkm_NotUploadOrder()
     {
         var db = TestDbContextFactory.Create();

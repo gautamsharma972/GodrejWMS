@@ -140,6 +140,8 @@ public sealed class PickerPlaceInwardPutawayHandler(IApplicationDbContext db, IP
         // Quantity actually put away: only the line's allocated total follows it. The requested quantity is the inward
         // order's own figure (the GRN's inbound volume) and is never changed by the picker.
         var originalQuantity = putaway.QuantityBoxes;
+        // Remembered so the supervisor's Confirm can check the entries still add up to what the system allocated.
+        putaway.SuggestedQuantityBoxes ??= originalQuantity;
         putaway.QuantityBoxes = request.QuantityBoxes;
         line.AllocatedQuantityBoxes += request.QuantityBoxes - originalQuantity;
 

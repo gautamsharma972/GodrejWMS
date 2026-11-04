@@ -277,19 +277,84 @@ public class PickerPlaceInwardPutawayTests
         using var _ = db;
 
         var result = await Handler(db).Handle(
-            new PickerPlaceInwardPutawayCommand(putaway.Id, 28, "NOV|2026", positions[1].Id, null), default);
+            new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "NOV|2026", positions[1].Id, null), default);
 
         Assert.True(result.Saved);
         var line = Assert.Single(db.InwardTransactionLines.Where(l => l.InwardTransactionId == grn.Id));
         Assert.Equal(202611, line.MfgMonth);
-        Assert.Equal(28, line.AllocatedQuantityBoxes);
+        Assert.Equal(30, line.AllocatedQuantityBoxes);
         Assert.Equal(30, line.RequestedQuantityBoxes); // the inward order's own quantity is never reduced by the picker
-        Assert.Equal(GodrejWMS.Domain.Enums.AllocationStatus.Partial, line.Status);
+        Assert.Equal(GodrejWMS.Domain.Enums.AllocationStatus.Fulfilled, line.Status);
         var saved = Assert.Single(db.InwardPutaways);
         Assert.Equal(positions[1].Id, saved.PalletPositionId);
-        Assert.Equal(28, saved.QuantityBoxes);
+        Assert.Equal(30, saved.QuantityBoxes);
         Assert.True(saved.IsPickerPlaced);
         Assert.False(saved.IsConfirmed);
+    }
+
+    [Fact]
+    public async Task QuantityAboveTheSystemAllocation_IsAcceptedAtPutaway_ButBlocksTheSupervisorConfirm()
+    {
+        var (db, _, _, _, putaway, positions) = await SeedAsync();
+        using var _ = db;
+
+        Assert.True((await Handler(db).Handle(
+            new PickerPlaceInwardPutawayCommand(putaway.Id, 31, "OCT|2026", positions[0].Id, null), default)).Saved);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new ConfirmInwardPutawayHandler(db, new FragClock(), new FragUser(), new AllowAll())
+                .Handle(new ConfirmInwardPutawayCommand("GRN-1"), default));
+        Assert.Contains("more than the 30", ex.Message);
+        Assert.False(db.InwardPutaways.Single().IsConfirmed);
+    }
+
+    [Fact]
+    public async Task QuantityBelowTheSystemAllocation_IsAcceptedAtPutaway_ButBlocksTheSupervisorConfirm()
+    {
+        var (db, _, _, _, putaway, positions) = await SeedAsync();
+        using var _ = db;
+
+        Assert.True((await Handler(db).Handle(
+            new PickerPlaceInwardPutawayCommand(putaway.Id, 28, "OCT|2026", positions[0].Id, null), default)).Saved);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new ConfirmInwardPutawayHandler(db, new FragClock(), new FragUser(), new AllowAll())
+                .Handle(new ConfirmInwardPutawayCommand("GRN-1"), default));
+        Assert.Contains("less than the 30", ex.Message);
+        Assert.Contains("28", ex.Message);
+        Assert.False(db.InwardPutaways.Single().IsConfirmed);
+    }
+
+    [Fact]
+    public async Task OrderOf60WithAllocationOf50_PickerMustPutAwayExactly50AcrossTheLocations()
+    {
+        var (db, a, _, grn, first, positions) = await SeedAsync();
+        using var _ = db;
+        // The order asked for 60, the system could only allocate 50: 30 + 20 on two locations.
+        var line = grn.Lines.Single();
+        line.RequestedQuantityBoxes = 60;
+        line.AllocatedQuantityBoxes = 50;
+        var second = new InwardPutaway { PalletPositionId = positions[1].Id, QuantityBoxes = 20 };
+        line.Putaways.Add(second);
+        await db.SaveChangesAsync();
+
+        // The putaway screen never checks the total: the first location can be submitted on its own.
+        Assert.True((await Handler(db).Handle(
+            new PickerPlaceInwardPutawayCommand(first.Id, 25, "OCT|2026", positions[0].Id, null), default)).Saved);
+
+        // A total that does not match is only reported when the supervisor confirms.
+        Assert.True((await Handler(db).Handle(
+            new PickerPlaceInwardPutawayCommand(second.Id, 20, "OCT|2026", positions[1].Id, null), default)).Saved);
+        var confirm = new ConfirmInwardPutawayHandler(db, new FragClock(), new FragUser(), new AllowAll());
+        var under = await Assert.ThrowsAsync<InvalidOperationException>(() => confirm.Handle(new ConfirmInwardPutawayCommand("GRN-1"), default));
+        Assert.Contains("less than the 50", under.Message);
+
+        Assert.True((await Handler(db).Handle(
+            new PickerPlaceInwardPutawayCommand(second.Id, 25, "OCT|2026", positions[1].Id, null), default)).Saved);
+        Assert.Equal(50, db.InwardPutaways.Sum(p => p.QuantityBoxes));
+        Assert.Equal(60, db.InwardTransactionLines.Single().RequestedQuantityBoxes);
+        await confirm.Handle(new ConfirmInwardPutawayCommand("GRN-1"), default);
+        Assert.All(db.InwardPutaways, p => Assert.True(p.IsConfirmed));
     }
 
     [Fact]

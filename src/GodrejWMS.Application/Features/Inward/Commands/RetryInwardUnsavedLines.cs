@@ -57,7 +57,7 @@ public sealed class RetryInwardUnsavedLinesHandler(
             .Select(u => long.TryParse(u.CodeText.Trim(), out var code) ? code : (long?)null)
             .Where(c => c.HasValue).Select(c => c!.Value).Distinct().ToList();
         var materialsByCode = await db.Materials
-            .Where(m => codes.Contains(m.MaterialNumber))
+            .Where(m => m.IsActive && codes.Contains(m.MaterialNumber))
             .ToDictionaryAsync(m => m.MaterialNumber, cancellationToken);
 
         var placedLines = 0;

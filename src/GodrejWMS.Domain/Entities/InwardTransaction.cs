@@ -165,6 +165,10 @@ public class InwardPutaway
     /// Until then a GRN that holds such entries is not "confirmed", even when every location is closed.</summary>
     public bool IsExcludedLocked { get; set; }
 
+    /// <summary>The quantity the system suggested for this location, remembered the first time the Picker changes it. The Picker's
+    /// entries for one material on a GRN must add up to the total the system allocated; null means the quantity is untouched.</summary>
+    public decimal? SuggestedQuantityBoxes { get; set; }
+
     public DateTimeOffset? ConfirmedAt { get; set; }
 
     public string? ConfirmedByUserId { get; set; }

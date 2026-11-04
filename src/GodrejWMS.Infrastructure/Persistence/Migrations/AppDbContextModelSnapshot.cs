@@ -551,6 +551,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("int unsigned");
 
+                    b.Property<decimal?>("SuggestedQuantityBoxes")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("InwardTransactionLineId");

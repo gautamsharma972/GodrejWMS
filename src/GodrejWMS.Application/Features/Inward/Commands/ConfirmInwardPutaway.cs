@@ -57,6 +57,19 @@ public sealed class ConfirmInwardPutawayHandler(
                 $"The picker has not assigned a PKM for {awaitingPkm.Count} location(s) yet: {string.Join(", ", awaitingPkm)}. Confirm after PKM is submitted for every location.");
         }
 
+        // The Picker's entries for each material must add up to exactly what the system allocated.
+        foreach (var material in transaction.Lines.GroupBy(l => l.Material))
+        {
+            var putaways = material.SelectMany(l => l.Putaways).ToList();
+            var allocated = putaways.Sum(p => p.SuggestedQuantityBoxes ?? p.QuantityBoxes);
+            var entered = putaways.Sum(p => p.QuantityBoxes);
+            if (entered != allocated)
+            {
+                throw new InvalidOperationException(
+                    $"Qty cannot be {(entered < allocated ? "less" : "more")} than the {allocated:0.###} box(es) the system allocated for material {material.Key.MaterialNumber} on this GRN. Total entered is {entered:0.###}.");
+            }
+        }
+
         foreach (var line in transaction.Lines)
         {
             foreach (var putaway in line.Putaways.Where(p => !p.IsConfirmed))
