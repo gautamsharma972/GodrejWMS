@@ -151,6 +151,20 @@ public class InwardPutaway
 
     public bool IsConfirmed { get; set; }
 
+    /// <summary>True when the Picker chose this location on the floor (Picker Put-away screen). Such a location may hold
+    /// other materials/PKMs and may already be full, so confirmation skips the single-material, PKM-mixing and capacity
+    /// checks that guard system-suggested locations.</summary>
+    public bool IsPickerPlaced { get; set; }
+
+    /// <summary>"GIT" or "NO RACK" when the Picker set the goods aside instead of racking them. Such a put-away is closed
+    /// (<see cref="IsConfirmed"/>) without ever creating stock, and <see cref="PalletPositionId"/> only remembers the
+    /// location the system had suggested.</summary>
+    public string? ExcludedLocation { get; set; }
+
+    /// <summary>Set when a supervisor confirms the GRN: a GIT / NO RACK entry can no longer be corrected by the Picker.
+    /// Until then a GRN that holds such entries is not "confirmed", even when every location is closed.</summary>
+    public bool IsExcludedLocked { get; set; }
+
     public DateTimeOffset? ConfirmedAt { get; set; }
 
     public string? ConfirmedByUserId { get; set; }

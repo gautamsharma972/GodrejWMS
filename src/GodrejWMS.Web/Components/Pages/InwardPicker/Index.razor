@@ -1,0 +1,446 @@
+@page "/inward-picker"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Inward.AssignPkm)]
+@using GodrejWMS.Application.Common
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Dtos
+@using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Queries
+@using GodrejWMS.Application.Features.Inward.Commands
+@using GodrejWMS.Application.Features.Inward.Dtos
+@using GodrejWMS.Application.Features.Inward.Queries
+@using GodrejWMS.Domain.Enums
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+@inject ILogger<Index> Logger
+
+<PageTitle>Picker Put-away - Godrej WMS</PageTitle>
+
+<div class="page-shell no-pkm-history-page">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Goods Receipt</div>
+            <h1>Picker Put-away</h1>
+            <p class="page-kicker">Open a GRN, then confirm or change the location, quantity and PKM of each suggested put-away location.</p>
+        </div>
+    </div>
+
+    <div class="panel history-register">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Pending Transactions</h2>
+                <p class="panel-subtitle">GRNs with put-away locations still to be worked.</p>
+            </div>
+            <div class="toolbar-group inward-history-header-actions">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => LoadPageAsync(_pageNumber)">
+                    <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                    Refresh
+                </button>
+            </div>
+        </div>
+        <div class="toolbar-panel panel-toolbar history-toolbar">
+            <div class="toolbar-group">
+                <div class="input-group search-control">
+                    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                    <input class="form-control" placeholder="Search reference, vehicle, LR, material, or description"
+                           @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+                </div>
+            </div>
+            @if (_history is not null)
+            {
+                <span class="sync-chip">@_history.TotalCount.ToString("N0") @(_history.TotalCount == 1 ? "record" : "records")</span>
+            }
+        </div>
+        @if (_history is null)
+        {
+            <div class="loading-panel">
+                <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                Loading...
+            </div>
+        }
+        else if (_history.Items.Count == 0)
+        {
+            <div class="empty-state">No GRN is waiting for put-away.</div>
+        }
+        else
+        {
+            <div class="table-responsive history-table-wrap">
+                <table class="table table-hover align-middle mb-0 history-table inward-history-table">
+                    <thead>
+                        <tr>
+                            <th class="history-col-reference">Reference</th>
+                            <th class="history-col-created">Created</th>
+                            <th class="history-col-vehicle">Vehicle No.</th>
+                            <th class="history-col-lr">LR No.</th>
+                            <th class="history-col-status">Status</th>
+                            <th class="history-col-status">Locations</th>
+                            <th class="text-end history-number-column history-col-lines">Lines</th>
+                            <th class="text-end history-number-column history-col-quantity">Boxes</th>
+                            <th class="table-actions history-actions-column">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _history.Items)
+                        {
+                            <tr>
+                                <td class="history-col-reference"><span class="record-code history-reference">@item.ReferenceNumber</span></td>
+                                <td class="history-created history-col-created">@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
+                                <td class="history-col-vehicle" title="@item.VehicleNumber">@(string.IsNullOrWhiteSpace(item.VehicleNumber) ? "-" : item.VehicleNumber)</td>
+                                <td class="history-col-lr" title="@item.LrNumber">@(string.IsNullOrWhiteSpace(item.LrNumber) ? "-" : item.LrNumber)</td>
+                                <td class="history-col-status"><span class="status-pill @AllocationClass(item.Status)">@item.Status</span></td>
+                                <td class="history-col-status"><span class="status-pill @SubmissionClass(item)">@SubmissionText(item)</span></td>
+                                <td class="text-end history-number-column history-col-lines">@item.LineCount</td>
+                                <td class="text-end fw-semibold history-number-column history-col-quantity">@item.TotalQuantityBoxes.ToString("N0")</td>
+                                <td class="table-actions history-actions-column">
+                                    <div class="history-row-actions">
+                                        <button type="button" class="btn btn-sm btn-outline-primary table-action-btn" title="@($"Open {item.ReferenceNumber}")" aria-label="@($"Open {item.ReferenceNumber}")" @onclick="() => OpenDetailAsync(item.Id)">
+                                            <i class="bi bi-eye" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="no-pkm-mobile-history-list">
+                @foreach (var item in _history.Items)
+                {
+                    <article class="no-pkm-mobile-history-card">
+                        <div class="no-pkm-mobile-history-main">
+                            <span class="record-code">@item.ReferenceNumber</span>
+                            <span class="status-pill @AllocationClass(item.Status)">@item.Status</span>
+                        </div>
+                        <div class="picker-submission-line">
+                            <span class="status-pill @SubmissionClass(item)">@SubmissionText(item)</span>
+                        </div>
+                        <dl class="no-pkm-mobile-history-ids">
+                            <div>
+                                <dt>Vehicle No.</dt>
+                                <dd>@(string.IsNullOrWhiteSpace(item.VehicleNumber) ? "-" : item.VehicleNumber)</dd>
+                            </div>
+                            <div>
+                                <dt>LR No.</dt>
+                                <dd>@(string.IsNullOrWhiteSpace(item.LrNumber) ? "-" : item.LrNumber)</dd>
+                            </div>
+                        </dl>
+                        <div class="no-pkm-mobile-history-meta">
+                            <span><i class="bi bi-clock" aria-hidden="true"></i>@item.CreatedAt.ToLocalTime().ToString("dd MMM, hh:mm tt")</span>
+                            <span><strong>@item.LineCount</strong> line(s)</span>
+                            <span><strong>@item.TotalQuantityBoxes.ToString("N0")</strong> boxes</span>
+                        </div>
+                        <div class="no-pkm-mobile-history-actions">
+                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => OpenDetailAsync(item.Id)">
+                                <i class="bi bi-eye" aria-hidden="true"></i> Open
+                            </button>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </div>
+
+    @if (_history is not null && _history.Items.Count > 0)
+    {
+        <nav class="pagination-bar history-pagination" aria-label="Picker put-away pagination">
+            <ul class="pagination mb-0">
+                <li class="page-item @(_history.HasPreviousPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadPageAsync(_pageNumber - 1)">Previous</button>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Page @_history.PageNumber of @Math.Max(1, _history.TotalPages)</span></li>
+                <li class="page-item @(_history.HasNextPage ? "" : "disabled")">
+                    <button class="page-link" @onclick="() => LoadPageAsync(_pageNumber + 1)">Next</button>
+                </li>
+            </ul>
+        </nav>
+    }
+
+    @if (_isDetailOpen)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseDetail">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="picker-putaway-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Goods Receipt</div>
+                        <h2 id="picker-putaway-title" class="slide-over-title">@(_detail?.ReferenceNumber ?? "Loading...")</h2>
+                        <p class="slide-over-subtitle">@(_detail is null ? "" : $"Vehicle {(string.IsNullOrWhiteSpace(_detail.VehicleNumber) ? "-" : _detail.VehicleNumber)} · LR {(string.IsNullOrWhiteSpace(_detail.LrNumber) ? "-" : _detail.LrNumber)}")</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close detail" @onclick="CloseDetail">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    @if (!string.IsNullOrWhiteSpace(_detailError))
+                    {
+                        <div class="alert alert-danger mb-0">@_detailError</div>
+                    }
+                    else if (_detail is null)
+                    {
+                        <div class="loading-panel">
+                            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                            Loading GRN details...
+                        </div>
+                    }
+                    else
+                    {
+                        var rows = Rows();
+                        var selected = _selectedPutawayId is { } sid ? rows.FirstOrDefault(r => r.Putaway.Id == sid) : null;
+                        @if (selected is null)
+                        {
+                            var done = rows.Count(r => r.Done);
+                            <p class="text-muted mb-2">Tap a location to confirm or change it. <strong>@done of @rows.Count</strong> done.</p>
+                            <div class="picker-location-list d-grid gap-2">
+                                @foreach (var row in rows)
+                                {
+                                    <button type="button" class="btn text-start border rounded-3 p-3 d-flex justify-content-between align-items-center @(row.Done ? "picker-location-done" : "btn-outline-primary")"
+                                            disabled="@(row.Putaway.IsConfirmed && !(row.Putaway.ExcludedLocation is not null && !row.Putaway.IsExcludedLocked))" @onclick="() => SelectRow(row)">
+                                        <span>
+                                            <strong class="fs-5 @(row.Done ? "picker-location-code-done" : null)">@row.Putaway.LocationCode</strong><br />
+                                            <span class="small text-muted">@row.Line.MaterialNumber &middot; @row.Putaway.QuantityBoxes.ToString("0.###") boxes &middot; @row.Line.MfgMonthLabel</span>
+                                        </span>
+                                        <span class="status-pill @(row.Done ? "success" : "warning")">@(row.Putaway.ExcludedLocation is not null ? row.Putaway.ExcludedLocation : row.Putaway.IsConfirmed ? "Confirmed" : row.Putaway.IsPickerPlaced ? "Submitted" : "To do")</span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-link px-0 mb-2" @onclick="BackToList">
+                                <i class="bi bi-arrow-left" aria-hidden="true"></i> All locations
+                            </button>
+                            <div class="border rounded-3 p-3">
+                                <div class="text-muted small">Suggested location</div>
+                                <div class="fs-3 fw-bold mb-3">@selected.Putaway.LocationCode</div>
+                                <div class="text-muted small">Material code</div>
+                                <div class="fw-semibold mb-2">@selected.Line.MaterialNumber</div>
+                                <div class="text-muted small">Material description</div>
+                                <div class="fw-semibold mb-3">@selected.Line.MaterialDescription</div>
+
+                                <label class="text-muted small mb-1" for="picker-qty">Qty (boxes)</label>
+                                <input id="picker-qty" type="number" inputmode="decimal" min="0" step="any" class="form-control form-control-lg mb-3" @bind="_qty" @bind:event="oninput" />
+
+                                <div class="text-muted small mb-1">PKM</div>
+                                <div class="d-grid gap-2 mb-3" style="grid-template-columns: 1fr 1fr">
+                                    <select class="form-select form-select-lg" title="PKM year" @bind="_pkmYear">
+                                        <option value="0">Year</option>
+                                        @foreach (var year in YearOptions)
+                                        {
+                                            <option value="@year">@year</option>
+                                        }
+                                    </select>
+                                    <select class="form-select form-select-lg" title="PKM month" @bind="_pkmMonth">
+                                        <option value="0">Month</option>
+                                        @foreach (var month in MonthLabels)
+                                        {
+                                            <option value="@month.Value">@month.Label</option>
+                                        }
+                                    </select>
+                                </div>
+
+                                <div class="text-muted small mb-1">New location</div>
+                                <div class="mb-3">
+                                    <SearchableLocationSelect Options="_locationOptions" @bind-Value="_newLocationId" @bind-Value:after="OnLocationChanged"
+                                                              Placeholder="Search location, GIT or NO RACK" AriaLabel="Search new location" />
+                                </div>
+
+                                @if (_warning is not null)
+                                {
+                                    <div class="alert alert-warning" role="alert"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> @_warning</div>
+                                }
+
+                                <button type="button" class="btn btn-primary btn-lg w-100" disabled="@(_submitting || !CanSubmit)" @onclick="SubmitAsync">
+                                    <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                                    @(_submitting ? "Submitting..." : _warning is null ? "Submit" : "Submit anyway")
+                                </button>
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseDetail">Close</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private const int GitOptionId = -1;
+    private const int NoRackOptionId = -2;
+
+    private PaginatedList<InwardHistoryDto>? _history;
+    private int _pageNumber = 1;
+    private string _search = string.Empty;
+    private bool _loading;
+    private bool _reloadQueued;
+
+    private bool _isDetailOpen;
+    private InwardDetailDto? _detail;
+    private string? _detailError;
+    private int? _selectedPutawayId;
+
+    private IReadOnlyList<AopLocationOptionDto> _locationOptions = [];
+    private decimal _qty;
+    private int _pkmYear;
+    private int _pkmMonth;
+    private int _newLocationId;
+    private string? _warning;
+    private bool _submitting;
+
+    private sealed record PutawayRow(InwardDetailLineDto Line, InwardPutawayDto Putaway)
+    {
+        public bool Done => Putaway.IsConfirmed || Putaway.IsPickerPlaced;
+    }
+
+    private static readonly (int Value, string Label)[] MonthLabels =
+        Enumerable.Range(1, 12).Select(m => (m, System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetAbbreviatedMonthName(m).ToUpperInvariant())).ToArray();
+
+    private static IEnumerable<int> YearOptions => Enumerable.Range(DateTime.Today.Year - 3, 5);
+
+    private bool CanSubmit => _qty > 0 && _newLocationId != 0 && (_newLocationId < 0 || (_pkmYear > 0 && _pkmMonth > 0));
+
+    private List<PutawayRow> Rows() => _detail is null ? [] :
+        _detail.Lines.SelectMany(l => l.Putaways.Select(p => new PutawayRow(l, p)))
+            .OrderBy(r => r.Done)
+            .ThenBy(r => r.Putaway.LocationCode, StringComparer.Ordinal)
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var options = (await Mediator.Send(new GetAopLocationOptionsQuery())).ToList();
+        options.Insert(0, new AopLocationOptionDto(NoRackOptionId, 0, "", 0, "", 0, 0, "NO RACK"));
+        options.Insert(0, new AopLocationOptionDto(GitOptionId, 0, "", 0, "", 0, 0, "GIT"));
+        _locationOptions = options;
+        await LoadPageAsync(1);
+    }
+
+    // Blazor Server shares one DbContext per circuit: never run two queries at once (see Inward (No PKM) History).
+    private async Task LoadPageAsync(int page)
+    {
+        if (page < 1) return;
+        _pageNumber = page;
+        if (_loading)
+        {
+            _reloadQueued = true;
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            do
+            {
+                _reloadQueued = false;
+                _history = await Mediator.Send(new GetPickerPendingInwardQuery(_search, _pageNumber, 10));
+            }
+            while (_reloadQueued);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadPageAsync(1);
+
+    private static bool AllSubmitted(InwardHistoryDto item) => item.LocationCount > 0 && item.SubmittedLocationCount >= item.LocationCount;
+
+    private static string SubmissionClass(InwardHistoryDto item) => AllSubmitted(item) ? "success" : item.SubmittedLocationCount > 0 ? "warning" : "danger";
+
+    private static string SubmissionText(InwardHistoryDto item) => item.LocationCount == 0
+        ? "No locations"
+        : AllSubmitted(item) ? "All submitted" : $"{item.SubmittedLocationCount} of {item.LocationCount} submitted";
+
+    private static string AllocationClass(AllocationStatus status) => status switch
+    {
+        AllocationStatus.Fulfilled => "success",
+        AllocationStatus.Partial => "warning",
+        _ => "danger"
+    };
+
+    private async Task OpenDetailAsync(int id)
+    {
+        _detail = null;
+        _detailError = null;
+        _selectedPutawayId = null;
+        _isDetailOpen = true;
+        try
+        {
+            _detail = await Mediator.Send(new GetInwardDetailQuery(id));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load GRN {TransactionId} for picker put-away", id);
+            _detailError = ex.Message;
+        }
+    }
+
+    private void CloseDetail()
+    {
+        _isDetailOpen = false;
+        _detail = null;
+        _detailError = null;
+        _selectedPutawayId = null;
+    }
+
+    private void SelectRow(PutawayRow row)
+    {
+        _selectedPutawayId = row.Putaway.Id;
+        _qty = row.Putaway.QuantityBoxes;
+        _warning = null;
+        _newLocationId = row.Putaway.ExcludedLocation switch { "GIT" => GitOptionId, "NO RACK" => NoRackOptionId, _ => row.Putaway.PalletPositionId };
+        if (MfgMonthParser.TryParse(row.Line.MfgMonthLabel, out var pkm))
+        {
+            _pkmYear = pkm / 100;
+            _pkmMonth = pkm % 100;
+        }
+        else
+        {
+            _pkmYear = 0;
+            _pkmMonth = 0;
+        }
+    }
+
+    private void BackToList()
+    {
+        _selectedPutawayId = null;
+        _warning = null;
+    }
+
+    // Picking another location invalidates a warning that was raised for the previous one.
+    private void OnLocationChanged() => _warning = null;
+
+    private async Task SubmitAsync()
+    {
+        if (_detail is null || _selectedPutawayId is not { } id || !CanSubmit) return;
+
+        var excluded = _newLocationId switch { GitOptionId => "GIT", NoRackOptionId => "NO RACK", _ => null };
+        var pkmText = excluded is null && _pkmYear > 0 && _pkmMonth > 0 ? $"{MonthLabels[_pkmMonth - 1].Label}|{_pkmYear}" : null;
+        _submitting = true;
+        try
+        {
+            var result = await Mediator.Send(new PickerPlaceInwardPutawayCommand(
+                id, _qty, pkmText, excluded is null ? _newLocationId : null, excluded, AcknowledgeWarning: _warning is not null));
+            if (!result.Saved)
+            {
+                _warning = result.Warning;
+                return;
+            }
+
+            _warning = null;
+            _selectedPutawayId = null;
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", excluded is null ? "Put-away location saved." : $"Set aside as {excluded}.", "success");
+            _detail = await Mediator.Send(new GetInwardDetailQuery(_detail.Id));
+            if (!Rows().Any(r => !r.Putaway.IsConfirmed))
+            {
+                await LoadPageAsync(_pageNumber);
+            }
+        }
+        catch (Exception ex)
+        {
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", ex.Message, "danger");
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+}

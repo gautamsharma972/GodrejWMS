@@ -65,6 +65,12 @@ public sealed class ConfirmInwardPutawayHandler(
             }
         }
 
+        // The supervisor's confirmation closes the GRN for the Picker: GIT / NO RACK entries can no longer be corrected.
+        foreach (var excluded in transaction.Lines.SelectMany(l => l.Putaways).Where(p => p.ExcludedLocation != null && !p.IsExcludedLocked))
+        {
+            excluded.IsExcludedLocked = true;
+        }
+
         try
         {
             await db.SaveChangesAsync(cancellationToken);

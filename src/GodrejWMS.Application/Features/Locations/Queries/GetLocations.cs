@@ -48,8 +48,8 @@ public sealed class GetLocationsHandler(IApplicationDbContext db)
                 p.MaxPallets,
                 p.IsActive,
                 RackCode = p.Rack.Code,
-                OccupiedBoxes = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
-                OccupyingPalletCapacityBoxes = p.StockBatches
+                OccupiedBoxes = p.StockBatches.Where(b => b.Material.IsActive).Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
+                OccupyingPalletCapacityBoxes = p.StockBatches.Where(b => b.Material.IsActive)
                     .Where(b => b.QuantityBoxes > 0)
                     .Select(b => (int?)b.Material.PalletCapacityBoxes)
                     .FirstOrDefault()

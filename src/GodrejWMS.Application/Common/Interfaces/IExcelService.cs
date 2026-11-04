@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Dtos;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Application.Features.InventoryMovement.Dtos;
 using GodrejWMS.Application.Features.Locations.Dtos;
@@ -30,6 +31,9 @@ public interface IExcelService
 
     /// <summary>Writes a sample Location Master upload workbook.</summary>
     byte[] WriteLocationMasterTemplate();
+
+    /// <summary>Writes the AOP Description Location Preferences master (AOP code/description, warehouse, rack, from/to location, status).</summary>
+    byte[] WriteAopLocationPreferences(IReadOnlyList<AopDescriptionLocationPreferenceDto> rows);
 
     /// <summary>Writes a Location Master export workbook.</summary>
     byte[] WriteLocationMaster(IReadOnlyList<PalletPositionDto> rows);

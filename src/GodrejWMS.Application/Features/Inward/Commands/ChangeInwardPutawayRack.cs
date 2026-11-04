@@ -89,7 +89,7 @@ public sealed class ChangeInwardPutawayRackHandler(IApplicationDbContext db, IPe
 
         var otherReservations = await db.InwardPutaways
             .AsNoTracking()
-            .Where(p => !p.IsConfirmed && !selectedIds.Contains(p.Id) && p.PalletPosition.RackId == rack.Id)
+            .Where(p => !p.IsConfirmed && p.InwardTransactionLine.Material.IsActive && !selectedIds.Contains(p.Id) && p.PalletPosition.RackId == rack.Id)
             .Select(p => new
             {
                 p.PalletPositionId,
@@ -99,21 +99,25 @@ public sealed class ChangeInwardPutawayRackHandler(IApplicationDbContext db, IPe
             })
             .ToListAsync(cancellationToken);
 
+        // A deactivated material no longer occupies its location: its stock and pending reservations are ignored so the
+        // location can take a different material.
+        var inactiveMaterialIds = (await db.Materials.AsNoTracking().Where(m => !m.IsActive).Select(m => m.Id).ToListAsync(cancellationToken)).ToHashSet();
+
         var occupied = positions.ToDictionary(
             p => p.Id,
-            p => p.StockBatches.Where(b => b.QuantityBoxes > 0).Sum(b => b.QuantityBoxes)
+            p => p.StockBatches.Where(b => b.QuantityBoxes > 0 && !inactiveMaterialIds.Contains(b.MaterialId)).Sum(b => b.QuantityBoxes)
                 + otherReservations.Where(r => r.PalletPositionId == p.Id).Sum(r => r.QuantityBoxes));
         var materialIds = positions.ToDictionary(
             p => p.Id,
             p => p.StockBatches
-                .Where(b => b.QuantityBoxes > 0)
+                .Where(b => b.QuantityBoxes > 0 && !inactiveMaterialIds.Contains(b.MaterialId))
                 .Select(b => b.MaterialId)
                 .Concat(otherReservations.Where(r => r.PalletPositionId == p.Id).Select(r => r.MaterialId))
                 .ToHashSet());
         var mfgMonths = positions.ToDictionary(
             p => p.Id,
             p => p.StockBatches
-                .Where(b => b.QuantityBoxes > 0)
+                .Where(b => b.QuantityBoxes > 0 && !inactiveMaterialIds.Contains(b.MaterialId))
                 .Select(b => (int?)b.MfgMonth)
                 .Concat(otherReservations.Where(r => r.PalletPositionId == p.Id).Select(r => r.MfgMonth))
                 .ToHashSet());

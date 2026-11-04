@@ -1,6 +1,7 @@
 @page "/"
 @attribute [Authorize]
 @using GodrejWMS.Application.Common.Permissions
+@using GodrejWMS.Application.Features.Inward.Queries
 @using GodrejWMS.Application.Features.StockMaster.Dtos
 @using GodrejWMS.Application.Features.StockMaster.Queries
 @using GodrejWMS.Application.Features.Seasons.Dtos
@@ -50,11 +51,31 @@
                     </a>
                     </PermissionAuthorize>
 
+                    <PermissionAuthorize Permission="@PermissionKeys.Inward.Confirm">
                     <a class="picker-action-card" href="inward-no-pkm/history">
+                        @if (_pickerCounts.PkmGrns > 0)
+                        {
+                            <span class="picker-action-badge" title="@_pickerCounts.PkmGrns GRN(s) waiting for PKM">@(_pickerCounts.PkmGrns > 99 ? "99+" : _pickerCounts.PkmGrns)</span>
+                        }
                         <span class="picker-action-icon"><i class="bi bi-clock-history" aria-hidden="true"></i></span>
                         <span class="picker-action-content">
-                            <strong>Inward history</strong>
+                            <strong>Inward History (No PKM)</strong>
                             <small>Review previously created inward transactions.</small>
+                        </span>
+                        <span class="picker-action-arrow" aria-hidden="true"><i class="bi bi-arrow-right"></i></span>
+                    </a>
+                    </PermissionAuthorize>
+                </PermissionAuthorize>
+                <PermissionAuthorize Permission="@PermissionKeys.Inward.AssignPkm">
+                    <a class="picker-action-card" href="inward-picker">
+                        @if (_pickerCounts.PutawayGrns > 0)
+                        {
+                            <span class="picker-action-badge" title="@_pickerCounts.PutawayGrns GRN(s) with locations to submit">@(_pickerCounts.PutawayGrns > 99 ? "99+" : _pickerCounts.PutawayGrns)</span>
+                        }
+                        <span class="picker-action-icon"><i class="bi bi-box-seam" aria-hidden="true"></i></span>
+                        <span class="picker-action-content">
+                            <strong>Inward (Putaway)</strong>
+                            <small>Confirm or change the location, quantity and PKM of each put-away.</small>
                         </span>
                         <span class="picker-action-arrow" aria-hidden="true"><i class="bi bi-arrow-right"></i></span>
                     </a>
@@ -64,7 +85,7 @@
 
         <div class="picker-home-tip">
             <i class="bi bi-lightbulb" aria-hidden="true"></i>
-            <span>Select <strong>Record inward</strong> to start a new receipt. Use history when you need to check an earlier entry.</span>
+            <span>Select <strong>Record inward</strong> to start a new receipt. Use <strong>Inward (Putaway)</strong> to confirm or correct where each put-away went.</span>
         </div>
     </div>
 }
@@ -274,11 +295,18 @@ else
     private string _sortBy = "season";
     private bool _sortDescending;
 
+    private PickerPendingCountsDto _pickerCounts = new(0, 0);
+
     protected override async Task OnInitializedAsync()
     {
         _hasDashboardAccess = await PermissionService.HasPermissionAsync(PermissionKeys.Menu.ViewDashboard);
         if (!_hasDashboardAccess)
         {
+            if (await PermissionService.HasPermissionAsync(PermissionKeys.Inward.AssignPkm))
+            {
+                _pickerCounts = await Mediator.Send(new GetPickerPendingCountsQuery());
+            }
+
             return;
         }
 

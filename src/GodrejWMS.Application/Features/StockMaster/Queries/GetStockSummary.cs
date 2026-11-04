@@ -38,9 +38,9 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db, IOptions<St
             .Select(p => new
             {
                 p.MaxPallets,
-                Occupied = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
+                Occupied = p.StockBatches.Where(b => b.Material.IsActive).Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
                 Reserved = db.InwardPutaways.Where(r => !r.IsConfirmed && r.PalletPositionId == p.Id).Sum(r => (decimal?)r.QuantityBoxes) ?? 0m,
-                PalletCapacityBoxes = p.StockBatches.Where(b => b.QuantityBoxes > 0).Select(b => (int?)b.Material.PalletCapacityBoxes).FirstOrDefault()
+                PalletCapacityBoxes = p.StockBatches.Where(b => b.Material.IsActive).Where(b => b.QuantityBoxes > 0).Select(b => (int?)b.Material.PalletCapacityBoxes).FirstOrDefault()
                     ?? db.InwardPutaways.Where(r => !r.IsConfirmed && r.PalletPositionId == p.Id)
                         .Select(r => (int?)r.InwardTransactionLine.Material.PalletCapacityBoxes).FirstOrDefault()
             })
@@ -54,7 +54,7 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db, IOptions<St
             p.PalletCapacityBoxes is { } cap && p.Occupied + p.Reserved >= p.MaxPallets * cap);
 
         var occupiedPositions = await db.PalletPositions
-            .Where(p => p.IsActive && p.StockBatches.Sum(b => b.QuantityBoxes) > 0)
+            .Where(p => p.IsActive && p.StockBatches.Where(b => b.Material.IsActive).Sum(b => b.QuantityBoxes) > 0)
             .CountAsync(cancellationToken);
 
         var totalStockBoxes = await db.StockBatches.SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;

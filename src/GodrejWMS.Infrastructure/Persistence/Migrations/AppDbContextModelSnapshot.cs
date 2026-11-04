@@ -520,10 +520,20 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("varchar(256)");
 
+                    b.Property<string>("ExcludedLocation")
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
                     b.Property<int>("InwardTransactionLineId")
                         .HasColumnType("int");
 
                     b.Property<bool>("IsConfirmed")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("IsExcludedLocked")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("IsPickerPlaced")
                         .HasColumnType("tinyint(1)");
 
                     b.Property<string>("OverrideReason")

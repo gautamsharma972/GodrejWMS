@@ -43,6 +43,15 @@ internal static class InwardPutawayConfirmationLogic
                 $"Location {position.LocationCode} is outside this SKU's required zone and cannot be confirmed. Re-route it to a new location.");
         }
 
+        // A location the Picker chose on the floor is taken as physical fact: it may hold other materials or PKMs and may
+        // already be full, so the checks below only guard system-suggested locations.
+        if (putaway.IsPickerPlaced)
+        {
+            await AddStockAsync(db, line, putaway, position, cancellationToken);
+            Close(putaway, clock, currentUser);
+            return;
+        }
+
         var otherMaterialAtPosition = await db.StockBatches
             .AsNoTracking()
             .AnyAsync(b => b.PalletPositionId == putaway.PalletPositionId && b.MaterialId != line.MaterialId && b.QuantityBoxes > 0, cancellationToken);
@@ -85,6 +94,12 @@ internal static class InwardPutawayConfirmationLogic
                 $"(only {Math.Max(0, free):0.###} available now - another confirmation may have used it first). Re-route it to a new location.");
         }
 
+        await AddStockAsync(db, line, putaway, position, cancellationToken);
+        Close(putaway, clock, currentUser);
+    }
+
+    private static async Task AddStockAsync(IApplicationDbContext db, InwardTransactionLine line, InwardPutaway putaway, PalletPosition position, CancellationToken cancellationToken)
+    {
         var batch = await db.StockBatches.FirstOrDefaultAsync(b =>
             b.MaterialId == line.MaterialId &&
             b.PalletPositionId == putaway.PalletPositionId &&
@@ -109,7 +124,10 @@ internal static class InwardPutawayConfirmationLogic
             batch.QuantityBoxes += putaway.QuantityBoxes;
             batch.RowVersion++;
         }
+    }
 
+    private static void Close(InwardPutaway putaway, IDateTimeProvider clock, ICurrentUserService currentUser)
+    {
         putaway.IsConfirmed = true;
         putaway.ConfirmedAt = clock.UtcNow;
         putaway.ConfirmedByUserId = currentUser.UserId;

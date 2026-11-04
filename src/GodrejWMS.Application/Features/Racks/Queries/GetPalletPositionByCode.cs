@@ -40,14 +40,14 @@ public sealed class GetPalletPositionByCodeHandler(IApplicationDbContext db)
                 p.DistancePriority,
                 p.MaxPallets,
                 p.IsActive,
-                OccupiedBoxes = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
+                OccupiedBoxes = p.StockBatches.Where(b => b.Material.IsActive).Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
                 // A position only ever holds one material at a time, so the first occupied
                 // batch's material (if any) defines this location's effective capacity.
-                OccupyingPalletCapacityBoxes = p.StockBatches
+                OccupyingPalletCapacityBoxes = p.StockBatches.Where(b => b.Material.IsActive)
                     .Where(b => b.QuantityBoxes > 0)
                     .Select(b => (int?)b.Material.PalletCapacityBoxes)
                     .FirstOrDefault(),
-                Stock = p.StockBatches
+                Stock = p.StockBatches.Where(b => b.Material.IsActive)
                     .Where(b => b.QuantityBoxes > 0)
                     .OrderBy(b => b.Material.MaterialNumber)
                     .ThenBy(b => b.MfgMonth)

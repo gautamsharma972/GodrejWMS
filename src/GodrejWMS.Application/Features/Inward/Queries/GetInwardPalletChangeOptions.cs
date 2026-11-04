@@ -58,13 +58,13 @@ public sealed class GetInwardPalletChangeOptionsHandler(IApplicationDbContext db
         // not be offered as a candidate here.
         var blockedByOtherMaterial = (await db.StockBatches
             .AsNoTracking()
-            .Where(b => b.QuantityBoxes > 0 && b.MaterialId != material.Id)
+            .Where(b => b.QuantityBoxes > 0 && b.Material.IsActive && b.MaterialId != material.Id)
             .Select(b => b.PalletPositionId)
             .Distinct()
             .ToListAsync(cancellationToken))
             .Concat(await db.InwardPutaways
                 .AsNoTracking()
-                .Where(p => !p.IsConfirmed && p.Id != putaway.Id && p.InwardTransactionLine.MaterialId != material.Id)
+                .Where(p => !p.IsConfirmed && p.InwardTransactionLine.Material.IsActive && p.Id != putaway.Id && p.InwardTransactionLine.MaterialId != material.Id)
                 .Select(p => p.PalletPositionId)
                 .Distinct()
                 .ToListAsync(cancellationToken))
@@ -74,7 +74,7 @@ public sealed class GetInwardPalletChangeOptionsHandler(IApplicationDbContext db
             ? []
             : (await db.StockBatches
                 .AsNoTracking()
-                .Where(b => b.QuantityBoxes > 0 && b.MaterialId == material.Id
+                .Where(b => b.QuantityBoxes > 0 && b.Material.IsActive && b.MaterialId == material.Id
                     && b.MfgMonth != putaway.InwardTransactionLine.MfgMonth)
                 .Select(b => b.PalletPositionId)
                 .Distinct()
@@ -104,7 +104,7 @@ public sealed class GetInwardPalletChangeOptionsHandler(IApplicationDbContext db
                 ZoneTypeName = p.ZoneType.DisplayName,
                 p.DistancePriority,
                 p.MaxPallets,
-                OccupiedBoxes = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m
+                OccupiedBoxes = p.StockBatches.Where(b => b.Material.IsActive).Sum(b => (decimal?)b.QuantityBoxes) ?? 0m
             })
             .ToListAsync(cancellationToken);
 

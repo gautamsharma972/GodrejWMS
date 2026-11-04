@@ -6944,3 +6944,45 @@ h2 {
     position: relative;
     min-width: 220px;
 }
+
+/* Picker Put-away: a location the picker has already submitted turns green. */
+.picker-location-list .picker-location-done {
+    background: #eefaf1;
+    border-color: #a8dcb8 !important;
+    color: #1d5c34;
+}
+
+.picker-location-list .picker-location-done .text-muted {
+    color: #3f7a55 !important;
+}
+
+.picker-location-list .picker-location-code-done {
+    color: #1f7a3f;
+}
+
+.picker-submission-line {
+    display: flex;
+    margin-top: -0.2rem;
+}
+
+/* Pending-count badge on a Picker home card (same look as the notification bell count). */
+.picker-action-card {
+    position: relative;
+}
+
+.picker-action-badge {
+    position: absolute;
+    top: -0.45rem;
+    right: -0.4rem;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    padding: 0 0.4rem;
+    border: 2px solid #fff;
+    border-radius: 999px;
+    color: #fff;
+    background: #dc2626;
+    font-size: 0.75rem;
+    font-weight: 800;
+    line-height: 1.25rem;
+    text-align: center;
+}

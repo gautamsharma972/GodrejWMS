@@ -8,6 +8,7 @@
 @inject IMediator Mediator
 @inject ILogger<Index> Logger
 @inject IJSRuntime JsRuntime
+@inject GodrejWMS.Application.Common.Interfaces.IExcelService ExcelService
 
 <PageTitle>AOP Description Location Preferences - Godrej WMS</PageTitle>
 
@@ -18,12 +19,13 @@
             <h1>AOP Description Location Preferences</h1>
             <p class="page-kicker">Prioritize inward put-away within one or more location ranges for each AOP Description.</p>
         </div>
-        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Create">
-            <div class="d-flex gap-2">
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary" @onclick="ExportAsync" disabled="@(_items is null || !Filtered.Any())"><i class="bi bi-file-earmark-excel" aria-hidden="true"></i> Export Excel</button>
+            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Create">
                 <button class="btn btn-outline-secondary" @onclick="ShowCopy"><i class="bi bi-copy"></i> Copy Mappings</button>
                 <button class="btn btn-primary" @onclick="() => ShowForm(null)"><i class="bi bi-plus-lg"></i> New Mapping</button>
-            </div>
-        </PermissionAuthorize>
+            </PermissionAuthorize>
+        </div>
     </div>
 
     <div class="feedback-bar info" role="note">
@@ -155,6 +157,23 @@
     }
 
     private Task LoadAsync() => LoadCoreAsync();
+    private async Task ExportAsync()
+    {
+        try
+        {
+            var rows = Filtered.ToList();
+            var bytes = ExcelService.WriteAopLocationPreferences(rows);
+            await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"aop-description-location-preferences-{DateTime.Today:yyyyMMdd}.xlsx", Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Exported {rows.Count:N0} mapping(s).");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to export AOP Description Location Preferences");
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Export failed: {ex.Message}", "danger");
+        }
+    }
+
     private async Task LoadCoreAsync() => _items = await Mediator.Send(new GetAopDescriptionLocationPreferencesQuery());
     private IEnumerable<AopDescriptionDto> ActiveAops => _aops.Where(x => x.IsActive || x.Id == _form.AopDescriptionId).OrderBy(x => x.Code);
     private IReadOnlyList<AopDescriptionDto> ActiveAopOptions => ActiveAops.ToList();

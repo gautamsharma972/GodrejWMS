@@ -1,6 +1,7 @@
 using ClosedXML.Excel;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Dtos;
 using GodrejWMS.Application.Features.Inward;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Application.Features.InventoryMovement.Dtos;
@@ -363,6 +364,33 @@ public class ClosedXmlExcelService : IExcelService
 
         ws.Columns().AdjustToContents();
 
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] WriteAopLocationPreferences(IReadOnlyList<AopDescriptionLocationPreferenceDto> rows)
+    {
+        string[] headers = ["AOP Code", "AOP Description", "Warehouse", "Rack", "Location From", "Location To", "Status"];
+
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("AOP Location Preferences");
+        WriteHeader(ws, headers);
+
+        var rowNum = 2;
+        foreach (var item in rows)
+        {
+            ws.Cell(rowNum, 1).Value = item.AopCode;
+            ws.Cell(rowNum, 2).Value = item.AopDescription;
+            ws.Cell(rowNum, 3).Value = item.WarehouseCode;
+            ws.Cell(rowNum, 4).Value = item.RackCode;
+            ws.Cell(rowNum, 5).Value = item.FromLocationCode;
+            ws.Cell(rowNum, 6).Value = item.ToLocationCode;
+            ws.Cell(rowNum, 7).Value = item.IsActive ? "Active" : "Inactive";
+            rowNum++;
+        }
+
+        ws.Columns().AdjustToContents();
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
         return stream.ToArray();

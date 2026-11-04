@@ -218,10 +218,10 @@
                             <div class="picker-location-list d-grid gap-2">
                                 @foreach (var location in locations)
                                 {
-                                    <button type="button" class="btn text-start border rounded-3 p-3 d-flex justify-content-between align-items-center @(location.IsDone ? "btn-light" : "btn-outline-primary")"
+                                    <button type="button" class="btn text-start border rounded-3 p-3 d-flex justify-content-between align-items-center @(location.IsDone ? "picker-location-done" : "btn-outline-primary")"
                                             disabled="@location.Putaway.IsConfirmed" @onclick="() => SelectLocation(location.Putaway.Id)">
                                         <span>
-                                            <strong class="fs-5">@location.Putaway.LocationCode</strong><br />
+                                            <strong class="fs-5 @(location.IsDone ? "picker-location-code-done" : null)">@location.Putaway.LocationCode</strong><br />
                                             <span class="small text-muted">@location.Line.MaterialNumber &middot; @location.Putaway.QuantityBoxes.ToString("0.###") boxes</span>
                                         </span>
                                         <span class="status-pill @(location.IsDone ? "success" : "warning")">@(location.Putaway.IsConfirmed ? "Confirmed" : location.IsDone ? "PKM " + location.Line.MfgMonthLabel : "PKM needed")</span>

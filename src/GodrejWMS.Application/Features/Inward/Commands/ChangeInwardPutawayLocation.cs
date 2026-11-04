@@ -111,12 +111,12 @@ public sealed class ChangeInwardPutawayLocationHandler(IApplicationDbContext db,
         // putaway's own reservation is excluded since it is the one being moved off this line.
         var otherReservations = await db.InwardPutaways
             .AsNoTracking()
-            .Where(p => !p.IsConfirmed && p.Id != putaway.Id && p.PalletPositionId == newPosition.Id)
+            .Where(p => !p.IsConfirmed && p.InwardTransactionLine.Material.IsActive && p.Id != putaway.Id && p.PalletPositionId == newPosition.Id)
             .Select(p => new { p.QuantityBoxes, p.InwardTransactionLine.MaterialId, p.InwardTransactionLine.MfgMonth })
             .ToListAsync(cancellationToken);
         var confirmedBatches = await db.StockBatches
             .AsNoTracking()
-            .Where(b => b.PalletPositionId == newPosition.Id && b.QuantityBoxes > 0)
+            .Where(b => b.PalletPositionId == newPosition.Id && b.QuantityBoxes > 0 && b.Material.IsActive)
             .Select(b => new { b.QuantityBoxes, b.MaterialId, b.MfgMonth })
             .ToListAsync(cancellationToken);
 

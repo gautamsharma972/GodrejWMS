@@ -41,12 +41,12 @@ public sealed class GetRackLayoutHandler(IApplicationDbContext db) : IRequestHan
                 p.DistancePriority,
                 p.MaxPallets,
                 p.IsActive,
-                StockBoxes = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
-                OccupyingPalletCapacityBoxes = p.StockBatches
+                StockBoxes = p.StockBatches.Where(b => b.Material.IsActive).Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
+                OccupyingPalletCapacityBoxes = p.StockBatches.Where(b => b.Material.IsActive)
                     .Where(b => b.QuantityBoxes > 0)
                     .Select(b => (int?)b.Material.PalletCapacityBoxes)
                     .FirstOrDefault(),
-                Stock = p.StockBatches
+                Stock = p.StockBatches.Where(b => b.Material.IsActive)
                     .Where(b => b.QuantityBoxes > 0)
                     .OrderBy(b => b.Material.MaterialNumber)
                     .ThenBy(b => b.MfgMonth)

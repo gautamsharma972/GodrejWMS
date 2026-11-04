@@ -22,7 +22,10 @@
                     <button type="button" class="location-suggestion-item @(option.Id == Value ? "selected" : null)"
                             @onmousedown="() => SelectAsync(option)" @onmousedown:preventDefault="true">
                         <span class="record-code">@option.LocationCode</span>
-                        <span class="location-suggestion-meta">Rack @option.RackCode &middot; Column @option.Column.ToString("00") &middot; Level @option.Level.ToString("00")</span>
+                        @if (option.Id > 0)
+                        {
+                            <span class="location-suggestion-meta">Rack @option.RackCode &middot; Column @option.Column.ToString("00") &middot; Level @option.Level.ToString("00")</span>
+                        }
                     </button>
                 }
             }

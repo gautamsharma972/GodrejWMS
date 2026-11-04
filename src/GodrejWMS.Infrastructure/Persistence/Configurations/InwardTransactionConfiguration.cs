@@ -80,6 +80,7 @@ public class InwardPutawayConfiguration : IEntityTypeConfiguration<InwardPutaway
         builder.Property(p => p.QuantityBoxes).HasPrecision(14, 3);
         builder.Property(p => p.AllocationReason).HasMaxLength(250);
         builder.Property(p => p.OverrideReason).HasMaxLength(250);
+        builder.Property(p => p.ExcludedLocation).HasMaxLength(20);
         builder.Property(p => p.ConfirmedByUserId).HasMaxLength(450);
         builder.Property(p => p.ConfirmedByUserName).HasMaxLength(256);
         builder.Property(p => p.RowVersion).IsConcurrencyToken();

@@ -247,9 +247,11 @@
                                 <NavLink class="nav-link" href="inward-no-pkm" Match="NavLinkMatch.All"><i class="bi bi-pencil-square" aria-hidden="true"></i> <span class="nav-link-text">Entry</span></NavLink>
                             </div>
                             </PermissionAuthorize>
+                            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inward.Confirm">
                             <div class="nav-item nav-subitem">
                                 <NavLink class="nav-link" href="inward-no-pkm/history"><i class="bi bi-clock-history" aria-hidden="true"></i> <span class="nav-link-text">History</span></NavLink>
                             </div>
+                            </PermissionAuthorize>
                         </div>
                     }
                     @if (SidebarCollapsed && IsCollapsedFlyoutOpen("inward-no-pkm"))
@@ -259,9 +261,19 @@
                             <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inward.Create">
                             <NavLink class="collapsed-nav-flyout-link" href="inward-no-pkm" Match="NavLinkMatch.All" @onclick="CloseCollapsedFlyout"><i class="bi bi-pencil-square"></i><span>Entry</span></NavLink>
                             </PermissionAuthorize>
+                            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inward.Confirm">
                             <NavLink class="collapsed-nav-flyout-link" href="inward-no-pkm/history" @onclick="CloseCollapsedFlyout"><i class="bi bi-clock-history"></i><span>History</span></NavLink>
+                            </PermissionAuthorize>
                         </div>
                     }
+                </PermissionAuthorize>
+
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inward.AssignPkm">
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="inward-picker" aria-label="Picker Put-away" data-bs-title="Picker Put-away" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-box-seam" aria-hidden="true"></i> <span class="nav-link-text">Picker Put-away</span>
+                        </NavLink>
+                    </div>
                 </PermissionAuthorize>
 
                 <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewPullout">
@@ -457,6 +469,7 @@
         _showTransactionsLabel =
             await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward) ||
             await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInwardNoPkm) ||
+            await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Inward.AssignPkm) ||
             await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewPullout) ||
             await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInventoryMovement);
     }

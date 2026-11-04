@@ -153,10 +153,19 @@ public sealed class RefreshInwardPutawayHandler(
         // sending the user back to click Refresh once more.
         // Bounded on purpose (3 attempts): endless retries against a hot location could pile up waiting requests. The
         // short growing pause keeps competing refreshes from colliding in lockstep.
+        // A material deactivated after the GRN was uploaded must not receive locations. Read the flag straight from the
+        // database: the circuit's long-lived context may still hold the Material as it was when the GRN was opened.
+        var materialActive = await db.Materials.AsNoTracking()
+            .Where(m => m.Id == line.MaterialId)
+            .Select(m => m.IsActive)
+            .FirstOrDefaultAsync(cancellationToken);
+
         for (var attempt = 1; attempt <= MaxAllocationAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var allocation = quantityToAllocate > 0
+            var allocation = quantityToAllocate > 0 && !materialActive
+                ? new InwardAllocationResult(AllocationStatus.Failed, 0, [], "Material code not found in Material Master.")
+                : quantityToAllocate > 0
                 ? await allocator.AllocateAsync(
                     line.MaterialId,
                     quantityToAllocate,

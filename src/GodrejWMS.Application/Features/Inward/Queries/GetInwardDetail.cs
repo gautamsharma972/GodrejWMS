@@ -47,8 +47,8 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
                 l.Putaways
                     .OrderBy(p => p.PalletPosition.LocationCode)
                     .Select(p => new InwardPutawayDto(
-                        p.PalletPosition.LocationCode, p.QuantityBoxes, p.IsConfirmed, p.Id, p.AllocationReason,
-                        p.OverrideReason, p.ConfirmedAt, p.ConfirmedByUserName))
+                        p.ExcludedLocation ?? p.PalletPosition.LocationCode, p.QuantityBoxes, p.IsConfirmed, p.Id, p.AllocationReason,
+                        p.OverrideReason, p.ConfirmedAt, p.ConfirmedByUserName, p.ExcludedLocation, p.PalletPosition.Id, p.IsPickerPlaced, p.IsExcludedLocked))
                     .ToList()))
             .ToList();
 
@@ -61,7 +61,9 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
             // rejected GRN whose putaways RejectInwardHandler deletes) - Any() guards that so a
             // rejected/unconfirmed GRN never also reports as confirmed.
             IsConfirmed: transaction.Lines.SelectMany(l => l.Putaways).Any() &&
-                transaction.Lines.SelectMany(l => l.Putaways).All(p => p.IsConfirmed),
+                transaction.Lines.SelectMany(l => l.Putaways).All(p => p.IsConfirmed) &&
+                // GIT / NO RACK entries stay correctable by the Picker until a supervisor confirms the GRN
+                !transaction.Lines.SelectMany(l => l.Putaways).Any(p => p.ExcludedLocation != null && !p.IsExcludedLocked),
             IsRejected: transaction.IsRejected,
             RejectedAt: transaction.RejectedAt,
             RejectedByUserName: transaction.RejectedByUserName,

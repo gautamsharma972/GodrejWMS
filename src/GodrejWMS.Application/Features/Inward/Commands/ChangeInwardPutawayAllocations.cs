@@ -72,11 +72,11 @@ public sealed class ChangeInwardPutawayAllocationsHandler(IApplicationDbContext 
             .Where(w => w.Id == line.InwardTransaction.WarehouseId)
             .Select(w => (bool?)w.AllowPkmMixing).SingleOrDefaultAsync(cancellationToken) ?? true;
         var otherReservations = await db.InwardPutaways.AsNoTracking()
-            .Where(p => !p.IsConfirmed && p.Id != putaway.Id && positionIds.Contains(p.PalletPositionId))
+            .Where(p => !p.IsConfirmed && p.InwardTransactionLine.Material.IsActive && p.Id != putaway.Id && positionIds.Contains(p.PalletPositionId))
             .Select(p => new { p.PalletPositionId, p.QuantityBoxes, p.InwardTransactionLine.MaterialId, p.InwardTransactionLine.MfgMonth })
             .ToListAsync(cancellationToken);
         var batches = await db.StockBatches.AsNoTracking()
-            .Where(b => positionIds.Contains(b.PalletPositionId) && b.QuantityBoxes > 0)
+            .Where(b => positionIds.Contains(b.PalletPositionId) && b.QuantityBoxes > 0 && b.Material.IsActive)
             .Select(b => new { b.PalletPositionId, b.QuantityBoxes, b.MaterialId, b.MfgMonth })
             .ToListAsync(cancellationToken);
 

@@ -100,7 +100,9 @@ public sealed record InwardHistoryDto(
     bool IsRejected,
     bool IsPkmless = false,
     string? VehicleNumber = null,
-    string? LrNumber = null);
+    string? LrNumber = null,
+    int LocationCount = 0,
+    int SubmittedLocationCount = 0);
 
 public sealed record InwardPutawayDto(
     string LocationCode,
@@ -110,7 +112,11 @@ public sealed record InwardPutawayDto(
     string? Reason = null,
     string? OverrideReason = null,
     DateTimeOffset? ConfirmedAt = null,
-    string? ConfirmedByUserName = null);
+    string? ConfirmedByUserName = null,
+    string? ExcludedLocation = null,
+    int PalletPositionId = 0,
+    bool IsPickerPlaced = false,
+    bool IsExcludedLocked = false);
 
 public sealed record InwardDetailLineDto(
     long MaterialNumber,

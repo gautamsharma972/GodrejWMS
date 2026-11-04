@@ -79,7 +79,7 @@ public class PalletAllocationService(
 
         var pendingReservations = await db.InwardPutaways
             .AsNoTracking()
-            .Where(p => !p.IsConfirmed
+            .Where(p => !p.IsConfirmed && p.InwardTransactionLine.Material.IsActive
                 && (excludeInwardTransactionLineId == null || p.InwardTransactionLineId != excludeInwardTransactionLineId))
             .Select(p => new PendingReservation(
                 p.PalletPositionId,
@@ -106,7 +106,8 @@ public class PalletAllocationService(
                 && (requiredZoneTypeId == null || p.ZoneTypeId == requiredZoneTypeId)
                 && (!groundFloorOnly || p.Level == GroundFloorRule.GroundLevel))
             .Include(p => p.Rack)
-            .Include(p => p.StockBatches)
+            .Include(p => p.StockBatches.Where(b => b.Material.IsActive))
+            .AsNoTracking()
             .ToListAsync(cancellationToken);
 
         var preferredPositionIds = await GetAopPreferredPositionIdsAsync(

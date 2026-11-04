@@ -45,7 +45,7 @@ public sealed class GetRacksHandler(IApplicationDbContext db) : IRequestHandler<
         // contributes nothing to the rack's total capacity.
         var stockByPosition = await db.StockBatches
             .AsNoTracking()
-            .Where(b => b.QuantityBoxes > 0 && positionIds.Contains(b.PalletPositionId))
+            .Where(b => b.QuantityBoxes > 0 && b.Material.IsActive && positionIds.Contains(b.PalletPositionId))
             .GroupBy(b => b.PalletPositionId)
             .Select(g => new { PalletPositionId = g.Key, PalletCapacityBoxes = g.Max(b => b.Material.PalletCapacityBoxes) })
             .ToDictionaryAsync(x => x.PalletPositionId, x => x.PalletCapacityBoxes, cancellationToken);

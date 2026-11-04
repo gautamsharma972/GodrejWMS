@@ -1,6 +1,7 @@
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.Inward.Commands;
 using GodrejWMS.Domain.Entities;
+using GodrejWMS.Domain.Enums;
 using GodrejWMS.Infrastructure.Persistence;
 using GodrejWMS.Infrastructure.Services;
 using Xunit;
@@ -156,4 +157,213 @@ file sealed class FragClock : IDateTimeProvider
 {
     public DateTimeOffset UtcNow { get; } = new(2026, 11, 2, 0, 0, 0, TimeSpan.Zero);
     public DateOnly Today => DateOnly.FromDateTime(UtcNow.UtcDateTime);
+}
+
+public class RefreshInwardDeactivatedMaterialTests
+{
+    [Fact]
+    public async Task Allocation_TreatsALocationHoldingOnlyADeactivatedMaterialAsFree()
+    {
+        using var db = TestDbContextFactory.Create();
+        var rack = new Rack { Code = "P", Columns = 1, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
+        var position = new PalletPosition { Column = 1, Level = 1, LocationCode = "P-01-01", MaxPallets = 1 };
+        rack.PalletPositions.Add(position);
+        db.Racks.Add(rack);
+        Material Make(long number) => new()
+        {
+            MaterialNumber = number, Description = "M" + number, DesignType = "X", PackSize = 24, GrossWeightKg = 0.5m,
+            LengthMm = 100, WidthMm = 100, HeightMm = 100, PalletCapacityBoxes = 54, SeasonId = SeasonIds.Rainy
+        };
+        var old = Make(40000001);
+        var incoming = Make(40000002);
+        db.Materials.AddRange(old, incoming);
+        await db.SaveChangesAsync();
+        db.StockBatches.Add(new StockBatch { MaterialId = old.Id, PalletPositionId = position.Id, MfgMonth = 202610, QuantityBoxes = 54 });
+        await db.SaveChangesAsync();
+
+        var allocator = new PalletAllocationService(db, new FragClock());
+        var whileActive = await allocator.AllocateAsync(incoming.Id, 10, 202610, 1);
+        Assert.Empty(whileActive.Lines); // the other material's stock still fills the only location
+
+        old.IsActive = false;
+        await db.SaveChangesAsync();
+
+        var afterDeactivation = await allocator.AllocateAsync(incoming.Id, 10, 202610, 1);
+        Assert.Equal("P-01-01", Assert.Single(afterDeactivation.Lines).LocationCode);
+    }
+
+    [Fact]
+    public async Task Refresh_AndReallocate_DoNotAllocateALocationToAMaterialDeactivatedAfterUpload()
+    {
+        using var db = TestDbContextFactory.Create();
+        var rack = new Rack { Code = "P", Columns = 1, Levels = 4, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
+        for (var level = 1; level <= 4; level++)
+        {
+            rack.PalletPositions.Add(new PalletPosition { Column = 1, Level = level, LocationCode = $"P-01-{level:00}", MaxPallets = 1 });
+        }
+        db.Racks.Add(rack);
+        var material = new Material
+        {
+            MaterialNumber = 40065278, Description = "AER PLUG", DesignType = "X", PackSize = 24, GrossWeightKg = 0.5m,
+            LengthMm = 100, WidthMm = 100, HeightMm = 100, PalletCapacityBoxes = 54, SeasonId = SeasonIds.Rainy
+        };
+        db.Materials.Add(material);
+        await db.SaveChangesAsync();
+
+        var allocator = new PalletAllocationService(db, new FragClock());
+        var submitted = await new SubmitInwardHandler(db, allocator, new FragClock(), new FragUser()).Handle(
+            new SubmitInwardCommand([new SubmitInwardLine(material.MaterialNumber, 20, "OCT|2026")], WarehouseId: 1), default);
+        Assert.Equal(20, Assert.Single(submitted.Lines).AllocatedQuantityBoxes);
+
+        material.IsActive = false;
+        await db.SaveChangesAsync();
+
+        await new RefreshInwardPutawayHandler(db, allocator).Handle(new RefreshInwardPutawayCommand(submitted.Id), default);
+
+        var line = Assert.Single(db.InwardTransactionLines);
+        Assert.Equal(0, line.AllocatedQuantityBoxes);
+        Assert.Equal(AllocationStatus.Failed, line.Status);
+        Assert.Equal("Material code not found in Material Master.", line.Remarks);
+        Assert.Empty(db.InwardPutaways);
+
+        await new ReallocateInwardHandler(db, allocator).Handle(new ReallocateInwardCommand(submitted.Id), default);
+        Assert.Empty(db.InwardPutaways);
+    }
+}
+
+file sealed class AllowAll : GodrejWMS.Application.Common.Permissions.IPermissionService
+{
+    public Task<bool> HasPermissionAsync(string permissionKey, CancellationToken cancellationToken = default) => Task.FromResult(true);
+}
+
+public class PickerPlaceInwardPutawayTests
+{
+    private static async Task<(AppDbContext Db, Material A, Material B, InwardTransaction Grn, InwardPutaway Putaway, List<PalletPosition> Positions)> SeedAsync()
+    {
+        var db = TestDbContextFactory.Create();
+        var rack = new Rack { Code = "P", Columns = 3, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
+        for (var c = 1; c <= 3; c++)
+        {
+            rack.PalletPositions.Add(new PalletPosition { Column = c, Level = 1, LocationCode = $"P-0{c}-01", MaxPallets = 1 });
+        }
+        db.Racks.Add(rack);
+        Material Make(long number) => new()
+        {
+            MaterialNumber = number, Description = "M" + number, DesignType = "X", PackSize = 24, GrossWeightKg = 0.5m,
+            LengthMm = 100, WidthMm = 100, HeightMm = 100, PalletCapacityBoxes = 54, SeasonId = SeasonIds.Rainy
+        };
+        var a = Make(40000001);
+        var b = Make(40000002);
+        db.Materials.AddRange(a, b);
+        await db.SaveChangesAsync();
+
+        var positions = rack.PalletPositions.OrderBy(p => p.Column).ToList();
+        var grn = new InwardTransaction { ReferenceNumber = "GRN-1" };
+        var line = new InwardTransactionLine { MaterialId = a.Id, MfgMonth = 202610, RequestedQuantityBoxes = 30, AllocatedQuantityBoxes = 30 };
+        var putaway = new InwardPutaway { PalletPositionId = positions[0].Id, QuantityBoxes = 30 };
+        line.Putaways.Add(putaway);
+        grn.Lines.Add(line);
+        db.InwardTransactions.Add(grn);
+        await db.SaveChangesAsync();
+        return (db, a, b, grn, putaway, positions);
+    }
+
+    private static PickerPlaceInwardPutawayHandler Handler(AppDbContext db) => new(db, new AllowAll(), new FragUser(), new FragClock());
+
+    [Fact]
+    public async Task ChangesLocationQuantityAndPkm_MovingThePutawayToTheLineOfThatPkm()
+    {
+        var (db, _, _, grn, putaway, positions) = await SeedAsync();
+        using var _ = db;
+
+        var result = await Handler(db).Handle(
+            new PickerPlaceInwardPutawayCommand(putaway.Id, 28, "NOV|2026", positions[1].Id, null), default);
+
+        Assert.True(result.Saved);
+        var line = Assert.Single(db.InwardTransactionLines.Where(l => l.InwardTransactionId == grn.Id));
+        Assert.Equal(202611, line.MfgMonth);
+        Assert.Equal(28, line.AllocatedQuantityBoxes);
+        Assert.Equal(30, line.RequestedQuantityBoxes); // the inward order's own quantity is never reduced by the picker
+        Assert.Equal(GodrejWMS.Domain.Enums.AllocationStatus.Partial, line.Status);
+        var saved = Assert.Single(db.InwardPutaways);
+        Assert.Equal(positions[1].Id, saved.PalletPositionId);
+        Assert.Equal(28, saved.QuantityBoxes);
+        Assert.True(saved.IsPickerPlaced);
+        Assert.False(saved.IsConfirmed);
+    }
+
+    [Fact]
+    public async Task LocationHoldingStock_WarnsFirst_ThenSavesWhenAcknowledged_AndConfirmAllowsMixing()
+    {
+        var (db, _, b, _, putaway, positions) = await SeedAsync();
+        using var _ = db;
+        db.StockBatches.Add(new StockBatch { MaterialId = b.Id, PalletPositionId = positions[1].Id, MfgMonth = 202609, QuantityBoxes = 54 });
+        await db.SaveChangesAsync();
+
+        var command = new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", positions[1].Id, null);
+        var warned = await Handler(db).Handle(command, default);
+        Assert.False(warned.Saved);
+        Assert.Contains("P-02-01", warned.Warning);
+        Assert.Equal(positions[0].Id, db.InwardPutaways.Single().PalletPositionId); // nothing changed yet
+
+        var saved = await Handler(db).Handle(command with { AcknowledgeWarning = true }, default);
+        Assert.True(saved.Saved);
+
+        // The location is full of another material, yet the picker's choice confirms into stock.
+        var confirmed = await new ConfirmInwardPutawayHandler(db, new FragClock(), new FragUser(), new AllowAll())
+            .Handle(new ConfirmInwardPutawayCommand("GRN-1"), default);
+        Assert.NotNull(confirmed);
+        Assert.Equal(2, db.StockBatches.Count(s => s.PalletPositionId == positions[1].Id));
+    }
+
+    [Fact]
+    public async Task Git_ClosesThePutawayWithoutCreatingStock()
+    {
+        var (db, _, _, _, putaway, _) = await SeedAsync();
+        using var _ = db;
+
+        var result = await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "git"), default);
+
+        Assert.True(result.Saved);
+        var saved = db.InwardPutaways.Single();
+        Assert.Equal("GIT", saved.ExcludedLocation);
+        Assert.True(saved.IsConfirmed);
+        Assert.Empty(db.StockBatches);
+    }
+
+    [Fact]
+    public async Task GitCanBeCorrectedToARealLocation_ItGoesBackToWaitingForConfirmation()
+    {
+        var (db, _, _, _, putaway, positions) = await SeedAsync();
+        using var _ = db;
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "GIT"), default);
+
+        var result = await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", positions[2].Id, null), default);
+
+        Assert.True(result.Saved);
+        var saved = db.InwardPutaways.Single();
+        Assert.Null(saved.ExcludedLocation);
+        Assert.False(saved.IsConfirmed);
+        Assert.Null(saved.ConfirmedAt);
+        Assert.Equal(positions[2].Id, saved.PalletPositionId);
+
+        // and a real location can be set aside again
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "NO RACK"), default);
+        Assert.Equal("NO RACK", db.InwardPutaways.Single().ExcludedLocation);
+    }
+
+    [Fact]
+    public async Task GitCannotBeCorrectedOnceASupervisorConfirmsTheGrn()
+    {
+        var (db, _, _, _, putaway, positions) = await SeedAsync();
+        using var _ = db;
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "GIT"), default);
+
+        await new ConfirmInwardPutawayHandler(db, new FragClock(), new FragUser(), new AllowAll())
+            .Handle(new ConfirmInwardPutawayCommand("GRN-1"), default);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", positions[2].Id, null), default));
+        Assert.Contains("already been confirmed", ex.Message);
+    }
 }

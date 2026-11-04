@@ -83,7 +83,8 @@ public sealed class GetInwardHistoryHandler(IApplicationDbContext db)
                 // All(...) is vacuously true for zero putaways (a totally failed allocation, or a
                 // rejected GRN whose putaways RejectInwardHandler deletes) - Any() guards that so
                 // a rejected/unconfirmed GRN never also shows as Confirmed in this list.
-                t.Lines.SelectMany(l => l.Putaways).Any() && t.Lines.SelectMany(l => l.Putaways).All(p => p.IsConfirmed),
+                t.Lines.SelectMany(l => l.Putaways).Any() && t.Lines.SelectMany(l => l.Putaways).All(p => p.IsConfirmed)
+                    && !t.Lines.SelectMany(l => l.Putaways).Any(p => p.ExcludedLocation != null && !p.IsExcludedLocked),
                 t.IsRejected,
                 t.IsPkmless,
                 t.VehicleNumber,

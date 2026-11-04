@@ -82,10 +82,17 @@ public sealed class ReallocateInwardHandler(
 
         // Bounded on purpose (3 attempts): endless retries against a hot location could pile up waiting requests. The
         // short growing pause keeps competing reallocations from colliding in lockstep.
+        var materialActive = await db.Materials.AsNoTracking()
+            .Where(m => m.Id == line.MaterialId)
+            .Select(m => m.IsActive)
+            .FirstOrDefaultAsync(cancellationToken);
+
         for (var attempt = 1; attempt <= MaxAllocationAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var allocation = await allocator.AllocateAsync(line.MaterialId, remaining, line.MfgMonth, warehouseId, cancellationToken: cancellationToken);
+            var allocation = !materialActive
+                ? new InwardAllocationResult(AllocationStatus.Failed, 0, [], "Material code not found in Material Master.")
+                : await allocator.AllocateAsync(line.MaterialId, remaining, line.MfgMonth, warehouseId, cancellationToken: cancellationToken);
 
             var addedPutaways = new List<InwardPutaway>();
             foreach (var putaway in allocation.Lines)
