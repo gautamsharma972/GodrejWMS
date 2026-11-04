@@ -7,6 +7,16 @@ public sealed record MaterialStockReportRowDto(
     decimal Mrp,
     decimal BoxQuantity);
 
+public sealed record LocationStockReportRowDto(
+    string LocationCode,
+    long? MaterialCode,
+    string? MaterialDescription,
+    string? AopDescription,
+    string? DesignType,
+    int? Pkm,
+    decimal StockQty,
+    int? Capacity);
+
 public sealed record InventoryValuationRowDto(
     int MaterialId,
     long MaterialNumber,

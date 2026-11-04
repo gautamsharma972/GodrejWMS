@@ -8,6 +8,7 @@ using GodrejWMS.Application.Features.InventoryMovement.Dtos;
 using GodrejWMS.Application.Features.Locations.Dtos;
 using GodrejWMS.Application.Features.Materials.Dtos;
 using GodrejWMS.Application.Features.Pullout.Dtos;
+using GodrejWMS.Application.Features.Reports.Dtos;
 using GodrejWMS.Application.Features.Racks.Dtos;
 using GodrejWMS.Application.Features.Reports.Core;
 using GodrejWMS.Application.Features.StockMaster.Dtos;
@@ -387,6 +388,44 @@ public class ClosedXmlExcelService : IExcelService
             ws.Cell(rowNum, 5).Value = item.FromLocationCode;
             ws.Cell(rowNum, 6).Value = item.ToLocationCode;
             ws.Cell(rowNum, 7).Value = item.IsActive ? "Active" : "Inactive";
+            rowNum++;
+        }
+
+        ws.Columns().AdjustToContents();
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] WriteLocationStockReport(IReadOnlyList<LocationStockReportRowDto> rows)
+    {
+        string[] headers =
+            ["Pallet Position", "Material Code", "Material Description", "AOP Description", "Design Type", "MFG Month", "Stock Qty", "Capacity"];
+
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Location Stock");
+        WriteHeader(ws, headers);
+
+        var rowNum = 2;
+        foreach (var item in rows)
+        {
+            ws.Cell(rowNum, 1).Value = item.LocationCode;
+            if (item.MaterialCode is long materialCode)
+            {
+                ws.Cell(rowNum, 2).Value = materialCode;
+                ws.Cell(rowNum, 3).Value = item.MaterialDescription ?? string.Empty;
+                ws.Cell(rowNum, 4).Value = item.AopDescription ?? string.Empty;
+                ws.Cell(rowNum, 5).Value = item.DesignType ?? string.Empty;
+                ws.Cell(rowNum, 6).Value = item.Pkm is int pkm ? MfgMonthParser.Format(pkm) : string.Empty;
+                ws.Cell(rowNum, 7).Value = item.StockQty;
+                if (item.Capacity is int capacity)
+                    ws.Cell(rowNum, 8).Value = capacity;
+            }
+            else
+            {
+                ws.Cell(rowNum, 7).Value = 0;
+            }
+
             rowNum++;
         }
 

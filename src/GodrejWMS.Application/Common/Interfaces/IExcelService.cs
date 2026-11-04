@@ -6,6 +6,7 @@ using GodrejWMS.Application.Features.Materials.Dtos;
 using GodrejWMS.Application.Features.Pullout.Dtos;
 using GodrejWMS.Application.Features.Racks.Dtos;
 using GodrejWMS.Application.Features.Reports.Core;
+using GodrejWMS.Application.Features.Reports.Dtos;
 using GodrejWMS.Application.Features.StockMaster.Dtos;
 
 namespace GodrejWMS.Application.Common.Interfaces;
@@ -34,6 +35,9 @@ public interface IExcelService
 
     /// <summary>Writes the AOP Description Location Preferences master (AOP code/description, warehouse, rack, from/to location, status).</summary>
     byte[] WriteAopLocationPreferences(IReadOnlyList<AopDescriptionLocationPreferenceDto> rows);
+
+    /// <summary>Writes the Location Stock Report (every active location with its material, PKM, stock and capacity).</summary>
+    byte[] WriteLocationStockReport(IReadOnlyList<LocationStockReportRowDto> rows);
 
     /// <summary>Writes a Location Master export workbook.</summary>
     byte[] WriteLocationMaster(IReadOnlyList<PalletPositionDto> rows);

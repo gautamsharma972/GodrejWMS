@@ -1,0 +1,220 @@
+@page "/reports/location-stock"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewReports)]
+@using System.Globalization
+@using GodrejWMS.Application.Common
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Features.Reports.Core
+@using GodrejWMS.Application.Features.Reports.Dtos
+@using GodrejWMS.Application.Features.Reports.Queries
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+@inject IExcelService ExcelService
+
+<PageTitle>Location Stock Report - Godrej WMS</PageTitle>
+
+<div class="page-shell material-stock-report">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Reports / Inventory</div>
+            <h1>Location Stock Report</h1>
+            <p class="page-kicker">Every active location, occupied or empty, with the material, PKM, stock and capacity.</p>
+        </div>
+        <div class="toolbar-group">
+            <button type="button" class="btn btn-outline-secondary" @onclick="ResetAsync" disabled="@_loading">
+                <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+                Reset
+            </button>
+            <button type="button" class="btn btn-outline-primary" @onclick="ExportExcelAsync" disabled="@(_loading || _rows.Count == 0)">
+                <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                Export Excel
+            </button>
+        </div>
+    </div>
+
+    <section class="report-filter-card" aria-labelledby="location-stock-filters">
+        <div class="report-filter-heading">
+            <h2 id="location-stock-filters"><i class="bi bi-funnel" aria-hidden="true"></i> Filters</h2>
+        </div>
+
+        <div class="material-filter-grid" @onkeydown="HandleFilterKeyDown">
+            <label class="filter-field">
+                <span>Search</span>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                    <input class="form-control" placeholder="Location, material code or description" @bind="_search" @bind:event="oninput" />
+                </div>
+            </label>
+
+            <label class="filter-field">
+                <span>Warehouse</span>
+                <select class="form-select" @bind="_warehouseText">
+                    <option value="">All assigned warehouses</option>
+                    @foreach (var warehouse in _warehouses)
+                    {
+                        <option value="@warehouse.Id">@warehouse.Code — @warehouse.Name</option>
+                    }
+                </select>
+            </label>
+
+            <label class="filter-field">
+                <span>Show</span>
+                <select class="form-select" @bind="_statusFilter">
+                    <option value="">Occupied and empty</option>
+                    <option value="occupied">Occupied only</option>
+                    <option value="empty">Empty only</option>
+                </select>
+            </label>
+
+            <button type="button" class="btn btn-primary filter-apply" @onclick="LoadAsync" disabled="@_loading">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+                <span>Apply filters</span>
+            </button>
+        </div>
+    </section>
+
+    @if (_error is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_error</div>
+    }
+
+    <div class="material-report-summary" aria-label="Report summary">
+        <div><span>Locations</span><strong>@VisibleRows.Select(r => r.LocationCode).Distinct().Count().ToString("N0")</strong></div>
+        <div><span>Empty locations</span><strong>@VisibleRows.Count(r => r.MaterialCode is null).ToString("N0")</strong></div>
+        <div><span>Materials</span><strong>@VisibleRows.Where(r => r.MaterialCode is not null).Select(r => r.MaterialCode).Distinct().Count().ToString("N0")</strong></div>
+        <div class="summary-primary"><span>Total stock qty</span><strong>@VisibleRows.Sum(r => r.StockQty).ToString("N3")</strong></div>
+    </div>
+
+    <div class="panel material-report-panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Location details</h2>
+                <p class="panel-subtitle">Capacity is Max Pallets × the occupying material's pallet size; empty locations have none.</p>
+            </div>
+            <span class="sync-chip"><span class="live-dot"></span> Current stock</span>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="loading-panel"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Loading report...</div>
+        }
+        else if (!VisibleRows.Any())
+        {
+            <div class="empty-state material-report-empty">
+                <i class="bi bi-inboxes" aria-hidden="true"></i>
+                <strong>No locations match these filters</strong>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 material-report-table">
+                    <thead>
+                        <tr>
+                            <th>Pallet Position</th>
+                            <th>Material Code</th>
+                            <th>Material Description</th>
+                            <th>AOP Description</th>
+                            <th>Design Type</th>
+                            <th>MFG Month</th>
+                            <th class="text-end">Stock Qty</th>
+                            <th class="text-end">Capacity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in VisibleRows)
+                        {
+                            <tr>
+                                <td><span class="record-code">@row.LocationCode</span></td>
+                                @if (row.MaterialCode is null)
+                                {
+                                    <td colspan="7"><span class="status-pill neutral">Empty</span></td>
+                                }
+                                else
+                                {
+                                    <td>@row.MaterialCode</td>
+                                    <td class="material-description">@row.MaterialDescription</td>
+                                    <td>@row.AopDescription</td>
+                                    <td>@row.DesignType</td>
+                                    <td><span class="status-pill neutral">@MfgMonthParser.Format(row.Pkm!.Value)</span></td>
+                                    <td class="text-end"><strong>@row.StockQty.ToString("N3")</strong></td>
+                                    <td class="text-end">@row.Capacity</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<WarehouseOption> _warehouses = [];
+    private IReadOnlyList<LocationStockReportRowDto> _rows = [];
+    private bool _loading = true;
+    private string? _error;
+    private string _search = string.Empty;
+    private string _warehouseText = string.Empty;
+    private string _statusFilter = string.Empty;
+
+    private IEnumerable<LocationStockReportRowDto> VisibleRows => _statusFilter switch
+    {
+        "occupied" => _rows.Where(r => r.MaterialCode is not null),
+        "empty" => _rows.Where(r => r.MaterialCode is null),
+        _ => _rows
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _warehouses = await Mediator.Send(new GetAccessibleWarehousesQuery());
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var filter = new LocationStockReportFilter(
+                int.TryParse(_warehouseText, out var warehouseId) ? warehouseId : null,
+                string.IsNullOrWhiteSpace(_search) ? null : _search.Trim());
+            _rows = await Mediator.Send(new GetLocationStockReportQuery(filter));
+        }
+        catch (Exception ex)
+        {
+            _rows = [];
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        _search = _warehouseText = _statusFilter = string.Empty;
+        await LoadAsync();
+    }
+
+    private async Task HandleFilterKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await LoadAsync();
+    }
+
+    private async Task ExportExcelAsync()
+    {
+        try
+        {
+            var bytes = ExcelService.WriteLocationStockReport(VisibleRows.ToList());
+            await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"location-stock-report-{DateTime.Today:yyyyMMdd}.xlsx",
+                Convert.ToBase64String(bytes), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}
