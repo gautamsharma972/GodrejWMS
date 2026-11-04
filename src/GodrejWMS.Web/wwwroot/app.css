@@ -6767,14 +6767,33 @@ h2 {
 
 .reservation-filter-panel .toolbar-group {
     display: grid;
-    grid-template-columns: repeat(4, minmax(190px, 1fr)) auto auto;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) max-content max-content;
     align-items: end;
     width: 100%;
     gap: .7rem;
 }
 
 .reservation-filter-field {
+    width: 100%;
     min-width: 0;
+}
+
+.reservation-filter-field.reservation-location-select,
+.reservation-filter-field .search-control,
+.reservation-filter-field .input-group {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+}
+
+.reservation-filter-field .input-group {
+    flex-wrap: nowrap;
+}
+
+.reservation-filter-field .form-control {
+    width: 1%;
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 .reservation-filter-label {
@@ -6919,7 +6938,16 @@ h2 {
 
 @media (max-width: 1300px) {
     .reservation-filter-panel .toolbar-group {
-        grid-template-columns: repeat(2, minmax(220px, 1fr)) auto auto;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .reservation-confirmed-toggle {
+        grid-column: 1;
+        justify-self: start;
+    }
+
+    .reservation-filter-panel .btn {
+        grid-column: 2;
     }
 }
 
@@ -6938,6 +6966,8 @@ h2 {
 
     .reservation-confirmed-toggle,
     .reservation-filter-panel .btn {
+        grid-column: 1;
+        justify-self: stretch;
         width: 100%;
     }
 
