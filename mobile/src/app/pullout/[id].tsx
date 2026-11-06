@@ -1,11 +1,24 @@
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ApiError } from "../../api/client";
 import { changePulloutPickLocation, confirmPullout, getPulloutDetail } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
-import { PulloutPickLocationChangeModal, type ActivePick } from "../../components/PulloutPickLocationChangeModal";
-import type { PulloutDetailDto, PulloutPickChangeOptionDto } from "../../types/api";
+import {
+  PulloutPickLocationChangeModal,
+  type ActivePick,
+  type PickChangeMode,
+  type PickSplit,
+} from "../../components/PulloutPickLocationChangeModal";
+import { AppIcon } from "../../components/ui/AppIcon";
+import { Button } from "../../components/ui/Button";
+import { Card } from "../../components/ui/Card";
+import { LoadingView } from "../../components/ui/LoadingView";
+import { Screen } from "../../components/ui/Screen";
+import { colors, radius, spacing, typography } from "../../theme";
+import type { PulloutDetailDto } from "../../types/api";
+import { errorPulse, successPulse } from "../../utils/haptics";
+import { formatDateTime } from "../../utils/status";
 
 export default function PulloutDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -14,6 +27,7 @@ export default function PulloutDetailScreen() {
   const [detail, setDetail] = useState<PulloutDetailDto | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activePick, setActivePick] = useState<ActivePick | null>(null);
+  const [pickMode, setPickMode] = useState<PickChangeMode>("move");
   const [isConfirming, setIsConfirming] = useState(false);
 
   const load = useCallback(async () => {
@@ -27,6 +41,8 @@ export default function PulloutDetailScreen() {
   }, [token, id]);
 
   useEffect(() => {
+    // Initial route hydration is intentionally driven by the selected pullout id.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
@@ -34,20 +50,24 @@ export default function PulloutDetailScreen() {
 
   if (isLoading || !detail) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color="#2563eb" />
-      </View>
+      <Screen>
+        <LoadingView />
+      </Screen>
     );
   }
 
-  const handleLocationChange = async (option: PulloutPickChangeOptionDto, reason: string) => {
+  const handleLocationChange = async (splits: PickSplit[], reason: string) => {
     if (!activePick) return;
     await changePulloutPickLocation(token, {
       referenceNumber: activePick.referenceNumber,
       materialNumber: activePick.materialNumber,
       currentLocationCode: activePick.currentLocationCode,
       mfgMonthLabel: activePick.mfgMonthLabel,
-      sources: [{ palletPositionId: option.palletPositionId, mfgMonthLabel: option.mfgMonthLabel, quantityBoxes: activePick.quantityBoxes }],
+      sources: splits.map((split) => ({
+        palletPositionId: split.option.palletPositionId,
+        mfgMonthLabel: split.option.mfgMonthLabel,
+        quantityBoxes: split.quantityBoxes,
+      })),
       reason,
     });
     setActivePick(null);
@@ -58,19 +78,40 @@ export default function PulloutDetailScreen() {
     setIsConfirming(true);
     try {
       await confirmPullout(token, detail.referenceNumber);
+      successPulse();
       await load();
     } catch (err) {
+      errorPulse();
       Alert.alert("Could not confirm pullout", err instanceof ApiError ? err.message : "Unexpected error.");
     } finally {
       setIsConfirming(false);
     }
   };
 
+  const totalRequested = detail.lines.reduce((total, line) => total + line.requestedQuantityBoxes, 0);
+  const totalPicked = detail.lines.reduce((total, line) => total + line.pickedQuantityBoxes, 0);
+  const progress = totalRequested > 0 ? Math.min(100, (totalPicked / totalRequested) * 100) : 0;
+
   return (
-    <View style={styles.screen}>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-        <Text style={styles.reference}>{detail.referenceNumber}</Text>
-        <Text style={styles.subtitle}>{new Date(detail.createdAt).toLocaleString()}</Text>
+    <Screen>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryTopRow}>
+            <View style={styles.summaryIcon}>
+              <AppIcon name="arrow-up-circle-outline" size={23} color={colors.primary} />
+            </View>
+            <View style={styles.summaryCopy}>
+              <Text style={styles.eyebrow}>PULLOUT CONFIRMATION</Text>
+              <Text style={styles.reference} numberOfLines={1}>{detail.referenceNumber}</Text>
+              <Text style={styles.subtitle}>{formatDateTime(detail.createdAt)}</Text>
+            </View>
+          </View>
+          <View style={styles.progressHeader}>
+            <Text style={styles.progressLabel}>Picking progress</Text>
+            <Text style={styles.progressValue}>{totalPicked} / {totalRequested} boxes</Text>
+          </View>
+          <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${progress}%` }]} /></View>
+        </View>
         {detail.isConfirmed && (
           <View style={styles.confirmedBanner}>
             <Text style={styles.confirmedBannerText}>This pullout is confirmed.</Text>
@@ -82,68 +123,159 @@ export default function PulloutDetailScreen() {
           </View>
         )}
 
-        {detail.lines.map((line, lineIndex) => (
-          <View key={lineIndex} style={styles.lineCard}>
-            <Text style={styles.lineMaterial}>
-              {line.materialNumber} — {line.materialDescription}
-            </Text>
-            <Text style={styles.lineMeta}>
-              {line.pickedQuantityBoxes} / {line.requestedQuantityBoxes} boxes picked
-            </Text>
+        <View style={styles.sectionHeading}>
+          <Text style={styles.sectionTitle}>Material lines</Text>
+          <Text style={styles.lineCount}>{detail.lines.length}</Text>
+        </View>
+
+        {detail.lines.map((line, lineIndex) => {
+          const lineProgress = line.requestedQuantityBoxes > 0 ? Math.min(100, (line.pickedQuantityBoxes / line.requestedQuantityBoxes) * 100) : 0;
+          return (
+          <Card key={lineIndex} style={styles.lineCard}>
+            <View style={styles.materialHeader}>
+              <View style={styles.materialIcon}><AppIcon name="cube-outline" size={18} color={colors.primary} /></View>
+              <View style={styles.materialCopy}>
+                <Text style={styles.materialCode}>{line.materialNumber}</Text>
+                <Text style={styles.lineMaterial} numberOfLines={2}>{line.materialDescription}</Text>
+              </View>
+            </View>
+            <View style={styles.lineProgressHeader}>
+              <Text style={styles.lineMeta}>{line.pickedQuantityBoxes} of {line.requestedQuantityBoxes} boxes picked</Text>
+              <Text style={styles.linePercent}>{Math.round(lineProgress)}%</Text>
+            </View>
+            <View style={styles.lineProgressTrack}><View style={[styles.lineProgressFill, { width: `${lineProgress}%` }]} /></View>
             {line.picks.map((pick, pickIndex) => (
               <View key={pickIndex} style={styles.pickRow}>
-                <Text style={styles.pickLocation}>
-                  {pick.locationCode} · {pick.mfgMonthLabel} · {pick.quantityBoxes} boxes
-                </Text>
+                <View style={styles.pickRowTop}>
+                  <View style={styles.pickLocationPill}>
+                    <AppIcon name="location-outline" size={15} color={colors.primary} />
+                    <Text style={styles.pickLocation}>{pick.locationCode}</Text>
+                  </View>
+                  <Text style={styles.pickDetail}>{pick.mfgMonthLabel} · {pick.quantityBoxes} boxes</Text>
+                </View>
                 {!detail.isConfirmed && !detail.isRejected && (
-                  <TouchableOpacity
-                    style={styles.changeButton}
-                    onPress={() =>
-                      setActivePick({
-                        referenceNumber: detail.referenceNumber,
-                        materialNumber: line.materialNumber,
-                        currentLocationCode: pick.locationCode,
-                        mfgMonthLabel: pick.mfgMonthLabel,
-                        quantityBoxes: pick.quantityBoxes,
-                      })
-                    }
-                  >
-                    <Text style={styles.changeButtonText}>Change</Text>
-                  </TouchableOpacity>
+                  <View style={styles.pickActions}>
+                    <TouchableOpacity
+                      style={styles.pickActionButton}
+                      onPress={() => {
+                        setPickMode("move");
+                        setActivePick({
+                          referenceNumber: detail.referenceNumber,
+                          materialNumber: line.materialNumber,
+                          currentLocationCode: pick.locationCode,
+                          mfgMonthLabel: pick.mfgMonthLabel,
+                          quantityBoxes: pick.quantityBoxes,
+                        });
+                      }}
+                    >
+                      <AppIcon name="arrow-redo-outline" size={16} color={colors.primary} />
+                      <Text style={styles.pickActionText}>Move</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.pickActionButton}
+                      onPress={() => {
+                        setPickMode("change");
+                        setActivePick({
+                          referenceNumber: detail.referenceNumber,
+                          materialNumber: line.materialNumber,
+                          currentLocationCode: pick.locationCode,
+                          mfgMonthLabel: pick.mfgMonthLabel,
+                          quantityBoxes: pick.quantityBoxes,
+                        });
+                      }}
+                    >
+                      <AppIcon name="swap-horizontal" size={16} color={colors.primary} />
+                      <Text style={styles.pickActionText}>Change</Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
               </View>
             ))}
-          </View>
-        ))}
-
-        {!detail.isConfirmed && !detail.isRejected && (
-          <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm} disabled={isConfirming}>
-            {isConfirming ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmButtonText}>Confirm Pullout</Text>}
-          </TouchableOpacity>
-        )}
+          </Card>
+          );
+        })}
       </ScrollView>
 
-      <PulloutPickLocationChangeModal pick={activePick} token={token} onClose={() => setActivePick(null)} onSubmit={handleLocationChange} />
-    </View>
+      {!detail.isConfirmed && !detail.isRejected && (
+        <View style={styles.actionBar}>
+          <View style={styles.actionCopy}>
+            <Text style={styles.actionLabel}>{totalPicked} / {totalRequested} boxes</Text>
+            <Text style={styles.actionHint}>Picked for this pullout</Text>
+          </View>
+          <Button
+            title="Confirm Pullout"
+            onPress={handleConfirm}
+            loading={isConfirming}
+            icon={<AppIcon name="checkmark-circle-outline" size={20} color={colors.textOnPrimary} />}
+            fullWidth={false}
+            style={styles.confirmAction}
+          />
+        </View>
+      )}
+
+      <PulloutPickLocationChangeModal
+        pick={activePick}
+        mode={pickMode}
+        token={token}
+        onClose={() => setActivePick(null)}
+        onSubmit={handleLocationChange}
+      />
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#f1f5f9" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  reference: { fontSize: 20, fontWeight: "700", color: "#0f172a" },
-  subtitle: { fontSize: 13, color: "#64748b", marginTop: 2, marginBottom: 12 },
-  confirmedBanner: { backgroundColor: "#dcfce7", borderRadius: 10, padding: 12, marginBottom: 16 },
-  confirmedBannerText: { color: "#166534", fontWeight: "600", fontSize: 13 },
-  rejectedBanner: { backgroundColor: "#fef2f2", borderRadius: 10, padding: 12, marginBottom: 16 },
-  rejectedBannerText: { color: "#991b1b", fontWeight: "600", fontSize: 13 },
-  lineCard: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: "#e2e8f0" },
-  lineMaterial: { fontSize: 14, fontWeight: "700", color: "#0f172a" },
-  lineMeta: { fontSize: 13, color: "#334155", marginTop: 4, marginBottom: 8 },
-  pickRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6, borderTopWidth: 1, borderTopColor: "#f1f5f9" },
-  pickLocation: { fontSize: 13, color: "#0f172a", flex: 1 },
-  changeButton: { borderWidth: 1, borderColor: "#2563eb", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  changeButtonText: { color: "#2563eb", fontSize: 12, fontWeight: "700" },
-  confirmButton: { backgroundColor: "#2563eb", borderRadius: 10, paddingVertical: 14, alignItems: "center", marginTop: 8 },
-  confirmButtonText: { color: "#fff", fontWeight: "700" },
+  content: { padding: spacing.lg, paddingBottom: 112 },
+  summaryCard: { backgroundColor: colors.primarySoft, borderColor: "#c7d2fe", borderWidth: 1, borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.lg },
+  summaryTopRow: { flexDirection: "row", alignItems: "center" },
+  summaryIcon: { width: 48, height: 48, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", marginRight: spacing.md },
+  summaryCopy: { flex: 1, minWidth: 0 },
+  eyebrow: { ...typography.label, color: colors.primary, letterSpacing: 0.6, marginBottom: 2 },
+  reference: { ...typography.title, color: colors.textPrimary },
+  subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 3 },
+  progressHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: spacing.lg, marginBottom: spacing.sm },
+  progressLabel: { ...typography.caption, color: colors.textSecondary },
+  progressValue: { ...typography.caption, color: colors.primaryText, fontWeight: "800" },
+  progressTrack: { height: 7, backgroundColor: "#dbe2f3", borderRadius: radius.pill, overflow: "hidden" },
+  progressFill: { height: "100%", backgroundColor: colors.primary, borderRadius: radius.pill },
+  confirmedBanner: { backgroundColor: colors.successSoft, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg },
+  confirmedBannerText: { color: colors.successText, fontWeight: "700", fontSize: 13 },
+  rejectedBanner: { backgroundColor: colors.dangerSoft, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg },
+  rejectedBannerText: { color: colors.dangerText, fontWeight: "700", fontSize: 13 },
+  sectionHeading: { flexDirection: "row", alignItems: "center", marginBottom: spacing.sm, paddingHorizontal: 2 },
+  sectionTitle: { ...typography.title, fontSize: 17, color: colors.textPrimary },
+  lineCount: { ...typography.label, color: colors.primaryText, backgroundColor: colors.primarySoft, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 4, marginLeft: spacing.sm },
+  lineCard: { marginBottom: spacing.md, padding: spacing.md, shadowOpacity: 0.035 },
+  materialHeader: { flexDirection: "row", alignItems: "flex-start" },
+  materialIcon: { width: 34, height: 34, borderRadius: radius.sm, backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center", marginRight: spacing.sm },
+  materialCopy: { flex: 1, minWidth: 0 },
+  materialCode: { ...typography.bodyStrong, color: colors.textPrimary },
+  lineMaterial: { ...typography.body, color: colors.textSecondary, lineHeight: 19, marginTop: 1 },
+  lineProgressHeader: { flexDirection: "row", justifyContent: "space-between", marginTop: spacing.md, marginBottom: 6 },
+  lineMeta: { ...typography.caption, color: colors.textSecondary },
+  linePercent: { ...typography.caption, color: colors.primaryText, fontWeight: "800" },
+  lineProgressTrack: { height: 5, backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, overflow: "hidden", marginBottom: spacing.sm },
+  lineProgressFill: { height: "100%", backgroundColor: colors.primary, borderRadius: radius.pill },
+  pickRow: { paddingTop: spacing.sm, marginTop: spacing.xs, borderTopWidth: 1, borderTopColor: colors.border },
+  pickRowTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  pickLocationPill: { flexDirection: "row", alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 6 },
+  pickLocation: { ...typography.caption, color: colors.primaryText, fontWeight: "700", marginLeft: spacing.xs },
+  pickDetail: { ...typography.caption, color: colors.textSecondary, flex: 1 },
+  pickActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
+  pickActionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primarySoft,
+  },
+  pickActionText: { color: colors.primary, fontSize: 12.5, fontWeight: "700", marginLeft: spacing.xs },
+  actionBar: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md },
+  actionCopy: { flex: 1 },
+  actionLabel: { ...typography.bodyStrong, color: colors.textPrimary },
+  actionHint: { ...typography.caption, color: colors.textSecondary, marginTop: 1 },
+  confirmAction: { minWidth: 190 },
 });

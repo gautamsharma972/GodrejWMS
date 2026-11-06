@@ -1,4 +1,6 @@
-import { FlatList, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { FlatList, StyleSheet, Text, TouchableOpacity } from "react-native";
+import { BottomSheet } from "./ui/BottomSheet";
+import { colors, typography } from "../theme";
 import type { WarehouseOption } from "../types/api";
 
 interface Props {
@@ -10,33 +12,25 @@ interface Props {
 
 export function WarehousePickerModal({ visible, warehouses, onClose, onSelect }: Props) {
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose}>
-        <View style={styles.sheet}>
-          <Text style={styles.title}>Select warehouse</Text>
-          <FlatList
-            data={warehouses}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={styles.row} onPress={() => onSelect(item)}>
-                <Text style={styles.rowText}>
-                  {item.name} ({item.code})
-                </Text>
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={<Text style={styles.empty}>No warehouses assigned to your account.</Text>}
-          />
-        </View>
-      </TouchableOpacity>
-    </Modal>
+    <BottomSheet visible={visible} title="Select warehouse" onClose={onClose} maxHeightPercent={60}>
+      <FlatList
+        data={warehouses}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={({ item }) => (
+          <TouchableOpacity style={styles.row} onPress={() => onSelect(item)}>
+            <Text style={styles.rowText}>
+              {item.name} ({item.code})
+            </Text>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={<Text style={styles.empty}>No warehouses assigned to your account.</Text>}
+      />
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(15,23,42,0.4)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: "#fff", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, maxHeight: "60%" },
-  title: { fontSize: 16, fontWeight: "700", color: "#0f172a", marginBottom: 12 },
-  row: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
-  rowText: { fontSize: 15, color: "#0f172a" },
-  empty: { color: "#94a3b8", paddingVertical: 20, textAlign: "center" },
+  row: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
+  rowText: { ...typography.body, fontSize: 15, color: colors.textPrimary },
+  empty: { ...typography.body, color: colors.textMuted, paddingVertical: 20, textAlign: "center" },
 });

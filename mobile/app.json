@@ -28,7 +28,13 @@
       "expo-router",
       "expo-status-bar",
       "expo-secure-store",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Godrej WMS to use the camera to scan location barcodes/QR codes."
+        }
+      ]
     ]
   }
 }

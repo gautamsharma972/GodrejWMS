@@ -1,5 +1,6 @@
 import { apiDownload, apiRequest, apiUpload } from "./client";
 import type {
+  AopLocationOptionDto,
   AssignInwardPutawayPkmRequest,
   ChangeInwardPutawayLocationRequest,
   ChangePulloutPickLocationRequest,
@@ -12,6 +13,8 @@ import type {
   MaterialDto,
   PaginatedList,
   PalletPositionDto,
+  PickerPlaceInwardPutawayRequest,
+  PickerPlaceInwardPutawayResult,
   PulloutDetailDto,
   PulloutHistoryDto,
   PulloutPickChangeOptionDto,
@@ -135,4 +138,36 @@ export function changePulloutPickLocation(token: string, request: ChangePulloutP
 
 export function confirmPullout(token: string, referenceNumber: string): Promise<PulloutResultDto> {
   return apiRequest<PulloutResultDto>(`/api/pullout/${encodeURIComponent(referenceNumber)}/confirm`, { token, method: "POST" });
+}
+
+// --- Picker Put-away: confirm/change qty, PKM and location for pending GRN locations ---
+
+export function getPickerPutawayQueue(
+  token: string,
+  options: { search?: string; pageNumber?: number; pageSize?: number } = {},
+): Promise<PaginatedList<InwardHistoryDto>> {
+  return apiRequest<PaginatedList<InwardHistoryDto>>("/api/picker-putaway/queue", {
+    token,
+    query: {
+      search: options.search,
+      pageNumber: options.pageNumber ?? 1,
+      pageSize: options.pageSize ?? 10,
+    },
+  });
+}
+
+export function getPickerLocationOptions(token: string): Promise<AopLocationOptionDto[]> {
+  return apiRequest<AopLocationOptionDto[]>("/api/picker-putaway/location-options", { token });
+}
+
+export function placePickerPutaway(
+  token: string,
+  putawayId: number,
+  request: PickerPlaceInwardPutawayRequest,
+): Promise<PickerPlaceInwardPutawayResult> {
+  return apiRequest<PickerPlaceInwardPutawayResult>(`/api/picker-putaway/putaways/${putawayId}/place`, {
+    token,
+    method: "POST",
+    body: request,
+  });
 }

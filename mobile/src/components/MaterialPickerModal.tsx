@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { FlatList, StyleSheet, Text, TouchableOpacity } from "react-native";
 import { searchMaterials } from "../api/endpoints";
+import { FullScreenModal } from "./ui/FullScreenModal";
+import { LoadingView } from "./ui/LoadingView";
+import { SearchField } from "./ui/SearchField";
+import { colors, spacing, typography } from "../theme";
 import type { MaterialDto } from "../types/api";
 
 interface Props {
@@ -34,53 +38,33 @@ export function MaterialPickerModal({ visible, token, onClose, onSelect }: Props
   }, [visible, search, token]);
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Select material</Text>
-          <TouchableOpacity onPress={onClose}>
-            <Text style={styles.close}>Close</Text>
+    <FullScreenModal visible={visible} title="Select material" onClose={onClose}>
+      <SearchField placeholder="Search by material code or description" value={search} onChangeText={setSearch} autoFocus />
+      {isLoading && <LoadingView label="Searching..." />}
+      <FlatList
+        data={results}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => {
+              onSelect(item);
+              setSearch("");
+            }}
+          >
+            <Text style={styles.rowCode}>{item.materialNumber}</Text>
+            <Text style={styles.rowDescription}>{item.description}</Text>
           </TouchableOpacity>
-        </View>
-        <TextInput
-          style={styles.search}
-          placeholder="Search by material code or description"
-          value={search}
-          onChangeText={setSearch}
-          autoFocus
-        />
-        {isLoading && <ActivityIndicator style={styles.loading} color="#2563eb" />}
-        <FlatList
-          data={results}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.row}
-              onPress={() => {
-                onSelect(item);
-                setSearch("");
-              }}
-            >
-              <Text style={styles.rowCode}>{item.materialNumber}</Text>
-              <Text style={styles.rowDescription}>{item.description}</Text>
-            </TouchableOpacity>
-          )}
-          ListEmptyComponent={!isLoading ? <Text style={styles.empty}>No materials found.</Text> : undefined}
-        />
-      </View>
-    </Modal>
+        )}
+        ListEmptyComponent={!isLoading ? <Text style={styles.empty}>No materials found.</Text> : undefined}
+      />
+    </FullScreenModal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff", paddingTop: 56, paddingHorizontal: 16 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  title: { fontSize: 18, fontWeight: "700", color: "#0f172a" },
-  close: { color: "#2563eb", fontWeight: "600" },
-  search: { borderWidth: 1, borderColor: "#cbd5e1", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, marginBottom: 8 },
-  loading: { marginVertical: 8 },
-  row: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
-  rowCode: { fontSize: 15, fontWeight: "700", color: "#0f172a" },
-  rowDescription: { fontSize: 13, color: "#64748b", marginTop: 2 },
-  empty: { textAlign: "center", color: "#94a3b8", marginTop: 40 },
+  row: { paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  rowCode: { ...typography.subtitle, color: colors.textPrimary },
+  rowDescription: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  empty: { textAlign: "center", color: colors.textMuted, marginTop: spacing.xxxl },
 });

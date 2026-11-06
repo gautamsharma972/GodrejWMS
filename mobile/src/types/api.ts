@@ -99,6 +99,8 @@ export interface InwardHistoryDto {
   isPkmless: boolean;
   vehicleNumber?: string | null;
   lrNumber?: string | null;
+  locationCount: number;
+  submittedLocationCount: number;
 }
 
 export interface InwardPutawayDto {
@@ -110,6 +112,10 @@ export interface InwardPutawayDto {
   overrideReason?: string | null;
   confirmedAt?: string | null;
   confirmedByUserName?: string | null;
+  excludedLocation?: string | null;
+  palletPositionId: number;
+  isPickerPlaced: boolean;
+  isExcludedLocked: boolean;
 }
 
 export interface InwardDetailLineDto {
@@ -361,4 +367,32 @@ export interface ChangePulloutPickLocationRequest {
   mfgMonthLabel: string;
   sources: PulloutPickSource[];
   reason: string;
+}
+
+// --- Picker Put-away: confirm/change qty, PKM and location for pending GRN locations ---
+// Mirrors src/GodrejWMS.Web/Components/Pages/InwardPicker/Index.razor (route /inward-picker),
+// gated on Inward.AssignPkm - the same permission the Pickers role already has.
+
+export interface AopLocationOptionDto {
+  id: number;
+  warehouseId: number;
+  warehouseCode: string;
+  rackId: number;
+  rackCode: string;
+  column: number;
+  level: number;
+  locationCode: string;
+}
+
+export interface PickerPlaceInwardPutawayRequest {
+  quantityBoxes: number;
+  mfgMonthText?: string | null;
+  newPalletPositionId?: number | null;
+  excludedLocation?: string | null;
+  acknowledgeWarning?: boolean;
+}
+
+export interface PickerPlaceInwardPutawayResult {
+  saved: boolean;
+  warning?: string | null;
 }

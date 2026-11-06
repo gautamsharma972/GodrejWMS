@@ -4,9 +4,15 @@ import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "rea
 import { downloadInwardDetail } from "../api/endpoints";
 import { useAuth } from "../auth/AuthContext";
 import { PalletPositionModal } from "../components/PalletPositionModal";
+import { Button } from "../components/ui/Button";
+import { AppIcon } from "../components/ui/AppIcon";
+import { Card } from "../components/ui/Card";
+import { CenteredView, Screen } from "../components/ui/Screen";
+import { StatusBadge } from "../components/ui/StatusBadge";
+import { colors, radius, spacing, typography } from "../theme";
 import type { InwardResultDto } from "../types/api";
 import { saveAndShareXlsx } from "../utils/saveAndShare";
-import { allocationStatusColor, allocationStatusLabel } from "../utils/status";
+import { allocationStatusLabel, allocationStatusTone, formatDateTime } from "../utils/status";
 
 export default function InwardResultScreen() {
   const { result: resultParam } = useLocalSearchParams<{ result: string }>();
@@ -24,9 +30,11 @@ export default function InwardResultScreen() {
 
   if (!result || !token) {
     return (
-      <View style={styles.center}>
-        <Text>No result to show.</Text>
-      </View>
+      <Screen>
+        <CenteredView>
+          <Text style={{ color: colors.textMuted }}>No result to show.</Text>
+        </CenteredView>
+      </Screen>
     );
   }
 
@@ -40,80 +48,75 @@ export default function InwardResultScreen() {
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 40 }}>
-      <View style={styles.header}>
-        <Text style={styles.reference}>{result.referenceNumber}</Text>
-        <Text style={styles.subtitle}>{new Date(result.createdAt).toLocaleString()}</Text>
-      </View>
-
-      {result.lines.map((line, index) => (
-        <View key={index} style={styles.lineCard}>
-          <View style={styles.lineHeader}>
-            <Text style={styles.materialName}>
-              {line.materialNumber} — {line.materialDescription}
-            </Text>
-            <View style={[styles.statusPill, { backgroundColor: allocationStatusColor(line.status) }]}>
-              <Text style={styles.statusPillText}>{allocationStatusLabel(line.status)}</Text>
-            </View>
+    <Screen>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}>
+        <View style={styles.headerCard}>
+          <View style={styles.headerIcon}><AppIcon name="checkmark-circle-outline" size={22} color={colors.success} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.eyebrow}>ALLOCATION GENERATED</Text>
+            <Text style={styles.reference}>{result.referenceNumber}</Text>
+            <Text style={styles.subtitle}>{formatDateTime(result.createdAt)}</Text>
           </View>
-          <Text style={styles.qtyLine}>
-            {line.allocatedQuantityBoxes} / {line.requestedQuantityBoxes} boxes allocated
-          </Text>
-          {line.remarks && <Text style={styles.remarks}>{line.remarks}</Text>}
-          {line.allocatedTo.map((allocation, i) => (
-            <TouchableOpacity key={i} style={styles.allocationRow} onPress={() => setActiveLocation(allocation.locationCode)}>
-              <Text style={styles.allocationLocation}>{allocation.locationCode}</Text>
-              <Text style={styles.allocationQty}>{allocation.quantityBoxes} boxes</Text>
-            </TouchableOpacity>
-          ))}
         </View>
-      ))}
 
-      {result.unsavedLines && result.unsavedLines.length > 0 && (
-        <View style={styles.unsavedBox}>
-          <Text style={styles.unsavedTitle}>Lines not saved</Text>
-          {result.unsavedLines.map((line, i) => (
-            <Text key={i} style={styles.unsavedRow}>
-              {line.codeText}: {line.reason}
-            </Text>
-          ))}
+        {result.lines.map((line, index) => (
+          <Card key={index} style={styles.lineCard}>
+            <View style={styles.lineHeader}>
+              <Text style={styles.materialName}>
+                {line.materialNumber} — {line.materialDescription}
+              </Text>
+              <StatusBadge label={allocationStatusLabel(line.status)} tone={allocationStatusTone(line.status)} />
+            </View>
+            <View style={styles.qtyPill}><Text style={styles.qtyLine}>{line.allocatedQuantityBoxes} / {line.requestedQuantityBoxes} boxes allocated</Text></View>
+            {line.remarks && <Text style={styles.remarks}>{line.remarks}</Text>}
+            {line.allocatedTo.map((allocation, i) => (
+              <TouchableOpacity key={i} style={styles.allocationRow} onPress={() => setActiveLocation(allocation.locationCode)}>
+                <Text style={styles.allocationLocation}>{allocation.locationCode}</Text>
+                <Text style={styles.allocationQty}>{allocation.quantityBoxes} boxes</Text>
+              </TouchableOpacity>
+            ))}
+          </Card>
+        ))}
+
+        {result.unsavedLines && result.unsavedLines.length > 0 && (
+          <View style={styles.unsavedBox}>
+            <Text style={styles.unsavedTitle}>Lines not saved</Text>
+            {result.unsavedLines.map((line, i) => (
+              <Text key={i} style={styles.unsavedRow}>
+                {line.codeText}: {line.reason}
+              </Text>
+            ))}
+          </View>
+        )}
+
+        <View style={styles.actionRow}>
+          <Button title="Excel" variant="outline" onPress={handleDownload} fullWidth={false} style={{ flex: 1 }} />
+          <Button title="Done" onPress={() => router.replace("/")} fullWidth={false} style={{ flex: 1 }} />
         </View>
-      )}
-
-      <TouchableOpacity style={styles.downloadButton} onPress={handleDownload}>
-        <Text style={styles.downloadButtonText}>Download Excel</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.doneButton} onPress={() => router.replace("/")}>
-        <Text style={styles.doneButtonText}>Done</Text>
-      </TouchableOpacity>
+      </ScrollView>
 
       <PalletPositionModal locationCode={activeLocation} token={token} onClose={() => setActiveLocation(null)} />
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#f1f5f9", padding: 16 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  header: { marginBottom: 16 },
-  reference: { fontSize: 20, fontWeight: "700", color: "#0f172a" },
-  subtitle: { fontSize: 13, color: "#64748b", marginTop: 2 },
-  lineCard: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: "#e2e8f0" },
-  lineHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 },
-  materialName: { fontSize: 14, fontWeight: "700", color: "#0f172a", flex: 1, marginRight: 8 },
-  statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  statusPillText: { color: "#fff", fontSize: 11, fontWeight: "700" },
-  qtyLine: { fontSize: 13, color: "#334155", marginBottom: 4 },
-  remarks: { fontSize: 12, color: "#dc2626", marginBottom: 6 },
-  allocationRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 8, borderTopWidth: 1, borderTopColor: "#f1f5f9" },
-  allocationLocation: { color: "#2563eb", fontWeight: "700", fontSize: 13 },
-  allocationQty: { color: "#64748b", fontSize: 13 },
-  unsavedBox: { backgroundColor: "#fef2f2", borderRadius: 10, padding: 12, marginBottom: 12 },
-  unsavedTitle: { fontWeight: "700", color: "#991b1b", marginBottom: 6 },
-  unsavedRow: { fontSize: 12, color: "#991b1b" },
-  downloadButton: { borderWidth: 1, borderColor: "#2563eb", borderRadius: 10, paddingVertical: 14, alignItems: "center", marginTop: 8 },
-  downloadButtonText: { color: "#2563eb", fontWeight: "700" },
-  doneButton: { backgroundColor: "#2563eb", borderRadius: 10, paddingVertical: 14, alignItems: "center", marginTop: 12 },
-  doneButtonText: { color: "#fff", fontWeight: "700" },
+  headerCard: { flexDirection: "row", alignItems: "center", backgroundColor: colors.successSoft, borderWidth: 1, borderColor: "#bbf7d0", borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.lg },
+  headerIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", marginRight: spacing.md },
+  eyebrow: { ...typography.label, fontSize: 9, letterSpacing: 0.7, color: colors.successText },
+  reference: { ...typography.title, color: colors.textPrimary, marginTop: 2 },
+  subtitle: { ...typography.body, color: colors.textSecondary, marginTop: 2 },
+  lineCard: { marginBottom: spacing.sm, padding: spacing.md },
+  lineHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: spacing.xs },
+  materialName: { ...typography.subtitle, fontSize: 14, color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
+  qtyPill: { alignSelf: "flex-start", backgroundColor: colors.neutralSoft, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 5, marginBottom: spacing.xs },
+  qtyLine: { fontSize: 12, color: colors.textSecondary, fontWeight: "700" },
+  remarks: { fontSize: 12, color: colors.danger, marginBottom: spacing.sm, fontWeight: "600" },
+  allocationRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  allocationLocation: { color: colors.primary, fontWeight: "700", fontSize: 13 },
+  allocationQty: { color: colors.textSecondary, fontSize: 13 },
+  unsavedBox: { backgroundColor: colors.dangerSoft, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md },
+  unsavedTitle: { fontWeight: "700", color: colors.dangerText, marginBottom: spacing.sm },
+  unsavedRow: { fontSize: 12, color: colors.dangerText },
+  actionRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
 });

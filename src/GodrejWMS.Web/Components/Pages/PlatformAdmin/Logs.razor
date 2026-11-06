@@ -11,10 +11,16 @@
         <div>
             <div class="eyebrow">Vendor Console</div>
             <h1>Server Logs</h1>
-            <p class="page-kicker">
-                The same rolling log files the server writes under its Logs folder, by date - not visible to any client role.
-                <a href="/platform-admin">&larr; Back to Platform Admin</a>
-            </p>
+            <p class="page-kicker">Monitor application activity, warnings and errors from the server log archive.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="/platform-admin"><i class="bi bi-arrow-left"></i> Platform Admin</a>
+    </div>
+
+    <div class="access-note">
+        <span class="access-note-icon"><i class="bi bi-shield-lock"></i></span>
+        <div>
+            <strong>Platform Admin only</strong>
+            <span>Logs are read directly from the server archive and are never visible to client roles.</span>
         </div>
     </div>
 
@@ -31,93 +37,117 @@
     }
     else
     {
-        <div class="panel mb-3">
-            <div class="panel-body">
-                <div class="toolbar-group">
-                    <select class="form-select filter-control" style="max-width: 220px;" value="@_selectedDate" @onchange="OnDateChangedAsync">
+        <div class="log-toolbar">
+            <div class="view-switch" role="group" aria-label="Log period">
+                <button type="button" class="@(_viewMode == "Day" ? "active" : null)" @onclick='() => ChangeViewAsync("Day")'>
+                    <i class="bi bi-calendar-day"></i> Day
+                </button>
+                <button type="button" class="@(_viewMode == "Month" ? "active" : null)" @onclick='() => ChangeViewAsync("Month")'>
+                    <i class="bi bi-calendar3"></i> Month
+                </button>
+            </div>
+
+            <div class="filter-field period-field">
+                <label>@(_viewMode == "Month" ? "Month" : "Log date")</label>
+                @if (_viewMode == "Month")
+                {
+                    <select class="form-select" value="@_selectedMonth" @onchange="OnMonthChangedAsync">
+                        @foreach (var month in AvailableMonths)
+                        {
+                            <option value="@month.Key">@month.Label (@FormatSize(month.SizeBytes))</option>
+                        }
+                    </select>
+                }
+                else
+                {
+                    <select class="form-select" value="@_selectedDate" @onchange="OnDateChangedAsync">
                         @foreach (var file in _files)
                         {
                             <option value="@file.Date.ToString("yyyy-MM-dd")">@file.Date.ToString("dd MMM yyyy") (@FormatSize(file.SizeBytes))</option>
                         }
                     </select>
+                }
+            </div>
 
-                    <select class="form-select filter-control" style="max-width: 160px;" value="@_levelFilter" @onchange="OnLevelFilterChangedAsync">
-                        <option value="All">All levels</option>
-                        <option value="ERR">Error</option>
-                        <option value="WRN">Warning</option>
-                        <option value="INF">Info</option>
-                        <option value="DBG">Debug</option>
-                        <option value="FTL">Fatal</option>
-                    </select>
+            <div class="filter-field level-field">
+                <label>Level</label>
+                <select class="form-select" value="@_levelFilter" @onchange="OnLevelFilterChangedAsync">
+                    <option value="All">All levels</option>
+                    <option value="ERR">Error</option>
+                    <option value="WRN">Warning</option>
+                    <option value="INF">Info</option>
+                    <option value="DBG">Debug</option>
+                    <option value="FTL">Fatal</option>
+                </select>
+            </div>
 
-                    <input class="form-control filter-control" placeholder="Search message text" value="@_search" @oninput="OnSearchChangedAsync" />
+            <div class="filter-field search-field">
+                <label>Search messages</label>
+                <div class="search-input">
+                    <i class="bi bi-search"></i>
+                    <input class="form-control" placeholder="Message text, exception or path" value="@_search" @oninput="OnSearchChangedAsync" />
                 </div>
+            </div>
+
+            <div class="period-summary">
+                <span>@PeriodLabel</span>
+                <strong>@(_entries?.TotalCount.ToString("N0") ?? "0") entries</strong>
             </div>
         </div>
 
         @if (_analytics is not null)
         {
-            <div class="row row-cols-1 row-cols-md-4 g-3 mb-3 metric-grid">
-                <div class="col">
-                    <div class="card metric-card h-100">
-                        <div class="card-body">
-                            <div class="metric-icon"><i class="bi bi-journal-text"></i></div>
-                            <h6 class="card-subtitle">Total Entries</h6>
-                            <p class="card-text metric-value">@_analytics.TotalEntries.ToString("N0")</p>
-                        </div>
+            <div class="log-metrics">
+                <div class="log-metric total">
+                    <span class="log-metric-icon"><i class="bi bi-journal-text"></i></span>
+                    <div>
+                        <span>Total entries</span>
+                        <strong>@_analytics.TotalEntries.ToString("N0")</strong>
                     </div>
                 </div>
                 @foreach (var levelCount in _analytics.LevelCounts)
                 {
-                    <div class="col">
-                        <div class="card metric-card h-100">
-                            <div class="card-body">
-                                <div class="metric-icon"><i class="bi @LevelIcon(levelCount.Level)"></i></div>
-                                <h6 class="card-subtitle">@LevelLabel(levelCount.Level)</h6>
-                                <p class="card-text metric-value">@levelCount.Count.ToString("N0")</p>
-                            </div>
+                    <div class="log-metric @LevelTone(levelCount.Level)">
+                        <span class="log-metric-icon"><i class="bi @LevelIcon(levelCount.Level)"></i></span>
+                        <div>
+                            <span>@LevelLabel(levelCount.Level)</span>
+                            <strong>@levelCount.Count.ToString("N0")</strong>
                         </div>
                     </div>
                 }
             </div>
 
-            <div class="panel mb-3">
+            <div class="panel log-chart-panel">
                 <div class="panel-header">
                     <div>
-                        <h2 class="panel-title">Entries by Hour</h2>
-                        <p class="panel-subtitle">@_analytics.Date.ToString("dd MMM yyyy"), local server time.</p>
+                        <h2 class="panel-title">@(_viewMode == "Month" ? "Entries by Day" : "Entries by Hour")</h2>
+                        <p class="panel-subtitle">@PeriodLabel · local server time</p>
                     </div>
                 </div>
-                <div class="panel-body">
-                    @{
-                        var maxHourly = Math.Max(1, _analytics.HourlyCounts.Max());
-                    }
-                    <div style="display:flex; align-items:flex-end; gap:3px; height:120px;">
-                        @for (var hour = 0; hour < _analytics.HourlyCounts.Count; hour++)
+                <div class="panel-body chart-body">
+                    <div class="chart-grid">
+                        @foreach (var bucket in TimelineBuckets)
                         {
-                            var count = _analytics.HourlyCounts[hour];
-                            var heightPercent = count == 0 ? 0 : Math.Max(4, (int)(count * 100.0 / maxHourly));
-                            <div title="@hour:00 - @(count) entries" style="flex:1; display:flex; flex-direction:column; justify-content:flex-end; height:100%;">
-                                <div style="background:#2563eb; border-radius:3px 3px 0 0; width:100%; height:@(heightPercent)%;"></div>
+                            <div class="chart-column" title="@bucket.Tooltip">
+                                <span class="chart-value">@(bucket.Count > 0 ? bucket.Count : null)</span>
+                                <div class="chart-track"><span style="height: @(bucket.HeightPercent)%"></span></div>
+                                <span class="chart-label">@bucket.Label</span>
                             </div>
                         }
-                    </div>
-                    <div style="display:flex; justify-content:space-between; font-size:11px; color:#64748b; margin-top:4px;">
-                        <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span>
                     </div>
                 </div>
             </div>
 
             @if (_analytics.TopWarningsAndErrors.Count > 0)
             {
-                <div class="panel mb-3">
+                <div class="panel issue-panel">
                     <div class="panel-header">
                         <div>
                             <h2 class="panel-title">Most Frequent Warnings &amp; Errors</h2>
                         </div>
                     </div>
                     <div class="table-responsive panel-table">
-                        <table class="table table-sm align-middle mb-0">
+                        <table class="table table-sm align-middle mb-0 log-table">
                             <thead>
                                 <tr><th>Level</th><th>Message</th><th class="text-end">Count</th></tr>
                             </thead>
@@ -137,10 +167,10 @@
             }
         }
 
-        <div class="panel">
+        <div class="panel entries-panel">
             <div class="panel-header">
                 <div>
-                    <h2 class="panel-title">Entries</h2>
+                    <h2 class="panel-title">Log Entries</h2>
                     <p class="panel-subtitle">@(_entries?.TotalCount.ToString("N0") ?? "0") matching entries.</p>
                 </div>
             </div>
@@ -158,7 +188,7 @@
             else
             {
                 <div class="table-responsive panel-table">
-                    <table class="table table-sm align-middle mb-0">
+                    <table class="table table-sm align-middle mb-0 log-table entries-table">
                         <thead>
                             <tr><th style="width:160px;">Time</th><th style="width:90px;">Level</th><th>Message</th></tr>
                         </thead>
@@ -166,7 +196,7 @@
                             @foreach (var entry in _entries.Items)
                             {
                                 <tr>
-                                    <td>@entry.Timestamp.ToLocalTime().ToString("dd MMM HH:mm:ss")</td>
+                                    <td><span class="entry-date">@entry.Timestamp.ToLocalTime().ToString("dd MMM")</span><span class="entry-time">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span></td>
                                     <td><span class="status-pill @(entry.Level == "ERR" || entry.Level == "FTL" ? "danger" : entry.Level == "WRN" ? "warning" : "success")">@LevelLabel(entry.Level)</span></td>
                                     <td style="white-space: pre-wrap;">@entry.Message</td>
                                 </tr>
@@ -194,6 +224,8 @@
 @code {
     private IReadOnlyList<LogFileSummaryDto>? _files;
     private string _selectedDate = string.Empty;
+    private string _selectedMonth = string.Empty;
+    private string _viewMode = "Day";
     private string _levelFilter = "All";
     private string _search = string.Empty;
     private int _pageNumber = 1;
@@ -208,15 +240,80 @@
         if (_files.Count > 0)
         {
             _selectedDate = _files[0].Date.ToString("yyyy-MM-dd");
-            await LoadForSelectedDateAsync();
+            _selectedMonth = _files[0].Date.ToString("yyyy-MM");
+            await LoadForSelectedPeriodAsync();
         }
+    }
+
+    private IReadOnlyList<(string Key, string Label, long SizeBytes)> AvailableMonths => _files is null
+        ? []
+        : _files
+            .GroupBy(file => new { file.Date.Year, file.Date.Month })
+            .OrderByDescending(group => group.Key.Year)
+            .ThenByDescending(group => group.Key.Month)
+            .Select(group => (
+                $"{group.Key.Year:D4}-{group.Key.Month:D2}",
+                new DateOnly(group.Key.Year, group.Key.Month, 1).ToString("MMMM yyyy"),
+                group.Sum(file => file.SizeBytes)))
+            .ToList();
+
+    private string PeriodLabel => TryGetSelectedPeriod(out var startDate, out var endDate)
+        ? startDate == endDate ? startDate.ToString("dd MMM yyyy") : startDate.ToString("MMMM yyyy")
+        : "No period selected";
+
+    private IReadOnlyList<(string Label, int Count, int HeightPercent, string Tooltip)> TimelineBuckets
+    {
+        get
+        {
+            if (_analytics is null)
+            {
+                return [];
+            }
+
+            if (_viewMode == "Month")
+            {
+                var maxDaily = Math.Max(1, _analytics.DailyCounts.Max(item => item.Count));
+                return _analytics.DailyCounts.Select(item => (
+                    item.Date.Day.ToString(),
+                    item.Count,
+                    item.Count == 0 ? 0 : Math.Max(5, (int)(item.Count * 100.0 / maxDaily)),
+                    $"{item.Date:dd MMM yyyy} · {item.Count:N0} entries")).ToList();
+            }
+
+            var maxHourly = Math.Max(1, _analytics.HourlyCounts.Max());
+            return _analytics.HourlyCounts.Select((count, hour) => (
+                hour % 3 == 0 || hour == 23 ? hour.ToString("00") : string.Empty,
+                count,
+                count == 0 ? 0 : Math.Max(5, (int)(count * 100.0 / maxHourly)),
+                $"{hour:00}:00 · {count:N0} entries")).ToList();
+        }
+    }
+
+    private async Task ChangeViewAsync(string viewMode)
+    {
+        if (_viewMode == viewMode)
+        {
+            return;
+        }
+
+        _viewMode = viewMode;
+        _pageNumber = 1;
+        await LoadForSelectedPeriodAsync();
     }
 
     private async Task OnDateChangedAsync(ChangeEventArgs args)
     {
         _selectedDate = args.Value?.ToString() ?? string.Empty;
         _pageNumber = 1;
-        await LoadForSelectedDateAsync();
+        _selectedMonth = DateOnly.TryParse(_selectedDate, out var date) ? date.ToString("yyyy-MM") : _selectedMonth;
+        await LoadForSelectedPeriodAsync();
+    }
+
+    private async Task OnMonthChangedAsync(ChangeEventArgs args)
+    {
+        _selectedMonth = args.Value?.ToString() ?? string.Empty;
+        _pageNumber = 1;
+        await LoadForSelectedPeriodAsync();
     }
 
     private async Task OnLevelFilterChangedAsync(ChangeEventArgs args)
@@ -246,26 +343,50 @@
         await LoadEntriesAsync(1);
     }
 
-    private async Task LoadForSelectedDateAsync()
+    private async Task LoadForSelectedPeriodAsync()
     {
-        if (!DateOnly.TryParse(_selectedDate, out var date))
+        if (!TryGetSelectedPeriod(out var startDate, out var endDate))
         {
             return;
         }
 
-        _analytics = await Mediator.Send(new GetLogAnalyticsQuery(date));
+        _analytics = await Mediator.Send(new GetLogAnalyticsQuery(startDate, endDate));
         await LoadEntriesAsync(1);
     }
 
     private async Task LoadEntriesAsync(int pageNumber)
     {
-        if (!DateOnly.TryParse(_selectedDate, out var date))
+        if (!TryGetSelectedPeriod(out var startDate, out var endDate))
         {
             return;
         }
 
         _pageNumber = Math.Max(1, pageNumber);
-        _entries = await Mediator.Send(new GetLogEntriesQuery(date, _levelFilter, _search, _pageNumber, PageSize));
+        _entries = await Mediator.Send(new GetLogEntriesQuery(startDate, _levelFilter, _search, _pageNumber, PageSize, endDate));
+    }
+
+    private bool TryGetSelectedPeriod(out DateOnly startDate, out DateOnly endDate)
+    {
+        if (_viewMode == "Month")
+        {
+            var parts = _selectedMonth.Split('-');
+            if (parts.Length == 2 && int.TryParse(parts[0], out var year) && int.TryParse(parts[1], out var month)
+                && year is >= 1 and <= 9999 && month is >= 1 and <= 12)
+            {
+                startDate = new DateOnly(year, month, 1);
+                endDate = startDate.AddMonths(1).AddDays(-1);
+                return true;
+            }
+        }
+        else if (DateOnly.TryParse(_selectedDate, out startDate))
+        {
+            endDate = startDate;
+            return true;
+        }
+
+        startDate = default;
+        endDate = default;
+        return false;
     }
 
     private static string FormatSize(long bytes) => bytes switch
@@ -292,5 +413,13 @@
         "WRN" => "bi-exclamation-triangle",
         "DBG" or "VRB" => "bi-bug",
         _ => "bi-info-circle",
+    };
+
+    private static string LevelTone(string level) => level switch
+    {
+        "ERR" or "FTL" => "danger",
+        "WRN" => "warning",
+        "DBG" or "VRB" => "neutral",
+        _ => "info",
     };
 }

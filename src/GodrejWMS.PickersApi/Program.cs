@@ -81,6 +81,7 @@ api.MapMaterialsEndpoints();
 api.MapInwardNoPkmEndpoints();
 api.MapRacksEndpoints();
 api.MapPulloutEndpoints();
+api.MapPickerPutawayEndpoints();
 
 // Same shared database as GodrejWMS.Web, which already applies pending migrations at startup -
 // mirrored here (not copied from Web, just the same Infrastructure-layer helper both hosts share)

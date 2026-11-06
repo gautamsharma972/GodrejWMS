@@ -1,7 +1,10 @@
 import { Stack, useRouter, useSegments } from "expo-router";
 import { useEffect } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { StatusBar } from "expo-status-bar";
+import { View } from "react-native";
 import { AuthProvider, useAuth } from "../auth/AuthContext";
+import { LoadingView } from "../components/ui/LoadingView";
+import { colors } from "../theme";
 
 function RootNavigator() {
   const { isLoading, token } = useAuth();
@@ -20,20 +23,30 @@ function RootNavigator() {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#f1f5f9" }}>
-        <ActivityIndicator size="large" color="#2563eb" />
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <LoadingView />
       </View>
     );
   }
 
   return (
-    <Stack screenOptions={{ headerStyle: { backgroundColor: "#2563eb" }, headerTintColor: "#fff", headerTitleStyle: { fontWeight: "600" } }}>
+    <Stack
+      screenOptions={{
+        headerStyle: { backgroundColor: colors.surface },
+        headerTintColor: colors.textPrimary,
+        headerTitleStyle: { fontWeight: "800", fontSize: 17 },
+        headerShadowVisible: false,
+        contentStyle: { backgroundColor: colors.background },
+      }}
+    >
       <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="index" options={{ title: "WMS Pickers" }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="inward-entry" options={{ title: "Record Inward" }} />
       <Stack.Screen name="inward-result" options={{ title: "Allocation Result" }} />
       <Stack.Screen name="inward-history" options={{ title: "Inward History" }} />
       <Stack.Screen name="inward-detail/[id]" options={{ title: "GRN Detail" }} />
+      <Stack.Screen name="picker-putaway-queue" options={{ title: "Picker Put-away" }} />
+      <Stack.Screen name="picker-putaway/[id]" options={{ title: "Picker Put-away" }} />
       <Stack.Screen name="inward-putaway-queue" options={{ title: "Inward Putaway Queue" }} />
       <Stack.Screen name="inward-putaway/[id]" options={{ title: "Confirm Putaway" }} />
       <Stack.Screen name="pullout-queue" options={{ title: "Pullout Queue" }} />
@@ -45,6 +58,7 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <AuthProvider>
+      <StatusBar style="dark" />
       <RootNavigator />
     </AuthProvider>
   );

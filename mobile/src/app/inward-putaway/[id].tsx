@@ -1,11 +1,20 @@
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ApiError } from "../../api/client";
 import { changeInwardPutawayLocation, confirmInwardPutaway, getInwardDetail } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { InwardLocationChangeModal } from "../../components/InwardLocationChangeModal";
+import { AppIcon } from "../../components/ui/AppIcon";
+import { Button } from "../../components/ui/Button";
+import { Card } from "../../components/ui/Card";
+import { LoadingView } from "../../components/ui/LoadingView";
+import { Screen } from "../../components/ui/Screen";
+import { StatusBadge } from "../../components/ui/StatusBadge";
+import { colors, radius, spacing, typography } from "../../theme";
 import type { InwardDetailDto } from "../../types/api";
+import { errorPulse, successPulse } from "../../utils/haptics";
+import { formatDateTime } from "../../utils/status";
 
 export default function InwardPutawayScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -27,6 +36,8 @@ export default function InwardPutawayScreen() {
   }, [token, id]);
 
   useEffect(() => {
+    // Initial route hydration is intentionally driven by the selected GRN id.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
@@ -34,15 +45,17 @@ export default function InwardPutawayScreen() {
 
   if (isLoading || !detail) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color="#2563eb" />
-      </View>
+      <Screen>
+        <LoadingView />
+      </Screen>
     );
   }
 
   const rows = detail.lines.flatMap((line) =>
     line.putaways.map((putaway) => ({ putaway, materialNumber: line.materialNumber, materialDescription: line.materialDescription })),
   );
+  const confirmedRows = rows.filter((row) => row.putaway.isConfirmed).length;
+  const totalBoxes = rows.reduce((total, row) => total + row.putaway.quantityBoxes, 0);
 
   const handleLocationChange = async (newPalletPositionId: number, reason: string) => {
     if (!activePutawayId) return;
@@ -55,8 +68,10 @@ export default function InwardPutawayScreen() {
     setIsConfirming(true);
     try {
       await confirmInwardPutaway(token, detail.referenceNumber);
+      successPulse();
       await load();
     } catch (err) {
+      errorPulse();
       Alert.alert("Could not confirm putaway", err instanceof ApiError ? err.message : "Unexpected error.");
     } finally {
       setIsConfirming(false);
@@ -64,42 +79,97 @@ export default function InwardPutawayScreen() {
   };
 
   return (
-    <View style={styles.screen}>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-        <Text style={styles.reference}>{detail.referenceNumber}</Text>
-        <Text style={styles.subtitle}>{new Date(detail.createdAt).toLocaleString()}</Text>
+    <Screen>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryTopRow}>
+            <View style={styles.summaryIcon}>
+              <AppIcon name="cube-outline" size={22} color={colors.primary} />
+            </View>
+            <View style={styles.summaryCopy}>
+              <Text style={styles.eyebrow}>PUT-AWAY CONFIRMATION</Text>
+              <Text style={styles.reference} numberOfLines={1}>{detail.referenceNumber}</Text>
+              <Text style={styles.subtitle}>{formatDateTime(detail.createdAt)}</Text>
+            </View>
+          </View>
+          <View style={styles.summaryStats}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{rows.length}</Text>
+              <Text style={styles.statLabel}>Locations</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{totalBoxes}</Text>
+              <Text style={styles.statLabel}>Boxes</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{confirmedRows}/{rows.length}</Text>
+              <Text style={styles.statLabel}>Confirmed</Text>
+            </View>
+          </View>
+        </View>
         {detail.isConfirmed && (
           <View style={styles.confirmedBanner}>
             <Text style={styles.confirmedBannerText}>This GRN is fully confirmed.</Text>
           </View>
         )}
 
-        {rows.map((row) => (
-          <View key={row.putaway.id} style={styles.row}>
-            <Text style={styles.rowMaterial}>
-              {row.materialNumber} — {row.materialDescription}
-            </Text>
-            <Text style={styles.rowLocation}>
-              {row.putaway.locationCode} · {row.putaway.quantityBoxes} boxes
-            </Text>
-            {row.putaway.isConfirmed ? (
-              <View style={styles.confirmedPill}>
-                <Text style={styles.confirmedPillText}>Confirmed</Text>
-              </View>
-            ) : (
-              <TouchableOpacity style={styles.changeButton} onPress={() => setActivePutawayId(row.putaway.id)}>
-                <Text style={styles.changeButtonText}>Change location</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ))}
+        <View style={styles.sectionHeading}>
+          <Text style={styles.sectionTitle}>Put-away locations</Text>
+          <Text style={styles.sectionHint}>Review before confirming</Text>
+        </View>
 
-        {!detail.isConfirmed && !detail.isRejected && (
-          <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm} disabled={isConfirming}>
-            {isConfirming ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmButtonText}>Confirm Putaway</Text>}
-          </TouchableOpacity>
-        )}
+        {rows.map((row, index) => (
+          <Card key={row.putaway.id} style={styles.row}>
+            <View style={styles.rowTop}>
+              <View style={styles.rowNumber}><Text style={styles.rowNumberText}>{index + 1}</Text></View>
+              <View style={styles.rowCopy}>
+                <Text style={styles.rowMaterial} numberOfLines={2}>{row.materialDescription}</Text>
+                <Text style={styles.materialCode}>{row.materialNumber}</Text>
+              </View>
+              {row.putaway.isConfirmed && <StatusBadge label="Confirmed" tone="success" variant="soft" />}
+            </View>
+            <View style={styles.allocationRow}>
+              <View style={styles.locationPill}>
+                <AppIcon name="location-outline" size={16} color={colors.primary} />
+                <Text style={styles.locationText}>{row.putaway.locationCode}</Text>
+              </View>
+              <View style={styles.quantityPill}>
+                <AppIcon name="cube-outline" size={15} color={colors.textSecondary} />
+                <Text style={styles.quantityText}>{row.putaway.quantityBoxes} boxes</Text>
+              </View>
+              {!row.putaway.isConfirmed && (
+                <Button
+                  title="Change"
+                  variant="ghost"
+                  fullWidth={false}
+                  icon={<AppIcon name="swap-horizontal" size={17} color={colors.primary} />}
+                  onPress={() => setActivePutawayId(row.putaway.id)}
+                  style={styles.changeAction}
+                />
+              )}
+            </View>
+          </Card>
+        ))}
       </ScrollView>
+
+      {!detail.isConfirmed && !detail.isRejected && (
+        <View style={styles.actionBar}>
+          <View style={styles.actionCopy}>
+            <Text style={styles.actionLabel}>{totalBoxes} boxes</Text>
+            <Text style={styles.actionHint}>Ready to put away</Text>
+          </View>
+          <Button
+            title="Confirm Putaway"
+            onPress={handleConfirm}
+            loading={isConfirming}
+            icon={<AppIcon name="checkmark-circle-outline" size={20} color={colors.textOnPrimary} />}
+            fullWidth={false}
+            style={styles.confirmAction}
+          />
+        </View>
+      )}
 
       <InwardLocationChangeModal
         putawayId={activePutawayId}
@@ -107,24 +177,45 @@ export default function InwardPutawayScreen() {
         onClose={() => setActivePutawayId(null)}
         onSubmit={handleLocationChange}
       />
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#f1f5f9" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  reference: { fontSize: 20, fontWeight: "700", color: "#0f172a" },
-  subtitle: { fontSize: 13, color: "#64748b", marginTop: 2, marginBottom: 12 },
-  confirmedBanner: { backgroundColor: "#dcfce7", borderRadius: 10, padding: 12, marginBottom: 16 },
-  confirmedBannerText: { color: "#166534", fontWeight: "600", fontSize: 13 },
-  row: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: "#e2e8f0" },
-  rowMaterial: { fontSize: 14, fontWeight: "700", color: "#0f172a" },
-  rowLocation: { fontSize: 13, color: "#64748b", marginTop: 4, marginBottom: 8 },
-  confirmedPill: { alignSelf: "flex-start", backgroundColor: "#dcfce7", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  confirmedPillText: { color: "#16a34a", fontSize: 11, fontWeight: "700" },
-  changeButton: { alignSelf: "flex-start", borderWidth: 1, borderColor: "#2563eb", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
-  changeButtonText: { color: "#2563eb", fontSize: 12, fontWeight: "700" },
-  confirmButton: { backgroundColor: "#2563eb", borderRadius: 10, paddingVertical: 14, alignItems: "center", marginTop: 8 },
-  confirmButtonText: { color: "#fff", fontWeight: "700" },
+  content: { padding: spacing.lg, paddingBottom: 112 },
+  summaryCard: { backgroundColor: colors.primarySoft, borderColor: "#c7d2fe", borderWidth: 1, borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.lg },
+  summaryTopRow: { flexDirection: "row", alignItems: "center" },
+  summaryIcon: { width: 48, height: 48, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", marginRight: spacing.md },
+  summaryCopy: { flex: 1, minWidth: 0 },
+  eyebrow: { ...typography.label, color: colors.primary, letterSpacing: 0.6, marginBottom: 2 },
+  reference: { ...typography.title, color: colors.textPrimary },
+  subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 3 },
+  summaryStats: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.72)", borderRadius: radius.md, marginTop: spacing.lg, paddingVertical: spacing.md },
+  statItem: { flex: 1, alignItems: "center" },
+  statValue: { fontSize: 18, lineHeight: 22, fontWeight: "800", color: colors.textPrimary },
+  statLabel: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  statDivider: { width: 1, height: 30, backgroundColor: "#dbe2f3" },
+  confirmedBanner: { backgroundColor: colors.successSoft, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg },
+  confirmedBannerText: { color: colors.successText, fontWeight: "700", fontSize: 13 },
+  sectionHeading: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", marginBottom: spacing.sm, paddingHorizontal: 2 },
+  sectionTitle: { ...typography.title, fontSize: 17, color: colors.textPrimary },
+  sectionHint: { ...typography.caption, color: colors.textMuted },
+  row: { marginBottom: spacing.md, padding: spacing.md, shadowOpacity: 0.035 },
+  rowTop: { flexDirection: "row", alignItems: "flex-start" },
+  rowNumber: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.neutralSoft, alignItems: "center", justifyContent: "center", marginRight: spacing.sm },
+  rowNumberText: { ...typography.label, color: colors.textSecondary },
+  rowCopy: { flex: 1, minWidth: 0, paddingRight: spacing.sm },
+  rowMaterial: { ...typography.subtitle, color: colors.textPrimary, lineHeight: 20 },
+  materialCode: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  allocationRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, gap: spacing.sm },
+  locationPill: { flexDirection: "row", alignItems: "center", backgroundColor: colors.primarySoft, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 7 },
+  locationText: { ...typography.caption, color: colors.primaryText, fontWeight: "700", marginLeft: spacing.xs },
+  quantityPill: { flexDirection: "row", alignItems: "center", backgroundColor: colors.neutralSoft, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 7 },
+  quantityText: { ...typography.caption, color: colors.textSecondary, fontWeight: "700", marginLeft: spacing.xs },
+  changeAction: { marginLeft: "auto" },
+  actionBar: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md },
+  actionCopy: { flex: 1 },
+  actionLabel: { ...typography.bodyStrong, color: colors.textPrimary },
+  actionHint: { ...typography.caption, color: colors.textSecondary, marginTop: 1 },
+  confirmAction: { minWidth: 190 },
 });
