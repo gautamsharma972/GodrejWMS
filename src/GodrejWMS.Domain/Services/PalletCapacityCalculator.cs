@@ -15,6 +15,11 @@ public static class PalletCapacityCalculator
     public static decimal EffectiveCapacityBoxes(int maxPallets, int palletCapacityBoxes) =>
         maxPallets * palletCapacityBoxes;
 
+    /// <summary>A location that holds several materials (left-over stock loaded through the Inventory Master upload) is
+    /// only as roomy as its smallest pallet: Max Pallets x the minimum Pallet Size of the materials kept there.</summary>
+    public static decimal EffectiveCapacityBoxes(int maxPallets, IEnumerable<int> palletCapacityBoxes) =>
+        EffectiveCapacityBoxes(maxPallets, palletCapacityBoxes.Min());
+
     public static decimal EffectiveCapacityBoxes(PalletPosition position, Material material) =>
         EffectiveCapacityBoxes(position.MaxPallets, material.PalletCapacityBoxes);
 }

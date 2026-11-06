@@ -9,7 +9,8 @@ public sealed record StockMasterImportRow(
     decimal QuantityBoxes,
     string MfgMonthText,
     string PalletPositionCode,
-    int RowNumber);
+    int RowNumber,
+    string? InvalidMaterialCode = null);
 
 /// <summary>Mirrors "Format inventory master" / "Format invent pullout-download": Material Code, Material Desc.,
 /// Design Type, Total Stock in CFB, Mfg Month, Pallet Position.</summary>

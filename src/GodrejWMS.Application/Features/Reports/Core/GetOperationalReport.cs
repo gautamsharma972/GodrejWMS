@@ -112,10 +112,10 @@ public sealed class GetOperationalReportHandler(
     {
         Id = p.Id, WarehouseId = p.Rack.WarehouseId, Warehouse = p.Rack.Warehouse.Code, Location = p.LocationCode,
         Zone = p.ZoneType.Code, Rack = p.Rack.Code, Column = p.Column, Level = p.Level,
-        Capacity = p.MaxPallets * (p.StockBatches.Where(b => b.QuantityBoxes > 0).Select(b => (int?)b.Material.PalletCapacityBoxes).FirstOrDefault() ?? 0),
+        Capacity = p.MaxPallets * (p.StockBatches.Where(b => b.QuantityBoxes > 0).Min(b => (int?)b.Material.PalletCapacityBoxes) ?? 0),
         Quantity = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0,
         ReservedCapacity = db.InwardPutaways.Where(a => a.PalletPositionId == p.Id && !a.IsConfirmed && !a.InwardTransactionLine.InwardTransaction.IsRejected).Sum(a => (decimal?)a.QuantityBoxes) ?? 0,
-        Available = (p.MaxPallets * (p.StockBatches.Where(b => b.QuantityBoxes > 0).Select(b => (int?)b.Material.PalletCapacityBoxes).FirstOrDefault() ?? 0))
+        Available = (p.MaxPallets * (p.StockBatches.Where(b => b.QuantityBoxes > 0).Min(b => (int?)b.Material.PalletCapacityBoxes) ?? 0))
             - (p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0) -
             (db.InwardPutaways.Where(a => a.PalletPositionId == p.Id && !a.IsConfirmed && !a.InwardTransactionLine.InwardTransaction.IsRejected).Sum(a => (decimal?)a.QuantityBoxes) ?? 0),
         Status = "Active", Locations = 1,

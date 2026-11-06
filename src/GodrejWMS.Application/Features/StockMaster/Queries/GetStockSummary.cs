@@ -40,7 +40,7 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db, IOptions<St
                 p.MaxPallets,
                 Occupied = p.StockBatches.Where(b => b.Material.IsActive).Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
                 Reserved = db.InwardPutaways.Where(r => !r.IsConfirmed && r.PalletPositionId == p.Id).Sum(r => (decimal?)r.QuantityBoxes) ?? 0m,
-                PalletCapacityBoxes = p.StockBatches.Where(b => b.Material.IsActive).Where(b => b.QuantityBoxes > 0).Select(b => (int?)b.Material.PalletCapacityBoxes).FirstOrDefault()
+                PalletCapacityBoxes = p.StockBatches.Where(b => b.Material.IsActive).Where(b => b.QuantityBoxes > 0).Min(b => (int?)b.Material.PalletCapacityBoxes)
                     ?? db.InwardPutaways.Where(r => !r.IsConfirmed && r.PalletPositionId == p.Id)
                         .Select(r => (int?)r.InwardTransactionLine.Material.PalletCapacityBoxes).FirstOrDefault()
             })

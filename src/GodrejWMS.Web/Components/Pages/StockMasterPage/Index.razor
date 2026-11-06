@@ -43,7 +43,7 @@
                     <i class="bi bi-file-earmark-arrow-down" aria-hidden="true"></i>
                     Sample Format
                 </button>
-                <label class="btn btn-outline-primary mb-0" for="stock-master-excel-upload">
+                <button type="button" class="btn btn-outline-primary" @onclick="OpenImport" disabled="@_importing">
                     @if (_importing)
                     {
                         <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
@@ -54,8 +54,7 @@
                         <i class="bi bi-upload" aria-hidden="true"></i>
                         <span>Upload Excel</span>
                     }
-                </label>
-                <InputFile id="stock-master-excel-upload" OnChange="OnImportFileSelected" class="visually-hidden" />
+                </button>
             </PermissionAuthorize>
             <button class="btn btn-outline-primary" data-tour="inv-export" @onclick="DownloadAsync">
                 <i class="bi bi-download" aria-hidden="true"></i>
@@ -71,11 +70,26 @@
     @if (_importResult is not null)
     {
         <div class="alert alert-info mb-0">
-            Import complete: @_importResult.Created created, @_importResult.Updated updated.
+            @if (_importResult.Errors.Count > 0 && _importResult.Created == 0 && _importResult.Updated == 0)
+            {
+                <strong>Nothing was changed.</strong> <span>Fix the rows below and upload again.</span>
+            }
+            else
+            {
+                <span>Import complete: @_importResult.Created created, @_importResult.Updated updated, @_importResult.Cleared cleared (not in the file).
+                    @if (_importResult.Errors.Count > 0) { <strong>Rows with errors were skipped:</strong> }</span>
+            }
             @if (_importResult.Errors.Count > 0)
             {
                 <ul class="mb-0">
                     @foreach (var error in _importResult.Errors) { <li>@error</li> }
+                </ul>
+            }
+            @if (_importResult.Warnings is { Count: > 0 })
+            {
+                <div class="mt-2 fw-semibold text-warning-emphasis"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Over capacity (loaded anyway)</div>
+                <ul class="mb-0">
+                    @foreach (var warning in _importResult.Warnings) { <li>@warning</li> }
                 </ul>
             }
         </div>
@@ -85,7 +99,7 @@
         <div class="toolbar-group">
             <div class="input-group search-control" data-tour="inv-search">
                 <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
-                <input class="form-control" placeholder="Search material code or description"
+                <input class="form-control" placeholder="Search material code, description or pallet position"
                        @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
             </div>
             <select class="form-select filter-control" data-tour="inv-filters" value="@_designTypeFilter" @onchange="OnDesignTypeFilterChanged">
@@ -188,6 +202,43 @@
                 </li>
             </ul>
         </nav>
+    }
+
+    @if (_showImport)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseImport">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="import-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Inventory Control</div>
+                        <h2 id="import-title" class="slide-over-title">Upload Inventory Master</h2>
+                        <p class="slide-over-subtitle">The file replaces the stock of the locations it lists.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close upload" @onclick="CloseImport">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    <div class="alert alert-warning" role="alert">
+                        <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                        Stock at every location listed in the file is replaced by the file: other material in those locations is cleared, not merged.
+                        Locations that are not in the file are not touched. Rows with errors are skipped and listed.
+                    </div>
+                    <label class="form-label">Warehouse</label>
+                    <div class="mb-3">
+                        <WarehouseSelect WarehouseId="_importWarehouseId" WarehouseIdChanged="OnImportWarehouseChanged" Placeholder="Select warehouse..." />
+                    </div>
+                    <label class="form-label" for="stock-master-excel-upload">Excel file</label>
+                    <InputFile id="stock-master-excel-upload" class="form-control" accept=".xlsx" OnChange="OnImportFileChosen" />
+                </div>
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseImport">Cancel</button>
+                    <button type="button" class="btn btn-primary" disabled="@(_importWarehouseId is null || _importFile is null)" @onclick="ImportAsync">
+                        <i class="bi bi-upload" aria-hidden="true"></i> Replace stock
+                    </button>
+                </div>
+            </div>
+        </div>
     }
 
     @if (_adjustmentRow is not null)
@@ -313,6 +364,9 @@
     private bool _sortDescending;
     private bool _importing;
     private ImportStockMasterResult? _importResult;
+    private bool _showImport;
+    private int? _importWarehouseId;
+    private IBrowserFile? _importFile;
     private StockMasterRowDto? _adjustmentRow;
     private int _countedQuantity;
     private string _adjustmentReasonCode = InventoryAdjustmentReasonCodes.PhysicalCountVariance;
@@ -544,20 +598,39 @@
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
 
-    private async Task OnImportFileSelected(InputFileChangeEventArgs e)
+    private void OpenImport()
     {
+        _importFile = null;
+        _showImport = true;
+    }
+
+    private void CloseImport() => _showImport = false;
+
+    private void OnImportWarehouseChanged(int? warehouseId) => _importWarehouseId = warehouseId;
+
+    private void OnImportFileChosen(InputFileChangeEventArgs e) => _importFile = e.File;
+
+    private async Task ImportAsync()
+    {
+        if (_importFile is null || _importWarehouseId is not { } warehouseId) return;
+
+        _showImport = false;
         _importing = true;
         _importResult = null;
         try
         {
-            await using var stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            await using var stream = _importFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
             using var memory = new MemoryStream();
             await stream.CopyToAsync(memory);
             memory.Position = 0;
 
-            _importResult = await Mediator.Send(new ImportStockMasterFromExcelCommand(memory));
-            await JsRuntime.InvokeVoidAsync("godrejWms.showToast",
-                $"Inventory Master import complete: {_importResult.Created} created, {_importResult.Updated} updated.");
+            _importResult = await Mediator.Send(new ImportStockMasterFromExcelCommand(memory, warehouseId));
+            if (_importResult.Created + _importResult.Updated > 0)
+            {
+                await JsRuntime.InvokeVoidAsync("godrejWms.showToast",
+                    $"Inventory Master replaced: {_importResult.Created} created, {_importResult.Updated} updated, {_importResult.Cleared} cleared.");
+            }
+
             await LoadPage(1);
         }
         catch (Exception ex)
@@ -568,6 +641,7 @@
         finally
         {
             _importing = false;
+            _importFile = null;
         }
     }
 

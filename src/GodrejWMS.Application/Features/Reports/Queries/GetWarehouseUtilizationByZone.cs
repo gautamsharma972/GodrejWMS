@@ -27,7 +27,7 @@ public sealed class GetWarehouseUtilizationByZoneHandler(IApplicationDbContext d
                 LocationTypeName = p.LocationType.DisplayName,
                 // Capacity is driven entirely by whichever material occupies a position; an
                 // empty location contributes 0 since there's no material context.
-                CapacityBoxes = p.MaxPallets * (p.StockBatches.Where(b => b.QuantityBoxes > 0).Select(b => (int?)b.Material.PalletCapacityBoxes).FirstOrDefault() ?? 0),
+                CapacityBoxes = p.MaxPallets * (p.StockBatches.Where(b => b.QuantityBoxes > 0).Min(b => (int?)b.Material.PalletCapacityBoxes) ?? 0),
                 OccupiedBoxes = p.StockBatches.Sum(b => (decimal?)b.QuantityBoxes) ?? 0m
             })
             .ToListAsync(cancellationToken);

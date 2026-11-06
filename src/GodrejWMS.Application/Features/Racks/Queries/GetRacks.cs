@@ -40,14 +40,14 @@ public sealed class GetRacksHandler(IApplicationDbContext db) : IRequestHandler<
 
         var positionIds = racks.SelectMany(r => r.Positions).Select(p => p.Id).ToList();
 
-        // Capacity is driven entirely by whichever material occupies a position (a position only
-        // ever holds one material at a time) - an empty position has no material context, so it
+        // Capacity is driven by the material(s) occupying a position (the smallest Pallet Size when it
+        // holds several) - an empty position has no material context, so it
         // contributes nothing to the rack's total capacity.
         var stockByPosition = await db.StockBatches
             .AsNoTracking()
             .Where(b => b.QuantityBoxes > 0 && b.Material.IsActive && positionIds.Contains(b.PalletPositionId))
             .GroupBy(b => b.PalletPositionId)
-            .Select(g => new { PalletPositionId = g.Key, PalletCapacityBoxes = g.Max(b => b.Material.PalletCapacityBoxes) })
+            .Select(g => new { PalletPositionId = g.Key, PalletCapacityBoxes = g.Min(b => b.Material.PalletCapacityBoxes) })
             .ToDictionaryAsync(x => x.PalletPositionId, x => x.PalletCapacityBoxes, cancellationToken);
 
         return racks

@@ -41,12 +41,11 @@ public sealed class GetPalletPositionByCodeHandler(IApplicationDbContext db)
                 p.MaxPallets,
                 p.IsActive,
                 OccupiedBoxes = p.StockBatches.Where(b => b.Material.IsActive).Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
-                // A position only ever holds one material at a time, so the first occupied
-                // batch's material (if any) defines this location's effective capacity.
+                // A position normally holds one material; one holding several (left-over stock) is only as
+                // roomy as the smallest Pallet Size among them.
                 OccupyingPalletCapacityBoxes = p.StockBatches.Where(b => b.Material.IsActive)
                     .Where(b => b.QuantityBoxes > 0)
-                    .Select(b => (int?)b.Material.PalletCapacityBoxes)
-                    .FirstOrDefault(),
+                    .Min(b => (int?)b.Material.PalletCapacityBoxes),
                 Stock = p.StockBatches.Where(b => b.Material.IsActive)
                     .Where(b => b.QuantityBoxes > 0)
                     .OrderBy(b => b.Material.MaterialNumber)

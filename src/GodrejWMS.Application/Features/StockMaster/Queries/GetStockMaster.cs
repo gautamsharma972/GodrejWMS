@@ -61,7 +61,7 @@ public sealed class GetStockMasterHandler(IApplicationDbContext db)
         {
             var term = request.MaterialSearch.Trim();
             query = query.Where(b =>
-                b.Description.Contains(term) || b.MaterialNumber.ToString().Contains(term));
+                b.Description.Contains(term) || b.MaterialNumber.ToString().Contains(term) || b.LocationCode.Contains(term));
         }
 
         if (!string.IsNullOrWhiteSpace(request.DesignType))

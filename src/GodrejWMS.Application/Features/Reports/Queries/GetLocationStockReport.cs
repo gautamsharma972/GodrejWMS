@@ -69,6 +69,8 @@ public sealed class GetLocationStockReportHandler(
                 continue;
             }
 
+            // A location holding several materials is only as roomy as its smallest Pallet Size.
+            var capacity = (int)PalletCapacityCalculator.EffectiveCapacityBoxes(location.MaxPallets, held.Select(b => b.PalletCapacityBoxes));
             rows.AddRange(held.Select(b => new LocationStockReportRowDto(
                 location.LocationCode,
                 b.MaterialNumber,
@@ -77,7 +79,7 @@ public sealed class GetLocationStockReportHandler(
                 b.DesignType,
                 b.MfgMonth,
                 b.QuantityBoxes,
-                (int)PalletCapacityCalculator.EffectiveCapacityBoxes(location.MaxPallets, b.PalletCapacityBoxes))));
+                capacity)));
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Search))

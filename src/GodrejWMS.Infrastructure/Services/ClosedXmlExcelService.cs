@@ -1802,17 +1802,22 @@ public class ClosedXmlExcelService : IExcelService
         while (true)
         {
             var cellA = ws.Cell(row, 1);
-            if (cellA.IsEmpty() || !cellA.TryGetValue(out long materialNumber) || materialNumber <= 0)
+            // The sheet ends at the first completely blank row. A row with a Material Code that is not a number (e.g.
+            // "40034354x") is kept and reported by the import instead of silently ending the data there.
+            if (cellA.IsEmpty() && ws.Cell(row, 3).IsEmpty() && ws.Cell(row, 4).IsEmpty() && ws.Cell(row, 5).IsEmpty())
             {
                 break;
             }
 
+            long materialNumber = 0;
+            var validCode = !cellA.IsEmpty() && cellA.TryGetValue(out materialNumber) && materialNumber > 0;
             rows.Add(new StockMasterImportRow(
-                MaterialNumber: materialNumber,
+                MaterialNumber: validCode ? materialNumber : 0,
                 QuantityBoxes: ReadDecimal(ws.Cell(row, 3)),
                 MfgMonthText: ws.Cell(row, 4).GetString().Trim(),
                 PalletPositionCode: ws.Cell(row, 5).GetString().Trim(),
-                RowNumber: row));
+                RowNumber: row,
+                InvalidMaterialCode: validCode ? null : cellA.GetString().Trim()));
 
             row++;
         }

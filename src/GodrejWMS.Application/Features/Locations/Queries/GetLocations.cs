@@ -51,8 +51,7 @@ public sealed class GetLocationsHandler(IApplicationDbContext db)
                 OccupiedBoxes = p.StockBatches.Where(b => b.Material.IsActive).Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
                 OccupyingPalletCapacityBoxes = p.StockBatches.Where(b => b.Material.IsActive)
                     .Where(b => b.QuantityBoxes > 0)
-                    .Select(b => (int?)b.Material.PalletCapacityBoxes)
-                    .FirstOrDefault()
+                    .Min(b => (int?)b.Material.PalletCapacityBoxes)
             });
 
         if (!string.IsNullOrWhiteSpace(request.Search))
