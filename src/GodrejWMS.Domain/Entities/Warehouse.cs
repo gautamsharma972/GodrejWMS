@@ -23,6 +23,16 @@ public class Warehouse
     public bool AllowPkmMixing { get; set; } = true;
 
     public bool IsActive { get; set; } = true;
+
+    /// <summary>Picker login geofencing - vendor-configured only (Platform Admin), never exposed to
+    /// the client-facing Warehouses CRUD. When enabled, a user holding the Pickers role may only
+    /// sign in to the mobile app from within GeofenceRadiusMeters of this warehouse's coordinates
+    /// (or any other assigned warehouse's geofence), checked in GodrejWMS.PickersApi's login
+    /// endpoint. Disabled by default so existing deployments are unaffected.</summary>
+    public bool GeofenceEnabled { get; set; }
+    public double? GeofenceLatitude { get; set; }
+    public double? GeofenceLongitude { get; set; }
+    public int? GeofenceRadiusMeters { get; set; }
 }
 
 public class UserWarehouse

@@ -5,6 +5,7 @@ import { getPulloutQueue } from "../api/endpoints";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
+import { RefreshButton } from "../components/ui/RefreshButton";
 import { SkeletonList } from "../components/ui/Skeleton";
 import { Screen } from "../components/ui/Screen";
 import { SearchField } from "../components/ui/SearchField";
@@ -50,7 +51,15 @@ export default function PulloutQueueScreen() {
 
   return (
     <Screen padded>
-      <SearchField placeholder="Search reference, vehicle, destination, material" value={search} onChangeText={setSearch} />
+      <View style={styles.searchRow}>
+        <SearchField
+          containerStyle={styles.searchField}
+          placeholder="Search reference, vehicle, destination, material"
+          value={search}
+          onChangeText={setSearch}
+        />
+        <RefreshButton onPress={() => load(true)} refreshing={isRefreshing} />
+      </View>
 
       {isLoading ? (
         <SkeletonList />
@@ -82,6 +91,8 @@ export default function PulloutQueueScreen() {
 }
 
 const styles = StyleSheet.create({
+  searchRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
+  searchField: { flex: 1, marginBottom: 0 },
   card: { marginBottom: spacing.md },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   reference: { ...typography.subtitle, color: colors.textPrimary },

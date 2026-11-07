@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
 import { AuthProvider, useAuth } from "../auth/AuthContext";
+import { HeaderAccountButton } from "../components/ui/HeaderAccountButton";
 import { LoadingView } from "../components/ui/LoadingView";
 import { colors } from "../theme";
 
@@ -37,6 +38,7 @@ function RootNavigator() {
         headerTitleStyle: { fontWeight: "800", fontSize: 17 },
         headerShadowVisible: false,
         contentStyle: { backgroundColor: colors.background },
+        headerRight: () => <HeaderAccountButton />,
       }}
     >
       <Stack.Screen name="login" options={{ headerShown: false }} />

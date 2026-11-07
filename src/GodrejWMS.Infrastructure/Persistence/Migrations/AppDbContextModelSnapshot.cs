@@ -1924,6 +1924,20 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("varchar(32)");
 
+                    b.Property<bool>("GeofenceEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("tinyint(1)")
+                        .HasDefaultValue(false);
+
+                    b.Property<double?>("GeofenceLatitude")
+                        .HasColumnType("double");
+
+                    b.Property<double?>("GeofenceLongitude")
+                        .HasColumnType("double");
+
+                    b.Property<int?>("GeofenceRadiusMeters")
+                        .HasColumnType("int");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
 

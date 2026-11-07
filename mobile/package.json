@@ -1,6 +1,6 @@
 {
   "name": "mobile",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
@@ -13,6 +13,7 @@
     "expo-haptics": "~57.0.3",
     "expo-linear-gradient": "~57.0.2",
     "expo-linking": "~57.0.13",
+    "expo-location": "~57.0.23",
     "expo-router": "~57.0.29",
     "expo-secure-store": "~57.0.4",
     "expo-sharing": "~57.0.24",

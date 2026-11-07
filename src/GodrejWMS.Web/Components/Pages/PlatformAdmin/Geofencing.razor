@@ -1,0 +1,156 @@
+@page "/platform-admin/geofencing"
+@attribute [Authorize(Roles = "Platform Admin")]
+@using GodrejWMS.Application.Features.PlatformAdmin.Commands
+@using GodrejWMS.Application.Features.PlatformAdmin.Dtos
+@using GodrejWMS.Application.Features.PlatformAdmin.Queries
+@inject IMediator Mediator
+@inject ILogger<Geofencing> Logger
+
+<PageTitle>Picker Geofencing - Platform Admin</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Vendor Console</div>
+            <h1>Picker Geofencing</h1>
+            <p class="page-kicker">
+                Restrict Pickers-role mobile sign-in to within range of their warehouse. Not visible to the client.
+                <a href="/platform-admin">&larr; Back to Platform Admin</a>
+            </p>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-body">
+            @if (_rows is null)
+            {
+                <div class="loading-panel">
+                    <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                    Loading...
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive panel-table">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Warehouse</th>
+                                <th>Enabled</th>
+                                <th style="min-width: 140px">Latitude</th>
+                                <th style="min-width: 140px">Longitude</th>
+                                <th style="min-width: 120px">Radius (m)</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _rows)
+                            {
+                                <tr>
+                                    <td>
+                                        <span class="record-code">@row.Code</span>
+                                        <div class="text-muted small">@row.Name</div>
+                                    </td>
+                                    <td>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" checked="@row.Enabled"
+                                                   @onchange="e => row.Enabled = (bool)(e.Value ?? false)" />
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <input type="number" step="any" class="form-control form-control-sm" value="@row.LatitudeInput"
+                                               disabled="@(!row.Enabled)"
+                                               @onchange="e => row.LatitudeInput = e.Value?.ToString() ?? string.Empty" />
+                                    </td>
+                                    <td>
+                                        <input type="number" step="any" class="form-control form-control-sm" value="@row.LongitudeInput"
+                                               disabled="@(!row.Enabled)"
+                                               @onchange="e => row.LongitudeInput = e.Value?.ToString() ?? string.Empty" />
+                                    </td>
+                                    <td>
+                                        <input type="number" min="1" class="form-control form-control-sm" value="@row.RadiusInput"
+                                               disabled="@(!row.Enabled)"
+                                               @onchange="e => row.RadiusInput = e.Value?.ToString() ?? string.Empty" />
+                                    </td>
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" disabled="@row.Saving"
+                                                @onclick="() => SaveRowAsync(row)">
+                                            @if (row.Saving)
+                                            {
+                                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-check2" aria-hidden="true"></i>
+                                            }
+                                            Save
+                                        </button>
+                                        @if (row.Saved)
+                                        {
+                                            <span class="text-success small ms-2">Saved</span>
+                                        }
+                                        @if (row.Error is not null)
+                                        {
+                                            <div class="text-danger small mt-1">@row.Error</div>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<EditableRow>? _rows;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var geofences = await Mediator.Send(new GetWarehouseGeofencesQuery());
+        _rows = geofences.Select(g => new EditableRow(g)).ToList();
+    }
+
+    private async Task SaveRowAsync(EditableRow row)
+    {
+        row.Saving = true;
+        row.Saved = false;
+        row.Error = null;
+        try
+        {
+            double? latitude = double.TryParse(row.LatitudeInput, out var lat) ? lat : null;
+            double? longitude = double.TryParse(row.LongitudeInput, out var lon) ? lon : null;
+            int? radius = int.TryParse(row.RadiusInput, out var r) ? r : null;
+
+            await Mediator.Send(new UpdateWarehouseGeofenceCommand(row.WarehouseId, row.Enabled, latitude, longitude, radius));
+            row.Saved = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to save warehouse geofence for warehouse {WarehouseId}", row.WarehouseId);
+            row.Error = ex.Message;
+        }
+        finally
+        {
+            row.Saving = false;
+        }
+    }
+
+    private sealed class EditableRow(WarehouseGeofenceDto dto)
+    {
+        public int WarehouseId { get; } = dto.WarehouseId;
+        public string Code { get; } = dto.Code;
+        public string Name { get; } = dto.Name;
+        public bool Enabled { get; set; } = dto.GeofenceEnabled;
+        public string LatitudeInput { get; set; } = dto.GeofenceLatitude?.ToString() ?? string.Empty;
+        public string LongitudeInput { get; set; } = dto.GeofenceLongitude?.ToString() ?? string.Empty;
+        public string RadiusInput { get; set; } = dto.GeofenceRadiusMeters?.ToString() ?? string.Empty;
+        public bool Saving { get; set; }
+        public bool Saved { get; set; }
+        public string? Error { get; set; }
+    }
+}

@@ -23,8 +23,11 @@ import type {
   WarehouseOption,
 } from "../types/api";
 
-export function login(email: string, password: string): Promise<LoginResponse> {
-  return apiRequest<LoginResponse>("/api/auth/login", { method: "POST", body: { email, password } });
+export function login(email: string, password: string, coords?: { latitude: number; longitude: number }): Promise<LoginResponse> {
+  return apiRequest<LoginResponse>("/api/auth/login", {
+    method: "POST",
+    body: { email, password, latitude: coords?.latitude, longitude: coords?.longitude },
+  });
 }
 
 export function getWarehouses(token: string): Promise<WarehouseOption[]> {

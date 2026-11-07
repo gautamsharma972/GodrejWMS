@@ -1,6 +1,8 @@
 import Constants from "expo-constants";
-import { StyleSheet, Text, View } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../../auth/AuthContext";
+import { AppIcon } from "../../components/ui/AppIcon";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Screen } from "../../components/ui/Screen";
@@ -9,6 +11,8 @@ import { lightTap } from "../../utils/haptics";
 
 export default function AccountScreen() {
   const { user, logout } = useAuth();
+  const router = useRouter();
+  const { back } = useLocalSearchParams<{ back?: string }>();
 
   const initials = (user?.fullName ?? "?")
     .split(" ")
@@ -21,7 +25,24 @@ export default function AccountScreen() {
 
   return (
     <Screen edges={["top", "bottom"]} padded>
-      <Text style={styles.heading}>Account</Text>
+      <View style={styles.headerRow}>
+        {back ? (
+          <TouchableOpacity
+            style={styles.backButton}
+            activeOpacity={0.72}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            hitSlop={8}
+            onPress={() => {
+              lightTap();
+              router.push(back as never);
+            }}
+          >
+            <AppIcon name="arrow-back" size={20} color={colors.textPrimary} />
+          </TouchableOpacity>
+        ) : null}
+        <Text style={styles.heading}>Account</Text>
+      </View>
 
       <Card style={styles.profileCard}>
         <View style={styles.avatar}>
@@ -60,7 +81,17 @@ export default function AccountScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { ...typography.display, fontSize: 24, color: colors.textPrimary, marginBottom: spacing.lg },
+  headerRow: { flexDirection: "row", alignItems: "center", marginBottom: spacing.lg },
+  backButton: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.pill,
+    backgroundColor: colors.neutralSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.sm,
+  },
+  heading: { ...typography.display, fontSize: 24, color: colors.textPrimary },
   profileCard: { alignItems: "center", paddingVertical: spacing.xxl },
   avatar: {
     width: 76,

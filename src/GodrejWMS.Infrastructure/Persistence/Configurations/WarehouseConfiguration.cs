@@ -15,6 +15,7 @@ public sealed class WarehouseConfiguration : IEntityTypeConfiguration<Warehouse>
         builder.Property(w => w.Name).HasMaxLength(160).IsRequired();
         builder.Property(w => w.Address).HasMaxLength(500);
         builder.Property(w => w.AllowPkmMixing).HasDefaultValue(true);
+        builder.Property(w => w.GeofenceEnabled).HasDefaultValue(false);
 
         builder.HasOne(w => w.City)
             .WithMany()

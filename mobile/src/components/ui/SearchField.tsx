@@ -1,10 +1,14 @@
-import { StyleSheet, TextInput, View, type TextInputProps } from "react-native";
+import { StyleSheet, TextInput, View, type StyleProp, type TextInputProps, type ViewStyle } from "react-native";
 import { colors, radius, spacing } from "../../theme";
 import { AppIcon } from "./AppIcon";
 
-export function SearchField(props: TextInputProps) {
+interface Props extends TextInputProps {
+  containerStyle?: StyleProp<ViewStyle>;
+}
+
+export function SearchField({ containerStyle, ...props }: Props) {
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, containerStyle]}>
       <AppIcon name="search-outline" size={16} color={colors.textMuted} />
       <TextInput style={styles.input} placeholderTextColor={colors.textMuted} {...props} />
     </View>

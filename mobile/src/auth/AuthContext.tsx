@@ -19,7 +19,7 @@ interface AuthContextValue {
   user: StoredUser | null;
   permissions: string[];
   warehouses: WarehouseOption[];
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, coords?: { latitude: number; longitude: number }) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -61,8 +61,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const result = await loginRequest(email, password);
+  const login = useCallback(async (email: string, password: string, coords?: { latitude: number; longitude: number }) => {
+    const result = await loginRequest(email, password, coords);
     const nextUser: StoredUser = {
       userId: result.userId,
       fullName: result.fullName,

@@ -6,6 +6,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui/Card";
 import { AppIcon } from "../components/ui/AppIcon";
 import { EmptyState } from "../components/ui/EmptyState";
+import { RefreshButton } from "../components/ui/RefreshButton";
 import { SkeletonList } from "../components/ui/Skeleton";
 import { Screen } from "../components/ui/Screen";
 import { SearchField } from "../components/ui/SearchField";
@@ -58,8 +59,11 @@ export default function InwardHistoryScreen() {
           <Text style={styles.eyebrow}>GOODS RECEIPT</Text>
           <Text style={styles.introText}>Pending GRNs</Text>
         </View>
-        <View style={styles.countPill}>
-          <Text style={styles.countText}>{items.length}</Text>
+        <View style={styles.introActions}>
+          <RefreshButton onPress={() => load(true)} refreshing={isRefreshing} />
+          <View style={styles.countPill}>
+            <Text style={styles.countText}>{items.length}</Text>
+          </View>
         </View>
       </View>
       <SearchField placeholder="Search reference, vehicle, LR, material" value={search} onChangeText={setSearch} />
@@ -98,6 +102,7 @@ export default function InwardHistoryScreen() {
 
 const styles = StyleSheet.create({
   introRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
+  introActions: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   eyebrow: { ...typography.label, fontSize: 10, color: colors.primary, letterSpacing: 0.8 },
   introText: { ...typography.title, color: colors.textPrimary, marginTop: 2 },
   countPill: { minWidth: 38, height: 32, borderRadius: 16, backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center" },

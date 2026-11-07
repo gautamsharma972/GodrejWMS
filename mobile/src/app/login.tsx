@@ -1,4 +1,5 @@
 import { LinearGradient } from "expo-linear-gradient";
+import * as Location from "expo-location";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -20,8 +21,6 @@ import { Button } from "../components/ui/Button";
 import { FadeInUp } from "../components/ui/FadeInUp";
 import { Screen } from "../components/ui/Screen";
 import { colors, radius, shadow, spacing, typography } from "../theme";
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function LoginScreen() {
   const { login } = useAuth();
@@ -46,10 +45,25 @@ export default function LoginScreen() {
     ]).start();
   }, [error, shake]);
 
+  // Only Pickers signing in at a geofenced warehouse actually need this - everyone else's coords
+  // are simply ignored server-side. Requesting it unconditionally (rather than only after a
+  // "location required" rejection) avoids a second round trip for the common case. A denied
+  // permission or unavailable fix just means we sign in without coords, same as an older app build.
+  const getCoords = async (): Promise<{ latitude: number; longitude: number } | undefined> => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") return undefined;
+      const position = await Location.getCurrentPositionAsync({});
+      return { latitude: position.coords.latitude, longitude: position.coords.longitude };
+    } catch {
+      return undefined;
+    }
+  };
+
   const handleSubmit = async () => {
     setError(null);
-    if (!email.trim() || !EMAIL_PATTERN.test(email.trim())) {
-      setError("Enter a valid email address.");
+    if (!email.trim()) {
+      setError("Email address is required.");
       return;
     }
     if (!password) {
@@ -59,9 +73,12 @@ export default function LoginScreen() {
 
     setIsSubmitting(true);
     try {
-      await login(email.trim(), password);
+      const coords = await getCoords();
+      await login(email.trim(), password, coords);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
+      if (err instanceof ApiError && err.status === 403) {
+        setError(err.message);
+      } else if (err instanceof ApiError && err.status === 401) {
         setError("Invalid login attempt.");
       } else {
         setError("Unable to sign in. Check your connection and try again.");
@@ -94,11 +111,13 @@ export default function LoginScreen() {
         >
           <FadeInUp style={styles.brandBlock}>
             <Image
-              source={require("../../assets/logivue-wms-transparent.png")}
+              source={require("../../assets/logivue-warehouse-mark.png")}
               style={styles.brandLogo}
               resizeMode="contain"
-              accessibilityLabel="LogiVue warehouse management system"
+              accessibilityLabel="Godrej WMS"
             />
+            <Text style={styles.brandTitle}>Godrej WMS</Text>
+            <Text style={styles.brandSubtitle}>WAREHOUSE MANAGEMENT SYSTEM</Text>
           </FadeInUp>
 
           <FadeInUp delay={80} style={styles.welcomeBlock}>
@@ -187,6 +206,7 @@ export default function LoginScreen() {
             <AppIcon name="shield-checkmark-outline" size={15} color={colors.textSecondary} />
             <Text style={styles.footerText}>Protected role-based access</Text>
           </View>
+          <Text style={styles.copyright}>© Nexspire Tech, 2026 · v1.1{"\n"}All rights reserved</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
@@ -225,7 +245,21 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(6, 182, 212, 0.06)",
   },
   brandBlock: { alignItems: "center", justifyContent: "center", marginBottom: spacing.lg },
-  brandLogo: { width: 180, height: 142 },
+  brandLogo: { width: 108, height: 98 },
+  brandTitle: {
+    ...typography.display,
+    fontSize: 26,
+    color: colors.textPrimary,
+    marginTop: spacing.sm,
+    letterSpacing: -0.4,
+  },
+  brandSubtitle: {
+    ...typography.label,
+    fontSize: 11,
+    color: colors.textSecondary,
+    letterSpacing: 1.4,
+    marginTop: 4,
+  },
   welcomeBlock: { alignItems: "center", marginBottom: spacing.xl },
   heroTitle: {
     color: colors.textPrimary,
@@ -282,4 +316,12 @@ const styles = StyleSheet.create({
   submitButton: { marginTop: spacing.xl },
   footerRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: spacing.xl },
   footerText: { color: colors.textSecondary, fontSize: 12, fontWeight: "600", marginLeft: 6 },
+  copyright: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: "500",
+    textAlign: "center",
+    marginTop: spacing.sm,
+  },
 });
