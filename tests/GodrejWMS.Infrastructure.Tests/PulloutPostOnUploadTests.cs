@@ -2,6 +2,7 @@ using GodrejWMS.Application.Features.Pullout.Commands;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Infrastructure.Persistence;
 using GodrejWMS.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -60,17 +61,25 @@ public class PulloutPostOnUploadTests
     }
 
     [Fact]
-    public async Task PickingTheLastBoxesOfAVirtualLocation_ReleasesItForReuse()
+    public async Task VirtualLocation_StaysInUseWhileAPickWaitsThere_AndIsReleasedOnceThePickIsConfirmed()
     {
         var (db, _, _, virtualLocation) = await SeedAsync(50, 202611, 30, 202610); // the virtual one holds the older PKM
         using var _ = db;
 
         await UploadAsync(db, 30);
 
+        // The stock is deducted, but the boxes are still physically there until the picker confirms the pick.
         Assert.Equal(0, db.StockBatches.Single(b => b.PalletPositionId == virtualLocation.Id).QuantityBoxes);
-        Assert.Equal(VirtualLocationStatus.Free, virtualLocation.VirtualStatus);
-        Assert.NotNull(virtualLocation.LastReleasedAt);
-        Assert.All(db.VirtualLocationLogs, l => Assert.NotNull(l.ReleasedAt));
+        Assert.Equal(VirtualLocationStatus.InUse, virtualLocation.VirtualStatus);
+
+        var pickId = db.PulloutPicks.AsNoTracking().Single().Id;
+        await new ConfirmPulloutPickHandler(db, TestServices.Posting(db), TestServices.Uow(db), new PostAllow(), new SvcClock(), new SvcUser())
+            .Handle(new ConfirmPulloutPickCommand(pickId, 30), default);
+
+        var released = await db.PalletPositions.AsNoTracking().SingleAsync(p => p.Id == virtualLocation.Id);
+        Assert.Equal(VirtualLocationStatus.Free, released.VirtualStatus);
+        Assert.NotNull(released.LastReleasedAt);
+        Assert.All(db.VirtualLocationLogs.AsNoTracking(), l => Assert.NotNull(l.ReleasedAt));
         // ...and the next overflow pallet reuses that very location.
         var reused = await TestServices.Virtuals(db).AcquireAsync(1, null);
         Assert.Equal(virtualLocation.Id, reused.Id);
@@ -117,4 +126,9 @@ public class PulloutPostOnUploadTests
         Assert.Equal(30, db.StockBatches.Single(b => b.PalletPositionId == physical.Id).QuantityBoxes);
         Assert.Single(db.PulloutTransactions);
     }
+}
+
+file sealed class PostAllow : GodrejWMS.Application.Common.Permissions.IPermissionService
+{
+    public Task<bool> HasPermissionAsync(string permissionKey, CancellationToken cancellationToken = default) => Task.FromResult(true);
 }

@@ -157,6 +157,9 @@ public sealed class ConfirmPulloutPickHandler(
             remaining -= moved;
         }
 
+        // The pick is confirmed, so the boxes have left this location: a virtual one that is now empty is free for reuse.
+        await posting.ReleaseEmptyVirtualLocationsAsync([source], cancellationToken);
+
         transaction.RowVersion++;
         await db.SaveChangesAsync(cancellationToken);
         return new ConfirmPulloutPickResult(

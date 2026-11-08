@@ -175,14 +175,28 @@ public sealed class PickerPlaceInwardPutawayHandler(
         if (postedOrder)
         {
             var changes = new List<StockChange>();
+            var removeQuantity = originalQuantity;
+            var addQuantity = request.QuantityBoxes;
+            var returnedToOldCell = 0m;
+            var repointedToNewCell = 0m;
+            var noMove = hadStock && excluded is null && target!.Id == oldStockPosition.Id && pkm == oldPkm && request.QuantityBoxes == originalQuantity;
+            if (hadStock && !noMove)
+            {
+                // Stock is available for picking as soon as it is posted, so a pullout may already have taken boxes of this put-away
+                // out of the suggested location. Those boxes are not on the shelf to move: the pullout's unconfirmed picks of the
+                // cell follow the stock to the new location (or are cut back when the boxes are set aside as GIT / NO RACK).
+                (removeQuantity, addQuantity, returnedToOldCell, repointedToNewCell) = await FollowOpenPicksAsync(
+                    line, oldStockPosition, oldPkm!.Value, originalQuantity, target, pkm, request.QuantityBoxes, excluded, cancellationToken);
+            }
+
             if (hadStock)
             {
-                changes.Add(new StockChange(line.MaterialId, oldPkm!.Value, LocationSubtypeIds.Good, oldStockPosition, -originalQuantity));
+                changes.Add(new StockChange(line.MaterialId, oldPkm!.Value, LocationSubtypeIds.Good, oldStockPosition, -removeQuantity + returnedToOldCell));
             }
 
             if (excluded is null)
             {
-                changes.Add(new StockChange(line.MaterialId, pkm!.Value, LocationSubtypeIds.Good, target!, request.QuantityBoxes));
+                changes.Add(new StockChange(line.MaterialId, pkm!.Value, LocationSubtypeIds.Good, target!, addQuantity - repointedToNewCell));
             }
 
             if (changes.Count > 0)
@@ -191,6 +205,12 @@ public sealed class PickerPlaceInwardPutawayHandler(
                     new StockPostingContext(StockLedgerEntryTypes.PutawayChange, "GRN", transaction.ReferenceNumber,
                         excluded is not null ? $"Set aside as {excluded} by picker" : "Location set by picker"),
                     changes, cancellationToken);
+            }
+
+            // The put-away left the old cell (its open picks followed the boxes or were cut back): a virtual one that is now empty is free.
+            if (hadStock)
+            {
+                await posting.ReleaseEmptyVirtualLocationsAsync([oldStockPosition], cancellationToken);
             }
         }
 
@@ -242,6 +262,96 @@ public sealed class PickerPlaceInwardPutawayHandler(
         putaway.RowVersion++;
         await SaveAsync(cancellationToken);
         return new PickerPlaceInwardPutawayResult(true, null);
+    }
+
+    /// <summary>When the boxes a put-away needs to take out of its old cell are not all on the shelf (a pullout picked them after upload), the
+    /// open picks of that cell cover the shortfall: each is re-pointed to the new cell (up to what the picker puts there) or cut back.
+    /// Boxes a confirmed pick already shipped are simply gone from both sides. Returns the quantity to remove from the old cell, to add
+    /// to the new one, and how much the picks hand back to the old cell and take from the new one.</summary>
+    private async Task<(decimal Remove, decimal Add, decimal ReturnedToOld, decimal RepointedToNew)> FollowOpenPicksAsync(
+        InwardTransactionLine line, PalletPosition oldPosition, int oldPkm, decimal originalQuantity,
+        PalletPosition? target, int? newPkm, decimal newQuantity, string? excluded, CancellationToken cancellationToken)
+    {
+        var onHand = await db.StockBatches.AsNoTracking()
+            .Where(b => b.PalletPositionId == oldPosition.Id && b.MaterialId == line.MaterialId && b.MfgMonth == oldPkm)
+            .SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;
+        var shortfall = Math.Max(0m, originalQuantity - onHand);
+        if (shortfall <= 0)
+        {
+            return (originalQuantity, newQuantity, 0m, 0m);
+        }
+
+        var picks = await db.PulloutPicks
+            .Include(p => p.PulloutTransactionLine).ThenInclude(l => l.PulloutTransaction)
+            .Where(p => p.PickedAt == null && p.PalletPositionId == oldPosition.Id && p.MfgMonth == oldPkm
+                && p.PulloutTransactionLine.MaterialId == line.MaterialId
+                && p.PulloutTransactionLine.PulloutTransaction.IsConfirmed && !p.PulloutTransactionLine.PulloutTransaction.IsRejected)
+            .OrderBy(p => p.Id)
+            .ToListAsync(cancellationToken);
+
+        var toCover = shortfall;
+        var covered = 0m;
+        var repointBudget = excluded is null ? Math.Max(0m, newQuantity - Math.Max(0m, shortfall - picks.Sum(p => p.QuantityBoxes))) : 0m;
+        var repointed = 0m;
+        foreach (var pick in picks)
+        {
+            if (toCover <= 0)
+            {
+                break;
+            }
+
+            var take = Math.Min(pick.QuantityBoxes, toCover);
+            toCover -= take;
+            covered += take;
+            var follow = Math.Min(take, repointBudget);
+            repointBudget -= follow;
+            repointed += follow;
+            var cut = take - follow;
+            var pickLine = pick.PulloutTransactionLine;
+
+            if (follow > 0)
+            {
+                if (follow == pick.QuantityBoxes)
+                {
+                    pick.PalletPosition = target!;
+                    pick.PalletPositionId = target!.Id;
+                    pick.MfgMonth = newPkm!.Value;
+                    pick.OverrideReason = "Follows the picker's put-away change";
+                }
+                else
+                {
+                    pick.QuantityBoxes -= follow;
+                    pickLine.Picks.Add(new PulloutPick
+                    {
+                        PalletPosition = target!,
+                        MfgMonth = newPkm!.Value,
+                        QuantityBoxes = follow,
+                        OverrideReason = "Follows the picker's put-away change"
+                    });
+                    cut = Math.Min(cut, pick.QuantityBoxes);
+                }
+            }
+
+            if (cut > 0)
+            {
+                // These boxes are no longer available (set aside or fewer than expected): the pullout line is short by them.
+                pick.QuantityBoxes -= cut;
+                if (pick.QuantityBoxes <= 0)
+                {
+                    db.PulloutPicks.Remove(pick);
+                }
+
+                pickLine.PickedQuantityBoxes -= cut;
+                pickLine.Status = pickLine.PickedQuantityBoxes >= pickLine.RequestedQuantityBoxes
+                    ? AllocationStatus.Fulfilled
+                    : pickLine.PickedQuantityBoxes > 0 ? AllocationStatus.Partial : AllocationStatus.Failed;
+                pickLine.Remarks = $"{cut:0.###} box(es) of the planned pick are no longer available" + (excluded is null ? " after the picker's put-away change." : $" - set aside as {excluded}.");
+            }
+        }
+
+        // Whatever the picks could not cover was already shipped: it is gone from the old cell and never reaches the new one.
+        var uncovered = toCover;
+        return (originalQuantity - uncovered, Math.Max(0m, newQuantity - uncovered), covered, repointed);
     }
 
     private async Task SaveAsync(CancellationToken cancellationToken)

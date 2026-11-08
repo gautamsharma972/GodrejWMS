@@ -107,6 +107,14 @@ public sealed class StockPostingService(
         return postingNumber;
     }
 
+    public async Task ReleaseEmptyVirtualLocationsAsync(IEnumerable<PalletPosition> positions, CancellationToken cancellationToken = default)
+    {
+        foreach (var position in positions.Where(p => p.IsVirtual).Distinct())
+        {
+            await virtualLocations.ReleaseIfEmptyAsync(position, cancellationToken);
+        }
+    }
+
     private async Task<StockBatch?> FindBatchAsync(StockChange change, CancellationToken cancellationToken)
     {
         bool Matches(StockBatch b) =>

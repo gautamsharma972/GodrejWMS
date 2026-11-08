@@ -1,6 +1,8 @@
+using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.Inward.Commands;
 using GodrejWMS.Application.Features.Inward.Queries;
+using GodrejWMS.Application.Features.Pullout.Commands;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Infrastructure.Persistence;
 using GodrejWMS.Infrastructure.Services;
@@ -159,6 +161,69 @@ public class PickerPutawayPostedTests
         var row = db.InwardPutaways.AsNoTracking().Single();
         Assert.Null(row.ExcludedLocation);
         Assert.True(row.IsConfirmed);
+    }
+
+    private static async Task<(int PullPickCount, decimal Picked)> PullOutAsync(AppDbContext db, int quantity)
+    {
+        var result = await new SubmitPulloutHandler(
+                db, new PulloutAllocationService(db), TestServices.Posting(db), TestServices.Uow(db), new SvcClock(), new SvcUser())
+            .Handle(new SubmitPulloutCommand([new SubmitPulloutLine(40000001, quantity)], WarehouseId: 1), default);
+        return (db.PulloutPicks.AsNoTracking().Count(), result.Lines.Sum(l => l.PickedQuantityBoxes));
+    }
+
+    [Fact]
+    public async Task PutawayChange_AfterAPulloutTookTheBoxes_MovesTheOpenPickWithTheStock()
+    {
+        var (db, _, positions, putaway) = await SeedAsync();
+        using var _ = db;
+        var from = putaway.PalletPositionId;
+        var to = positions.First(p => p.Id != from).Id;
+        await PullOutAsync(db, 20); // 20 of the 30 posted boxes are already picked for a pullout
+        Assert.Equal(10, OnHand(db, from));
+
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", to, null), default);
+
+        Assert.Equal(0, OnHand(db, from));
+        Assert.Equal(10, OnHand(db, to)); // only what was left on the shelf is there to hold
+        var pick = db.PulloutPicks.AsNoTracking().Single();
+        Assert.Equal(to, pick.PalletPositionId); // the pullout's pick follows the boxes to where the picker put them
+        Assert.Equal(20, pick.QuantityBoxes);
+        Assert.Empty(db.StockBatches.AsNoTracking().Where(b => b.QuantityBoxes < 0));
+    }
+
+    [Fact]
+    public async Task PutawayChange_ToGit_AfterAPulloutTookTheBoxes_CutsThePickBack()
+    {
+        var (db, _, _, putaway) = await SeedAsync();
+        using var _ = db;
+        await PullOutAsync(db, 30); // all 30 boxes are already allocated to a pullout
+
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "GIT"), default);
+
+        Assert.Equal(0, db.StockBatches.AsNoTracking().Sum(b => b.QuantityBoxes));
+        Assert.Empty(db.PulloutPicks.AsNoTracking()); // nothing is left to pick: the boxes are set aside
+        var line = db.PulloutTransactionLines.AsNoTracking().Single();
+        Assert.Equal(0, line.PickedQuantityBoxes);
+        Assert.Equal(GodrejWMS.Domain.Enums.AllocationStatus.Failed, line.Status);
+        Assert.Contains("GIT", line.Remarks);
+        Assert.Equal("GIT", db.InwardPutaways.AsNoTracking().Single().ExcludedLocation);
+    }
+
+    [Fact]
+    public async Task VirtualLocation_IsReleased_WhenItsPutawayIsSetAsideAndNoPickWaitsThereAnyMore()
+    {
+        var (db, _, _, putaway) = await SeedAsync();
+        using var _ = db;
+        var virtualLocation = await TestServices.Virtuals(db).AcquireAsync(1, null);
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", virtualLocation.Id, null, AcknowledgeWarning: true), default);
+        await PullOutAsync(db, 30); // the pullout's pick waits at the virtual location
+        Assert.Equal(VirtualLocationStatus.InUse, db.PalletPositions.AsNoTracking().Single(p => p.Id == virtualLocation.Id).VirtualStatus);
+
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "GIT"), default);
+
+        // The boxes are set aside and the pick is cut back, so nothing is left at the virtual location: it is free for reuse.
+        var released = db.PalletPositions.AsNoTracking().Single(p => p.Id == virtualLocation.Id);
+        Assert.Equal(VirtualLocationStatus.Free, released.VirtualStatus);
     }
 
     [Fact]

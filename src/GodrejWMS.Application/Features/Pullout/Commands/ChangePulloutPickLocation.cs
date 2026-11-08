@@ -252,6 +252,12 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db, I
         line.Status = newStatus;
         line.Remarks = newRemarks;
 
+        // The old sources no longer have this pick waiting: a virtual one that is now empty is free for reuse.
+        if (posted)
+        {
+            await posting.ReleaseEmptyVirtualLocationsAsync(picksToReplace.Select(p => p.PalletPosition), cancellationToken);
+        }
+
         var updated = preview with { Lines = updatedLines };
         transaction.PreviewJson = JsonSerializer.Serialize(updated);
         transaction.RowVersion++;

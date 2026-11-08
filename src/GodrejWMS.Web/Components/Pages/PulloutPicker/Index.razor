@@ -58,6 +58,46 @@
         }
         else
         {
+            <div class="table-responsive history-table-wrap">
+                <table class="table table-hover align-middle mb-0 history-table inward-history-table">
+                    <thead>
+                        <tr>
+                            <th class="history-col-reference">Reference</th>
+                            <th class="history-col-created">Created</th>
+                            <th class="history-col-vehicle">Vehicle No.</th>
+                            <th class="history-col-lr">Destination</th>
+                            <th class="history-col-status">Picks</th>
+                            <th class="text-end history-number-column history-col-lines">Lines</th>
+                            <th class="text-end history-number-column history-col-quantity">Boxes</th>
+                            <th class="table-actions history-actions-column">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _list.Items)
+                        {
+                            <tr>
+                                <td class="history-col-reference">
+                                    <span class="record-code history-reference">@item.ReferenceNumber</span>
+                                    @if (item.VirtualPickCount > 0) { <span class="status-pill info ms-1" title="@item.VirtualPickCount pick(s) are in virtual overflow locations">Virtual @item.VirtualPickCount</span> }
+                                </td>
+                                <td class="history-created history-col-created">@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
+                                <td class="history-col-vehicle">@(string.IsNullOrWhiteSpace(item.VehicleNumber) ? "-" : item.VehicleNumber)</td>
+                                <td class="history-col-lr">@(string.IsNullOrWhiteSpace(item.Destination) ? "-" : item.Destination)</td>
+                                <td class="history-col-status"><span class="status-pill @(item.PickedCount == 0 ? "danger" : "warning")">@item.PickedCount of @item.PickCount picked</span></td>
+                                <td class="text-end history-number-column history-col-lines">@item.LineCount</td>
+                                <td class="text-end fw-semibold history-number-column history-col-quantity">@item.TotalBoxes.ToString("N0")</td>
+                                <td class="table-actions history-actions-column">
+                                    <div class="history-row-actions">
+                                        <button type="button" class="btn btn-sm btn-outline-primary table-action-btn" title="@($"Open {item.ReferenceNumber}")" aria-label="@($"Open {item.ReferenceNumber}")" @onclick="() => OpenDetailAsync(item.Id)">
+                                            <i class="bi bi-list-check" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
             <div class="no-pkm-mobile-history-list picker-pick-cards">
                 @foreach (var item in _list.Items)
                 {

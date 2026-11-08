@@ -18,4 +18,8 @@ public interface IStockPostingService
     /// <summary>Applies the changes and returns the posting number shared by their ledger entries. Throws
     /// <see cref="InvalidOperationException"/> when a decrease would take a cell below zero.</summary>
     Task<string> ApplyAsync(StockPostingContext context, IReadOnlyList<StockChange> changes, CancellationToken cancellationToken = default);
+
+    /// <summary>Runs the shared virtual-location release check for locations whose open picks or put-aways changed without any stock
+    /// change (e.g. a pick was confirmed or re-pointed), so an emptied virtual location is freed for reuse.</summary>
+    Task ReleaseEmptyVirtualLocationsAsync(IEnumerable<PalletPosition> positions, CancellationToken cancellationToken = default);
 }
