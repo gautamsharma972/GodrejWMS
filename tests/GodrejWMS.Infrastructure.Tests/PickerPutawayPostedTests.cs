@@ -51,7 +51,7 @@ public class PickerPutawayPostedTests
     {
         var (db, _, positions, putaway) = await SeedAsync();
         using var _ = db;
-        var confirm = new ConfirmPickerPutawayHandler(db, new PPAllow());
+        var confirm = new ConfirmPickerPutawayHandler(db, new PPAllow(), TestServices.Posting(db), new SvcClock(), new SvcUser());
         var pending = new GetPickerPendingInwardHandler(db);
         var transactionId = db.InwardTransactions.AsNoTracking().Single().Id;
 
@@ -80,7 +80,7 @@ public class PickerPutawayPostedTests
     }
 
     [Fact]
-    public async Task OlderGrnNotPostedOnUpload_CanBeConfirmedByThePickerToo_AndTheSupervisorStillPostsTheStock()
+    public async Task OrderNotPostedOnUpload_IsPostedToInventoryWhenThePickerConfirms()
     {
         var (db, _, positions, putaway) = await SeedAsync();
         using var _ = db;
@@ -91,19 +91,20 @@ public class PickerPutawayPostedTests
         db.StockBatches.RemoveRange(db.StockBatches);
         db.StockLedgerEntries.RemoveRange(db.StockLedgerEntries);
         await db.SaveChangesAsync();
-        var confirm = new ConfirmPickerPutawayHandler(db, new PPAllow());
+        var confirm = new ConfirmPickerPutawayHandler(db, new PPAllow(), TestServices.Posting(db), new SvcClock(), new SvcUser());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => confirm.Handle(new ConfirmPickerPutawayCommand(transaction.Id), default));
         await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", putaway.PalletPositionId, null), default);
 
         var result = await confirm.Handle(new ConfirmPickerPutawayCommand(transaction.Id), default);
 
-        Assert.False(result.StockPosted); // a supervisor still has to confirm the GRN to post the stock
+        Assert.False(result.StockPosted); // not posted on upload - posted by this Confirm instead
         Assert.Empty((await new GetPickerPendingInwardHandler(db).Handle(new GetPickerPendingInwardQuery(), default)).Items);
-        Assert.Empty(db.StockBatches);
+        Assert.Equal(30, OnHand(db, putaway.PalletPositionId)); // inventory updated immediately, no audit-screen confirmation
+        Assert.True(db.InwardPutaways.AsNoTracking().Single().IsConfirmed);
         var locked = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", positions.Last().Id, null), default));
-        Assert.Contains("already been confirmed", locked.Message);
+        Assert.Contains("already confirmed", locked.Message);
     }
 
     [Fact]

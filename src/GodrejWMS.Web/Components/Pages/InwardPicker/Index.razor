@@ -451,7 +451,7 @@
         {
             var result = await Mediator.Send(new ConfirmPickerPutawayCommand(_detail.Id));
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast",
-                result.StockPosted ? $"{result.ReferenceNumber} put-away confirmed." : $"{result.ReferenceNumber} put-away confirmed. A supervisor still confirms the GRN to post the stock.", "success");
+                $"{result.ReferenceNumber} put-away confirmed and inventory updated.", "success");
             CloseDetail();
             await LoadPageAsync(_pageNumber);
         }

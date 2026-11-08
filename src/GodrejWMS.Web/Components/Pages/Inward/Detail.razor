@@ -59,11 +59,6 @@
                                 @(_refreshingPutaway ? "Refreshing..." : "Refresh Put-away")
                             </button>
                         }
-                        <button type="button" class="btn btn-primary" @onclick="ConfirmPutawayAsync" disabled="@(_confirming || _refreshingPutaway)"
-                                title="Confirm all reserved put-away locations">
-                            <i class="bi bi-check2-circle" aria-hidden="true"></i>
-                            @(_confirming ? "Confirming..." : "Confirm")
-                        </button>
                     </div>
                 }
 
@@ -215,7 +210,7 @@
                 <span class="putaway-step-icon"><i class="bi @(_detail.IsRejected ? "bi-x-circle" : "bi-check2-circle")" aria-hidden="true"></i></span>
                 <div>
                     <strong>@(_detail.IsRejected ? "Rejected" : _detail.PostedAt.HasValue ? "Posted to inventory" : "Stock confirmed")</strong>
-                    <span>@(_detail.IsRejected ? "No stock was put away" : _detail.PostedAt.HasValue ? "Posted when the GRN was uploaded - visible in Inventory Master and available for picking" : _detail.IsConfirmed ? "Dashboard and inventory updated" : "Waiting for operator confirmation")</span>
+                    <span>@(_detail.IsRejected ? "No stock was put away" : _detail.PostedAt.HasValue ? "Posted when the GRN was uploaded - visible in Inventory Master and available for picking" : _detail.IsConfirmed ? "Dashboard and inventory updated" : "Waiting for the picker to confirm the put-away")</span>
                 </div>
             </div>
         </div>
