@@ -10,13 +10,14 @@ import {
   type PickChangeMode,
   type PickSplit,
 } from "../../components/PulloutPickLocationChangeModal";
+import { PulloutPickConfirmModal, type ConfirmablePick } from "../../components/PulloutPickConfirmModal";
 import { AppIcon } from "../../components/ui/AppIcon";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { LoadingView } from "../../components/ui/LoadingView";
 import { Screen } from "../../components/ui/Screen";
 import { colors, radius, spacing, typography } from "../../theme";
-import type { PulloutDetailDto } from "../../types/api";
+import type { ConfirmPickResult, PulloutDetailDto } from "../../types/api";
 import { errorPulse, successPulse } from "../../utils/haptics";
 import { formatDateTime } from "../../utils/status";
 
@@ -29,6 +30,7 @@ export default function PulloutDetailScreen() {
   const [activePick, setActivePick] = useState<ActivePick | null>(null);
   const [pickMode, setPickMode] = useState<PickChangeMode>("move");
   const [isConfirming, setIsConfirming] = useState(false);
+  const [confirmPick, setConfirmPick] = useState<ConfirmablePick | null>(null);
 
   const load = useCallback(async () => {
     if (!token || !id) return;
@@ -88,9 +90,25 @@ export default function PulloutDetailScreen() {
     }
   };
 
+  // A posted pullout already took its stock out at upload: the picker's job is confirming each pick on the floor.
+  const posted = detail.isConfirmed && !detail.isRejected;
+  const allPicks = detail.lines.flatMap((line) => line.picks);
+  const picksDone = allPicks.filter((pick) => pick.pickedAt).length;
   const totalRequested = detail.lines.reduce((total, line) => total + line.requestedQuantityBoxes, 0);
   const totalPicked = detail.lines.reduce((total, line) => total + line.pickedQuantityBoxes, 0);
-  const progress = totalRequested > 0 ? Math.min(100, (totalPicked / totalRequested) * 100) : 0;
+  const progress = posted
+    ? (allPicks.length > 0 ? (picksDone / allPicks.length) * 100 : 0)
+    : (totalRequested > 0 ? Math.min(100, (totalPicked / totalRequested) * 100) : 0);
+
+  const handlePickConfirmed = async (result: ConfirmPickResult) => {
+    setConfirmPick(null);
+    const parts = [`Picked ${result.pickedBoxes} box(es).`];
+    if (result.returnedToStockBoxes > 0) parts.push(`${result.returnedToStockBoxes} not found - returned to stock.`);
+    if (result.movedBoxes > 0) parts.push(`Moved ${result.movedBoxes} remaining box(es) to ${result.destinationLocationCode}.`);
+    else if (result.remainingAtSourceBoxes > 0) parts.push(`${result.remainingAtSourceBoxes} box(es) left at the pick location.`);
+    Alert.alert("Pick confirmed", parts.join("\n"));
+    await load();
+  };
 
   return (
     <Screen>
@@ -101,20 +119,20 @@ export default function PulloutDetailScreen() {
               <AppIcon name="arrow-up-circle-outline" size={23} color={colors.primary} />
             </View>
             <View style={styles.summaryCopy}>
-              <Text style={styles.eyebrow}>PULLOUT CONFIRMATION</Text>
+              <Text style={styles.eyebrow}>{posted ? "PULLOUT PICKING" : "PULLOUT CONFIRMATION"}</Text>
               <Text style={styles.reference} numberOfLines={1}>{detail.referenceNumber}</Text>
               <Text style={styles.subtitle}>{formatDateTime(detail.createdAt)}</Text>
             </View>
           </View>
           <View style={styles.progressHeader}>
             <Text style={styles.progressLabel}>Picking progress</Text>
-            <Text style={styles.progressValue}>{totalPicked} / {totalRequested} boxes</Text>
+            <Text style={styles.progressValue}>{posted ? `${picksDone} / ${allPicks.length} picks` : `${totalPicked} / ${totalRequested} boxes`}</Text>
           </View>
           <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${progress}%` }]} /></View>
         </View>
-        {detail.isConfirmed && (
+        {posted && (
           <View style={styles.confirmedBanner}>
-            <Text style={styles.confirmedBannerText}>This pullout is confirmed.</Text>
+            <Text style={styles.confirmedBannerText}>Stock for this pullout was deducted when it was uploaded. Confirm each pick as you take it.</Text>
           </View>
         )}
         {detail.isRejected && (
@@ -151,8 +169,50 @@ export default function PulloutDetailScreen() {
                     <AppIcon name="location-outline" size={15} color={colors.primary} />
                     <Text style={styles.pickLocation}>{pick.locationCode}</Text>
                   </View>
-                  <Text style={styles.pickDetail}>{pick.mfgMonthLabel} · {pick.quantityBoxes} boxes</Text>
+                  <Text style={styles.pickDetail}>{pick.mfgMonthLabel} · {pick.quantityBoxes} boxes{pick.isVirtual ? " · virtual" : ""}</Text>
                 </View>
+                {posted && pick.pickId && pick.pickedAt && (
+                  <View style={styles.pickedRow}>
+                    <AppIcon name="checkmark-circle" size={18} color={colors.success} />
+                    <Text style={styles.pickedText}>Picked {pick.pickedQuantityBoxes ?? pick.quantityBoxes}</Text>
+                  </View>
+                )}
+                {posted && pick.pickId && !pick.pickedAt && (
+                  <View style={styles.pickActions}>
+                    <TouchableOpacity
+                      style={[styles.pickActionButton, styles.pickConfirmButton]}
+                      onPress={() => setConfirmPick({
+                        pickId: pick.pickId!,
+                        referenceNumber: detail.referenceNumber,
+                        materialNumber: line.materialNumber,
+                        materialDescription: line.materialDescription,
+                        locationCode: pick.locationCode,
+                        mfgMonthLabel: pick.mfgMonthLabel,
+                        quantityBoxes: pick.quantityBoxes,
+                        isVirtual: pick.isVirtual,
+                      })}
+                    >
+                      <AppIcon name="checkmark-circle-outline" size={20} color={colors.textOnPrimary} />
+                      <Text style={styles.pickConfirmText}>Confirm pick</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.pickActionButton}
+                      onPress={() => {
+                        setPickMode("change");
+                        setActivePick({
+                          referenceNumber: detail.referenceNumber,
+                          materialNumber: line.materialNumber,
+                          currentLocationCode: pick.locationCode,
+                          mfgMonthLabel: pick.mfgMonthLabel,
+                          quantityBoxes: pick.quantityBoxes,
+                        });
+                      }}
+                    >
+                      <AppIcon name="swap-horizontal" size={18} color={colors.primary} />
+                      <Text style={styles.pickActionText}>Change location</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
                 {!detail.isConfirmed && !detail.isRejected && (
                   <View style={styles.pickActions}>
                     <TouchableOpacity
@@ -213,6 +273,8 @@ export default function PulloutDetailScreen() {
         </View>
       )}
 
+      <PulloutPickConfirmModal pick={confirmPick} token={token} onClose={() => setConfirmPick(null)} onDone={handlePickConfirmed} />
+
       <PulloutPickLocationChangeModal
         pick={activePick}
         mode={pickMode}
@@ -269,10 +331,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: spacing.sm,
     paddingVertical: 8,
+    minHeight: 48,
     borderRadius: radius.pill,
     backgroundColor: colors.primarySoft,
   },
   pickActionText: { color: colors.primary, fontSize: 12.5, fontWeight: "700", marginLeft: spacing.xs },
+  pickConfirmButton: { backgroundColor: colors.primary, minHeight: 48 },
+  pickConfirmText: { color: colors.textOnPrimary, fontSize: 14, fontWeight: "800", marginLeft: spacing.xs },
+  pickedRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.sm },
+  pickedText: { color: colors.successText, fontWeight: "700", marginLeft: spacing.xs },
   actionBar: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md },
   actionCopy: { flex: 1 },
   actionLabel: { ...typography.bodyStrong, color: colors.textPrimary },

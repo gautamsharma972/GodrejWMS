@@ -38,7 +38,8 @@ function buildRows(detail: InwardDetailDto | null): Row[] {
   const rows: Row[] = [];
   for (const line of detail.lines) {
     for (const putaway of line.putaways) {
-      rows.push({ line, putaway, done: putaway.isConfirmed || putaway.isPickerPlaced });
+      // On a GRN posted at upload the stock is already at the suggested location: a row is done once the picker has submitted it.
+      rows.push({ line, putaway, done: putaway.isPickerPlaced || (!detail.postedAt && putaway.isConfirmed) });
     }
   }
   return rows.sort((a, b) => {
@@ -209,7 +210,7 @@ export default function PickerPutawayDetailScreen() {
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={[styles.row, item.done && styles.rowDone]}
-                disabled={item.putaway.isConfirmed && !(item.putaway.excludedLocation && !item.putaway.isExcludedLocked)}
+                disabled={!detail?.postedAt && item.putaway.isConfirmed && !(item.putaway.excludedLocation && !item.putaway.isExcludedLocked)}
                 onPress={() => selectRow(item)}
               >
                 <View style={[styles.locationIcon, item.done && styles.locationIconDone]}>
@@ -222,7 +223,7 @@ export default function PickerPutawayDetailScreen() {
                 <View style={styles.rowStatus}>
                   <Text style={styles.rowQty}>{item.putaway.quantityBoxes} boxes</Text>
                   <StatusBadge
-                    label={item.putaway.excludedLocation ?? (item.putaway.isConfirmed ? "Confirmed" : item.putaway.isPickerPlaced ? "Submitted" : "To do")}
+                    label={item.putaway.excludedLocation ?? (item.putaway.isPickerPlaced ? "Submitted" : item.putaway.isConfirmed && !detail?.postedAt ? "Confirmed" : "To do")}
                     tone={item.done ? "success" : "warning"}
                     variant="soft"
                   />

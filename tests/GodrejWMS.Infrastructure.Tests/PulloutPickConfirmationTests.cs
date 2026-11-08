@@ -1,5 +1,6 @@
 using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.Pullout.Commands;
+using GodrejWMS.Application.Features.Pullout.Queries;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Infrastructure.Persistence;
 using GodrejWMS.Infrastructure.Services;
@@ -154,6 +155,26 @@ public class PulloutPickConfirmationTests
         Assert.Equal(40, line.PickedQuantityBoxes);
         Assert.Equal(GodrejWMS.Domain.Enums.AllocationStatus.Partial, line.Status);
         Assert.Equal(40, s.Db.PulloutPicks.AsNoTracking().Single().QuantityBoxes);
+    }
+
+    [Fact]
+    public async Task RemainderQueryAndSuggestions_PointToGroundLevelAndSameSkuLocations()
+    {
+        var s = await SeedAsync();
+        using var _ = s.Db;
+        var pickId = s.Db.PulloutPicks.AsNoTracking().Single().Id;
+
+        var remainder = await new GetPickRemainderHandler(s.Db).Handle(new GetPickRemainderQuery(pickId), default);
+        Assert.Equal(5, remainder.RemainingBoxes);
+        Assert.Equal(45, remainder.PlannedBoxes);
+        Assert.False(remainder.IsPicked);
+
+        // A-03-01 holds 60 boxes (over a 50-box pallet), so it has no room; the empty ground bin is offered first.
+        var suggestions = await new GetRelocationSuggestionsHandler(s.Db).Handle(new GetRelocationSuggestionsQuery(pickId, 5), default);
+        var best = Assert.Single(suggestions);
+        Assert.Equal("A-02-01", best.LocationCode);
+        Assert.Equal(1, best.Level);
+        Assert.Contains("ground", best.Reason);
     }
 
     [Fact]

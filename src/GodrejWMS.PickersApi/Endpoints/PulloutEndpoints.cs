@@ -89,6 +89,15 @@ public static class PulloutEndpoints
             .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
             .WithName("ConfirmPulloutPick");
 
+        group.MapGet("/pullout/picks/{pickId:int}/remainder", async (
+                int pickId,
+                IMediator mediator,
+                CancellationToken cancellationToken) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                    Results.Ok(await mediator.Send(new GetPickRemainderQuery(pickId), cancellationToken))))
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .WithName("GetPulloutPickRemainder");
+
         group.MapGet("/pullout/picks/{pickId:int}/relocation-suggestions", async (
                 int pickId,
                 decimal quantity,

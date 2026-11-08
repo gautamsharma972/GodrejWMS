@@ -116,6 +116,8 @@ export interface InwardPutawayDto {
   palletPositionId: number;
   isPickerPlaced: boolean;
   isExcludedLocked: boolean;
+  /** The location is an auto-generated virtual overflow location. */
+  isVirtual?: boolean;
 }
 
 export interface InwardDetailLineDto {
@@ -145,6 +147,8 @@ export interface InwardDetailDto {
   uploadHeaderJson?: string | null;
   receivedFrom?: string | null;
   unsavedLines?: InwardUnsavedLineDto[] | null;
+  /** Set when the GRN's stock was posted to inventory on upload: the picker only confirms or changes each location. */
+  postedAt?: string | null;
 }
 
 export const InwardSheetImportStatus = {
@@ -281,6 +285,44 @@ export interface PulloutPickDto {
   mfgMonthLabel: string;
   quantityBoxes: number;
   overrideReason?: string | null;
+  /** Set on picks of a posted pullout: the pick the picker confirms on the floor. */
+  pickId?: number;
+  palletPositionId?: number;
+  isVirtual?: boolean;
+  pickedAt?: string | null;
+  pickedQuantityBoxes?: number | null;
+}
+
+/** What is left on the shelf at a pick's location (after the order's own deduction). */
+export interface PickRemainderDto {
+  pickId: number;
+  locationCode: string;
+  plannedBoxes: number;
+  remainingBoxes: number;
+  isPicked: boolean;
+}
+
+export interface RelocationSuggestionDto {
+  palletPositionId: number;
+  locationCode: string;
+  level: number;
+  isVirtual: boolean;
+  spareBoxes: number;
+  reason: string;
+}
+
+export interface ConfirmPickRequest {
+  pickedQuantityBoxes: number;
+  moveRemaining?: { destinationPalletPositionId: number; quantityBoxes: number } | null;
+}
+
+export interface ConfirmPickResult {
+  referenceNumber: string;
+  pickedBoxes: number;
+  returnedToStockBoxes: number;
+  movedBoxes: number;
+  remainingAtSourceBoxes: number;
+  destinationLocationCode?: string | null;
 }
 
 export interface PulloutHistoryDto {

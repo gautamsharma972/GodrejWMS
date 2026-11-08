@@ -4,6 +4,8 @@ import type {
   AssignInwardPutawayPkmRequest,
   ChangeInwardPutawayLocationRequest,
   ChangePulloutPickLocationRequest,
+  ConfirmPickRequest,
+  ConfirmPickResult,
   InwardDetailDto,
   InwardHistoryDto,
   InwardPalletChangeOptionDto,
@@ -13,12 +15,14 @@ import type {
   MaterialDto,
   PaginatedList,
   PalletPositionDto,
+  PickRemainderDto,
   PickerPlaceInwardPutawayRequest,
   PickerPlaceInwardPutawayResult,
   PulloutDetailDto,
   PulloutHistoryDto,
   PulloutPickChangeOptionDto,
   PulloutResultDto,
+  RelocationSuggestionDto,
   SubmitInwardWithoutPkmRequest,
   WarehouseOption,
 } from "../types/api";
@@ -132,11 +136,25 @@ export function getPulloutPickOptions(
   token: string,
   params: { referenceNumber: string; materialNumber: number; currentLocationCode: string; mfgMonthLabel: string },
 ): Promise<PulloutPickChangeOptionDto[]> {
-  return apiRequest<PulloutPickChangeOptionDto[]>("/api/pullout/pick-options", { token, query: params });
+  return apiRequest<PulloutPickChangeOptionDto[]>("/api/pullout/picker/pick-options", { token, query: params });
 }
 
 export function changePulloutPickLocation(token: string, request: ChangePulloutPickLocationRequest): Promise<PulloutResultDto> {
-  return apiRequest<PulloutResultDto>("/api/pullout/change-pick-location", { token, method: "POST", body: request });
+  return apiRequest<PulloutResultDto>("/api/pullout/picker/change-pick-location", { token, method: "POST", body: request });
+}
+
+/** The boxes left at a pick's location now, so "move the remaining X" can be offered before the pick is confirmed. */
+export function getPickRemainder(token: string, pickId: number): Promise<PickRemainderDto> {
+  return apiRequest<PickRemainderDto>(`/api/pullout/picks/${pickId}/remainder`, { token });
+}
+
+export function getRelocationSuggestions(token: string, pickId: number, quantity: number): Promise<RelocationSuggestionDto[]> {
+  return apiRequest<RelocationSuggestionDto[]>(`/api/pullout/picks/${pickId}/relocation-suggestions`, { token, query: { quantity } });
+}
+
+/** Confirms one pick of a posted pullout; with moveRemaining the boxes left at that location move in the same transaction. */
+export function confirmPulloutPick(token: string, pickId: number, request: ConfirmPickRequest): Promise<ConfirmPickResult> {
+  return apiRequest<ConfirmPickResult>(`/api/pullout/picks/${pickId}/confirm`, { token, method: "POST", body: request });
 }
 
 export function confirmPullout(token: string, referenceNumber: string): Promise<PulloutResultDto> {

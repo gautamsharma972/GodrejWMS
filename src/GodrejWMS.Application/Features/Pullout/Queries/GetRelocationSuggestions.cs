@@ -97,3 +97,25 @@ public sealed class GetRelocationSuggestionsHandler(IApplicationDbContext db)
             .ToList();
     }
 }
+
+/// <summary>What is left on the shelf at a pick's location for its material + PKM right now (after the order's own deduction), so the
+/// picker can be offered "move the remaining X boxes" before confirming.</summary>
+public sealed record PickRemainderDto(int PickId, string LocationCode, decimal PlannedBoxes, decimal RemainingBoxes, bool IsPicked);
+
+public sealed record GetPickRemainderQuery(int PickId) : IRequest<PickRemainderDto>;
+
+public sealed class GetPickRemainderHandler(IApplicationDbContext db) : IRequestHandler<GetPickRemainderQuery, PickRemainderDto>
+{
+    public async Task<PickRemainderDto> Handle(GetPickRemainderQuery request, CancellationToken cancellationToken)
+    {
+        var pick = await db.PulloutPicks.AsNoTracking()
+            .Include(p => p.PalletPosition)
+            .Include(p => p.PulloutTransactionLine)
+            .FirstOrDefaultAsync(p => p.Id == request.PickId, cancellationToken)
+            ?? throw new NotFoundException(nameof(PulloutPick), request.PickId);
+        var remaining = await db.StockBatches.AsNoTracking()
+            .Where(b => b.PalletPositionId == pick.PalletPositionId && b.MaterialId == pick.PulloutTransactionLine.MaterialId && b.MfgMonth == pick.MfgMonth)
+            .SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;
+        return new PickRemainderDto(pick.Id, pick.PalletPosition.LocationCode, pick.QuantityBoxes, remaining, pick.PickedAt is not null);
+    }
+}
