@@ -125,4 +125,12 @@ public class PulloutPick
     public string? PickedByUserName { get; set; }
 
     public decimal? PickedQuantityBoxes { get; set; }
+
+    /// <summary>Where the picker chose to move the boxes left at this pick's location - nothing moves until the picker confirms the
+    /// whole pick-list, so the choice stays editable until then.</summary>
+    public int? MoveToPalletPositionId { get; set; }
+
+    public PalletPosition? MoveToPalletPosition { get; set; }
+
+    public decimal? MoveQuantityBoxes { get; set; }
 }

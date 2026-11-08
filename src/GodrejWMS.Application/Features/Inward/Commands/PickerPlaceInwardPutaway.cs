@@ -283,9 +283,10 @@ public sealed class PickerPlaceInwardPutawayHandler(
 
         var picks = await db.PulloutPicks
             .Include(p => p.PulloutTransactionLine).ThenInclude(l => l.PulloutTransaction)
-            .Where(p => p.PickedAt == null && p.PalletPositionId == oldPosition.Id && p.MfgMonth == oldPkm
+            .Where(p => p.PalletPositionId == oldPosition.Id && p.MfgMonth == oldPkm
                 && p.PulloutTransactionLine.MaterialId == line.MaterialId
-                && p.PulloutTransactionLine.PulloutTransaction.IsConfirmed && !p.PulloutTransactionLine.PulloutTransaction.IsRejected)
+                && p.PulloutTransactionLine.PulloutTransaction.IsConfirmed && !p.PulloutTransactionLine.PulloutTransaction.IsRejected
+                && p.PulloutTransactionLine.PulloutTransaction.ConfirmedAt == null && p.PulloutTransactionLine.PulloutTransaction.UploadHash != null)
             .OrderBy(p => p.Id)
             .ToListAsync(cancellationToken);
 
@@ -308,6 +309,13 @@ public sealed class PickerPlaceInwardPutawayHandler(
             repointed += follow;
             var cut = take - follow;
             var pickLine = pick.PulloutTransactionLine;
+            // A pick that moves or shrinks has to be confirmed again by the picker (and its chosen remainder move no longer applies).
+            pick.PickedAt = null;
+            pick.PickedByUserId = null;
+            pick.PickedByUserName = null;
+            pick.PickedQuantityBoxes = null;
+            pick.MoveToPalletPositionId = null;
+            pick.MoveQuantityBoxes = null;
 
             if (follow > 0)
             {

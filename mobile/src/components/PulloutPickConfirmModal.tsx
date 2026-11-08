@@ -20,6 +20,11 @@ export interface ConfirmablePick {
   mfgMonthLabel: string;
   quantityBoxes: number;
   isVirtual?: boolean;
+  /** Set when the pick was already confirmed: it can be edited until the pick-list is confirmed. */
+  pickedQuantityBoxes?: number | null;
+  moveToPalletPositionId?: number | null;
+  moveToLocationCode?: string | null;
+  moveQuantityBoxes?: number | null;
 }
 
 interface Props {
@@ -77,13 +82,13 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
     if (!pick) return;
     // Resets the sheet for the pick it was opened on (same pattern as the other modals in this app).
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setQty(pick.quantityBoxes);
-    setVerified(false);
+    setQty(pick.pickedQuantityBoxes ?? pick.quantityBoxes);
+    setVerified(pick.pickedQuantityBoxes != null); // an edit of an already confirmed pick: the location was verified before
     setTypedCode("");
     setRemainder(null);
     setSuggestions([]);
-    setMoveEnabled(false);
-    setDestination(null);
+    setMoveEnabled(!!pick.moveToPalletPositionId);
+    setDestination(pick.moveToPalletPositionId && pick.moveToLocationCode ? { id: pick.moveToPalletPositionId, code: pick.moveToLocationCode } : null);
     setDestCode("");
     setError(null);
     let cancelled = false;
@@ -103,7 +108,7 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
       setSuggestions([]);
       return;
     }
-    setMoveQty((current) => (current <= 0 || current > remainingAfter ? remainingAfter : current));
+    setMoveQty((current) => (current <= 0 || current > remainingAfter ? (pick.moveQuantityBoxes && pick.moveQuantityBoxes <= remainingAfter ? pick.moveQuantityBoxes : remainingAfter) : current));
     let cancelled = false;
     getRelocationSuggestions(token, pick.pickId, remainingAfter)
       .then((value) => !cancelled && setSuggestions(value))
@@ -202,14 +207,14 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
         <Text style={styles.step}>2 · Quantity picked</Text>
         <Stepper value={qty} min={1} max={planned} onChange={setQty} />
         {qty < planned && (
-          <Text style={styles.hint}>{planned - qty} box(es) not found go back to stock at {pick.locationCode}.</Text>
+          <Text style={styles.hint}>{planned - qty} box(es) not found go back to stock at {pick.locationCode} when you confirm the pick-list.</Text>
         )}
 
         {remainingAfter > 0 && (
           <>
-            <Text style={styles.step}>3 · Move the remaining {remainingAfter} box(es)?</Text>
+            <Text style={styles.step}>3 · Move the remaining {remainingAfter} box(es)? (optional)</Text>
             <Text style={styles.hint}>
-              {remainingAfter} box(es) of this material stay at {pick.locationCode}. Moving them to an easier location saves effort later.
+              {remainingAfter} box(es) of this material stay at {pick.locationCode} unless you choose a location. Nothing moves until you confirm the pick-list, so you can still change your mind.
             </Text>
 
             <TouchableOpacity
@@ -260,7 +265,7 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
 
       <View style={styles.footer}>
         <Button
-          title={moveEnabled && destination && moveQty > 0 ? `Confirm pick & move ${moveQty} to ${destination.code}` : `Confirm pick of ${qty}`}
+          title={`Confirm pick of ${qty}`}
           size="lg"
           loading={submitting}
           disabled={!verified}
@@ -268,6 +273,9 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
           icon={<AppIcon name="checkmark-circle-outline" size={22} color={colors.textOnPrimary} />}
         />
         {!verified && <Text style={styles.footerHint}>Verify the location first.</Text>}
+        {moveEnabled && destination && moveQty > 0 && remainingAfter > 0 && (
+          <Text style={styles.footerHint}>{moveQty} box(es) will move to {destination.code} when you confirm the pick-list.</Text>
+        )}
       </View>
 
       <BarcodeScannerModal

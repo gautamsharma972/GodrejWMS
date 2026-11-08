@@ -45,7 +45,13 @@ public class PulloutPickConfirmationTests
     }
 
     private static ConfirmPulloutPickHandler Handler(AppDbContext db) =>
+        new(db, new PickAllow(), new SvcClock(), new SvcUser());
+
+    private static ConfirmPulloutPicklistHandler Picklist(AppDbContext db) =>
         new(db, TestServices.Posting(db), TestServices.Uow(db), new PickAllow(), new SvcClock(), new SvcUser());
+
+    private static Task<ConfirmPulloutPicklistResult> ConfirmPicklistAsync(AppDbContext db) =>
+        Picklist(db).Handle(new ConfirmPulloutPicklistCommand(db.PulloutTransactions.AsNoTracking().Single().Id), default);
 
     private static decimal OnHand(AppDbContext db, PalletPosition position) =>
         db.StockBatches.AsNoTracking().Where(b => b.PalletPositionId == position.Id).Sum(b => (decimal?)b.QuantityBoxes) ?? 0;
@@ -68,7 +74,7 @@ public class PulloutPickConfirmationTests
     }
 
     [Fact]
-    public async Task PartialPick_WithAMoveOfTheRemainder_IsOneAtomicChange()
+    public async Task RemainderMove_IsOnlyChosenAtPickTime_AndCarriedOutWhenThePickListIsConfirmed()
     {
         var s = await SeedAsync();
         using var _ = s.Db;
@@ -77,18 +83,64 @@ public class PulloutPickConfirmationTests
         var result = await Handler(s.Db).Handle(
             new ConfirmPulloutPickCommand(pick.Id, 45, new PulloutRemainderMove(s.Ground.Id, 5)), default);
 
+        // The choice is recorded, nothing has moved yet.
         Assert.Equal(5, result.MovedBoxes);
-        Assert.Equal(0, result.RemainingAtSourceBoxes);
         Assert.Equal("A-02-01", result.DestinationLocationCode);
+        Assert.Equal(5, OnHand(s.Db, s.TopLevel));
+        Assert.Equal(0, OnHand(s.Db, s.Ground));
+        Assert.Empty(s.Db.StockLedgerEntries.AsNoTracking().Where(e => e.EntryType == StockLedgerEntryTypes.PickRelocate));
+        var saved = s.Db.PulloutPicks.AsNoTracking().Single();
+        Assert.Equal(s.Ground.Id, saved.MoveToPalletPositionId);
+        Assert.Equal(5, saved.MoveQuantityBoxes);
+
+        var confirmed = await ConfirmPicklistAsync(s.Db);
+
+        Assert.Equal(5, confirmed.MovedBoxes);
         Assert.Equal(0, OnHand(s.Db, s.TopLevel));
         Assert.Equal(5, OnHand(s.Db, s.Ground));
         var relocation = s.Db.StockLedgerEntries.AsNoTracking().Where(e => e.EntryType == StockLedgerEntryTypes.PickRelocate).OrderBy(e => e.Id).ToList();
         Assert.Equal(new decimal[] { -5, 5 }, relocation.Select(e => e.QuantityBoxes).ToArray());
-        Assert.NotNull(s.Db.PulloutPicks.AsNoTracking().Single().PickedAt);
     }
 
     [Fact]
-    public async Task RemainderCanMoveIntoAVirtualLocation_WhichThenBecomesInUse()
+    public async Task NoMoveChosen_LeavesTheRemainderWhereItIs_EvenAfterThePickListIsConfirmed()
+    {
+        var s = await SeedAsync();
+        using var _ = s.Db;
+
+        await Handler(s.Db).Handle(new ConfirmPulloutPickCommand(s.Db.PulloutPicks.Single().Id, 45), default);
+        await ConfirmPicklistAsync(s.Db);
+
+        Assert.Equal(5, OnHand(s.Db, s.TopLevel));
+        Assert.Equal(0, OnHand(s.Db, s.Ground));
+        Assert.Empty(s.Db.StockLedgerEntries.AsNoTracking().Where(e => e.EntryType == StockLedgerEntryTypes.PickRelocate));
+    }
+
+    [Fact]
+    public async Task PicksCanBeEditedAgain_UntilThePickListIsConfirmed()
+    {
+        var s = await SeedAsync();
+        using var _ = s.Db;
+        var pickId = s.Db.PulloutPicks.Single().Id;
+
+        await Handler(s.Db).Handle(new ConfirmPulloutPickCommand(pickId, 45, new PulloutRemainderMove(s.Ground.Id, 5)), default);
+        // Changed their mind: fewer boxes found and no move after all.
+        var again = await Handler(s.Db).Handle(new ConfirmPulloutPickCommand(pickId, 40), default);
+
+        Assert.Equal(5, again.ReturnedToStockBoxes);
+        var edited = s.Db.PulloutPicks.AsNoTracking().Single();
+        Assert.Equal(40, edited.PickedQuantityBoxes);
+        Assert.Null(edited.MoveToPalletPositionId);
+
+        await ConfirmPicklistAsync(s.Db);
+
+        // After the pick-list is confirmed the picks are final.
+        var locked = await Assert.ThrowsAsync<InvalidOperationException>(() => Handler(s.Db).Handle(new ConfirmPulloutPickCommand(pickId, 45), default));
+        Assert.Contains("already been confirmed", locked.Message);
+    }
+
+    [Fact]
+    public async Task RemainderCanMoveIntoAVirtualLocation_WhichBecomesInUseWhenThePickListIsConfirmed()
     {
         var s = await SeedAsync();
         using var _ = s.Db;
@@ -100,9 +152,12 @@ public class PulloutPickConfirmationTests
 
         await Handler(s.Db).Handle(
             new ConfirmPulloutPickCommand(s.Db.PulloutPicks.Single().Id, 45, new PulloutRemainderMove(spare.Id, 5)), default);
+        Assert.Equal(0, OnHand(s.Db, spare));
+
+        await ConfirmPicklistAsync(s.Db);
 
         Assert.Equal(5, OnHand(s.Db, spare));
-        Assert.Equal(VirtualLocationStatus.InUse, spare.VirtualStatus);
+        Assert.Equal(VirtualLocationStatus.InUse, s.Db.PalletPositions.AsNoTracking().Single(p => p.Id == spare.Id).VirtualStatus);
     }
 
     [Fact]
@@ -142,7 +197,7 @@ public class PulloutPickConfirmationTests
     }
 
     [Fact]
-    public async Task ShortPick_ReturnsTheMissingBoxesToStock_AndMarksTheLinePartial()
+    public async Task ShortPick_ReturnsTheMissingBoxesToStock_WhenThePickListIsConfirmed()
     {
         var s = await SeedAsync();
         using var _ = s.Db;
@@ -150,7 +205,14 @@ public class PulloutPickConfirmationTests
         var result = await Handler(s.Db).Handle(new ConfirmPulloutPickCommand(s.Db.PulloutPicks.Single().Id, 40), default);
 
         Assert.Equal(5, result.ReturnedToStockBoxes);
-        Assert.Equal(10, result.RemainingAtSourceBoxes); // 5 never taken + 5 handed back
+        Assert.Equal(10, result.RemainingAtSourceBoxes); // 5 never taken + 5 that will be handed back
+        // Not yet: the pick can still be edited, so stock and the line are untouched.
+        Assert.Equal(5, OnHand(s.Db, s.TopLevel));
+        Assert.Equal(45, s.Db.PulloutTransactionLines.AsNoTracking().Single().PickedQuantityBoxes);
+
+        await ConfirmPicklistAsync(s.Db);
+
+        Assert.Equal(10, OnHand(s.Db, s.TopLevel));
         var line = s.Db.PulloutTransactionLines.AsNoTracking().Single();
         Assert.Equal(40, line.PickedQuantityBoxes);
         Assert.Equal(GodrejWMS.Domain.Enums.AllocationStatus.Partial, line.Status);
@@ -194,7 +256,7 @@ public class PulloutPickConfirmationTests
         // Every pick is confirmed, but the pick-list stays on the picker's list until they press Confirm on it.
         Assert.Single((await list.Handle(new GetPickerPendingPulloutsQuery(), default)).Items);
 
-        await new ConfirmPulloutPicklistHandler(s.Db, new PickAllow(), new SvcClock(), new SvcUser())
+        await new ConfirmPulloutPicklistHandler(s.Db, TestServices.Posting(s.Db), TestServices.Uow(s.Db), new PickAllow(), new SvcClock(), new SvcUser())
             .Handle(new ConfirmPulloutPicklistCommand(s.Db.PulloutTransactions.AsNoTracking().Single().Id), default);
         Assert.Empty((await list.Handle(new GetPickerPendingPulloutsQuery(), default)).Items);
     }
@@ -205,7 +267,7 @@ public class PulloutPickConfirmationTests
         var s = await SeedAsync();
         using var _ = s.Db;
         var pulloutId = s.Db.PulloutTransactions.AsNoTracking().Single().Id;
-        var confirm = new ConfirmPulloutPicklistHandler(s.Db, new PickAllow(), new SvcClock(), new SvcUser());
+        var confirm = new ConfirmPulloutPicklistHandler(s.Db, TestServices.Posting(s.Db), TestServices.Uow(s.Db), new PickAllow(), new SvcClock(), new SvcUser());
         var history = new GetPulloutHistoryHandler(s.Db);
 
         // Posted on upload: not confirmed until the picker says so.
@@ -282,11 +344,17 @@ public class PulloutPickConfirmationTests
         Assert.Equal("Closer to dispatch", pick.OverrideReason);
         Assert.Contains(s.Db.StockLedgerEntries.AsNoTracking(), e => e.EntryType == StockLedgerEntryTypes.PickChange && e.QuantityBoxes == 45);
 
-        // Once the picker has confirmed it, it can no longer be changed.
+        // A confirmed pick can still be re-pointed until the pick-list is confirmed (it comes back unconfirmed); after that it is final.
         await Handler(s.Db).Handle(new ConfirmPulloutPickCommand(pick.Id, 45), default);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => change.Handle(new ChangePulloutPickLocationCommand(
+        await change.Handle(new ChangePulloutPickLocationCommand(
             s.Reference, s.Material.MaterialNumber, "A-03-01", "OCT|2026",
-            [new PulloutPickSource(s.TopLevel.Id, "OCT|2026", 45)], "Too late"), default));
+            [new PulloutPickSource(s.TopLevel.Id, "OCT|2026", 45)], ""), default);
+        Assert.Null(s.Db.PulloutPicks.AsNoTracking().Single().PickedAt);
+        await Handler(s.Db).Handle(new ConfirmPulloutPickCommand(s.Db.PulloutPicks.AsNoTracking().Single().Id, 45), default);
+        await ConfirmPicklistAsync(s.Db);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => change.Handle(new ChangePulloutPickLocationCommand(
+            s.Reference, s.Material.MaterialNumber, "A-01-01", "OCT|2026",
+            [new PulloutPickSource(s.Other.Id, "OCT|2026", 45)], "Too late"), default));
     }
 }
 

@@ -1230,6 +1230,13 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Property<int>("MfgMonth")
                         .HasColumnType("int");
 
+                    b.Property<decimal?>("MoveQuantityBoxes")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
+                    b.Property<int?>("MoveToPalletPositionId")
+                        .HasColumnType("int");
+
                     b.Property<string>("OverrideReason")
                         .HasMaxLength(250)
                         .HasColumnType("varchar(250)");
@@ -1260,6 +1267,8 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(14,3)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("MoveToPalletPositionId");
 
                     b.HasIndex("PalletPositionId");
 
@@ -2680,6 +2689,11 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.PulloutPick", b =>
                 {
+                    b.HasOne("GodrejWMS.Domain.Entities.PalletPosition", "MoveToPalletPosition")
+                        .WithMany()
+                        .HasForeignKey("MoveToPalletPositionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("GodrejWMS.Domain.Entities.PalletPosition", "PalletPosition")
                         .WithMany()
                         .HasForeignKey("PalletPositionId")
@@ -2691,6 +2705,8 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasForeignKey("PulloutTransactionLineId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("MoveToPalletPosition");
 
                     b.Navigation("PalletPosition");
 

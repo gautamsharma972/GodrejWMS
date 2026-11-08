@@ -82,10 +82,10 @@
                         Reject Pullout
                     </button>
                 }
-                @if (_detail.IsConfirmed && !PickingStarted && !_detail.PickingConfirmed)
+                @if (_detail.IsConfirmed && !_detail.PickingConfirmed)
                 {
                     <button type="button" class="btn btn-outline-danger" @onclick="ToggleRejectPanel" disabled="@(_saving || _rejecting)"
-                            title="Puts the picked-out stock back into inventory (only possible while nothing is picked yet)">
+                            title="Puts the picked-out stock back into inventory (possible until the picker confirms the pick-list)">
                         <i class="bi bi-x-circle" aria-hidden="true"></i>
                         Cancel / Reverse Pullout
                     </button>
@@ -209,7 +209,7 @@
                                                     @if (pick.PickedAt is not null) { <span class="status-pill success ms-1" title="Picked by the picker"><i class="bi bi-check2" aria-hidden="true"></i> Picked</span> }
                                                     <strong>-@pick.QuantityBoxes.ToString("N0")</strong>
                                                 </span>
-                                                @if (!_detail.IsRejected && pick.PickedAt is null)
+                                                @if (!_detail.IsRejected && !_detail.PickingConfirmed)
                                                 {
                                                     <button type="button"
                                                             class="btn btn-sm btn-outline-secondary allocation-change-button"
@@ -310,8 +310,6 @@
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
 
-    private bool PickingStarted => _detail is not null && _detail.Lines.SelectMany(l => l.Picks).Any(p => p.PickedAt is not null);
-
     private string PostedMessage()
     {
         var picks = _detail!.Lines.SelectMany(l => l.Picks).ToList();
@@ -328,7 +326,7 @@
 
     private async Task RejectPulloutAsync()
     {
-        if (_detail is null || _detail.IsRejected || (_detail.IsConfirmed && (PickingStarted || _detail.PickingConfirmed)) || string.IsNullOrWhiteSpace(_rejectReason))
+        if (_detail is null || _detail.IsRejected || (_detail.IsConfirmed && _detail.PickingConfirmed) || string.IsNullOrWhiteSpace(_rejectReason))
         {
             return;
         }

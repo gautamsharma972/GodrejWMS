@@ -22,6 +22,9 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
             .Include(t => t.Lines)
                 .ThenInclude(l => l.Picks)
                     .ThenInclude(p => p.PalletPosition)
+            .Include(t => t.Lines)
+                .ThenInclude(l => l.Picks)
+                    .ThenInclude(p => p.MoveToPalletPosition)
             .FirstOrDefaultAsync(t => t.Id == request.Id, cancellationToken)
             ?? throw new NotFoundException(nameof(PulloutTransaction), request.Id);
 
@@ -64,7 +67,10 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
                         p.PalletPositionId,
                         p.PalletPosition.IsVirtual,
                         p.PickedAt,
-                        p.PickedQuantityBoxes))
+                        p.PickedQuantityBoxes,
+                        p.MoveToPalletPositionId,
+                        p.MoveToPalletPosition != null ? p.MoveToPalletPosition.LocationCode : null,
+                        p.MoveQuantityBoxes))
                     .ToList()),
                 l.PlantName,
                 l.Priority))
@@ -97,7 +103,10 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
                 group.First().PalletPositionId,
                 group.First().IsVirtual,
                 group.All(pick => pick.PickedAt is not null) ? group.First().PickedAt : null,
-                group.All(pick => pick.PickedQuantityBoxes is not null) ? group.Sum(pick => pick.PickedQuantityBoxes) : null))
+                group.All(pick => pick.PickedQuantityBoxes is not null) ? group.Sum(pick => pick.PickedQuantityBoxes) : null,
+                group.First().MoveToPalletPositionId,
+                group.First().MoveToLocationCode,
+                group.First().MoveQuantityBoxes))
             .OrderBy(pick => pick.MfgMonthLabel)
             .ThenBy(pick => pick.LocationCode)
             .ToList();

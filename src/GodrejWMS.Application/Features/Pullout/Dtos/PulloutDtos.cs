@@ -97,7 +97,10 @@ public sealed record PulloutPickDto(
     int PalletPositionId = 0,
     bool IsVirtual = false,
     DateTimeOffset? PickedAt = null,
-    decimal? PickedQuantityBoxes = null);
+    decimal? PickedQuantityBoxes = null,
+    int? MoveToPalletPositionId = null,
+    string? MoveToLocationCode = null,
+    decimal? MoveQuantityBoxes = null);
 
 public sealed record PulloutPickChangeOptionDto(
     int PalletPositionId,

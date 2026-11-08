@@ -57,13 +57,8 @@ public sealed class RejectPulloutHandler(
                 throw new InvalidOperationException("This pullout can't be rejected because it has already been confirmed and inventory was updated.");
             }
 
-            // Posted on upload: the stock was already taken out, so cancelling puts it back - but only while nothing is picked yet.
-            if (transaction.Lines.SelectMany(l => l.Picks).Any(p => p.PickedAt is not null))
-            {
-                throw new InvalidOperationException(
-                    "This pullout can't be rejected because picking has already started and the picked stock has left the warehouse.");
-            }
-
+            // Posted on upload: the stock was already taken out, so cancelling puts it back. That is possible until the picker confirms the
+            // pick-list (the picks and anything chosen with them only take effect then).
             var returns = transaction.Lines
                 .SelectMany(l => l.Picks.Select(p => new StockChange(l.MaterialId, p.MfgMonth, LocationSubtypeIds.Good, p.PalletPosition, p.QuantityBoxes)))
                 .ToList();

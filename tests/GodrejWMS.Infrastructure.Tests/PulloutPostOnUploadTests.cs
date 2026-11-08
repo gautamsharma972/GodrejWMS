@@ -61,7 +61,7 @@ public class PulloutPostOnUploadTests
     }
 
     [Fact]
-    public async Task VirtualLocation_StaysInUseWhileAPickWaitsThere_AndIsReleasedOnceThePickIsConfirmed()
+    public async Task VirtualLocation_StaysInUseWhileAPickWaitsThere_AndIsReleasedOnceThePickListIsConfirmed()
     {
         var (db, _, _, virtualLocation) = await SeedAsync(50, 202611, 30, 202610); // the virtual one holds the older PKM
         using var _ = db;
@@ -73,8 +73,12 @@ public class PulloutPostOnUploadTests
         Assert.Equal(VirtualLocationStatus.InUse, virtualLocation.VirtualStatus);
 
         var pickId = db.PulloutPicks.AsNoTracking().Single().Id;
-        await new ConfirmPulloutPickHandler(db, TestServices.Posting(db), TestServices.Uow(db), new PostAllow(), new SvcClock(), new SvcUser())
+        await new ConfirmPulloutPickHandler(db, new PostAllow(), new SvcClock(), new SvcUser())
             .Handle(new ConfirmPulloutPickCommand(pickId, 30), default);
+        // Confirming the pick is still editable, so the location stays in use until the pick-list is confirmed.
+        Assert.Equal(VirtualLocationStatus.InUse, db.PalletPositions.AsNoTracking().Single(p => p.Id == virtualLocation.Id).VirtualStatus);
+        await new ConfirmPulloutPicklistHandler(db, TestServices.Posting(db), TestServices.Uow(db), new PostAllow(), new SvcClock(), new SvcUser())
+            .Handle(new ConfirmPulloutPicklistCommand(db.PulloutTransactions.AsNoTracking().Single().Id), default);
 
         var released = await db.PalletPositions.AsNoTracking().SingleAsync(p => p.Id == virtualLocation.Id);
         Assert.Equal(VirtualLocationStatus.Free, released.VirtualStatus);

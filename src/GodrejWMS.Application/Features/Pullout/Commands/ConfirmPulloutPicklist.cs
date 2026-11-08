@@ -2,17 +2,20 @@ using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Common.Permissions;
+using GodrejWMS.Application.Features.Inward;
 using GodrejWMS.Domain.Entities;
+using GodrejWMS.Domain.Enums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.Pullout.Commands;
 
-/// <summary>The picker's final Confirm of a pullout posted on upload, once every pick has been confirmed (or changed and confirmed).
-/// It sets the pick reference to confirmed and takes it off the picker's list; the pullout can no longer be cancelled afterwards.</summary>
+/// <summary>The picker's final Confirm of a pullout posted on upload, once every pick has been confirmed. Only now does stock change for
+/// what the picker decided: boxes not found go back to stock and the remainders the picker chose to move are moved, all in one
+/// transaction. It sets the pick reference to confirmed, takes it off the picker's list, and the picks can no longer be edited.</summary>
 public sealed record ConfirmPulloutPicklistCommand(int PulloutId) : IRequest<ConfirmPulloutPicklistResult>;
 
-public sealed record ConfirmPulloutPicklistResult(string ReferenceNumber, int PickCount, decimal PickedBoxes);
+public sealed record ConfirmPulloutPicklistResult(string ReferenceNumber, int PickCount, decimal PickedBoxes, decimal MovedBoxes);
 
 public sealed class ConfirmPulloutPicklistValidator : AbstractValidator<ConfirmPulloutPicklistCommand>
 {
@@ -20,8 +23,12 @@ public sealed class ConfirmPulloutPicklistValidator : AbstractValidator<ConfirmP
 }
 
 public sealed class ConfirmPulloutPicklistHandler(
-    IApplicationDbContext db, IPermissionService permissions, IDateTimeProvider clock, ICurrentUserService currentUser)
-    : IRequestHandler<ConfirmPulloutPicklistCommand, ConfirmPulloutPicklistResult>
+    IApplicationDbContext db,
+    IStockPostingService posting,
+    IUnitOfWork uow,
+    IPermissionService permissions,
+    IDateTimeProvider clock,
+    ICurrentUserService currentUser) : IRequestHandler<ConfirmPulloutPicklistCommand, ConfirmPulloutPicklistResult>
 {
     public async Task<ConfirmPulloutPicklistResult> Handle(ConfirmPulloutPicklistCommand request, CancellationToken cancellationToken)
     {
@@ -30,8 +37,14 @@ public sealed class ConfirmPulloutPicklistHandler(
             throw new InvalidOperationException("You do not have permission to confirm pick-lists.");
         }
 
+        return await InwardSubmissionLogic.RunOrderAsync(uow, ct => RunAsync(request, ct), cancellationToken);
+    }
+
+    private async Task<ConfirmPulloutPicklistResult> RunAsync(ConfirmPulloutPicklistCommand request, CancellationToken cancellationToken)
+    {
         var transaction = await db.PulloutTransactions
-            .Include(t => t.Lines).ThenInclude(l => l.Picks)
+            .Include(t => t.Lines).ThenInclude(l => l.Picks).ThenInclude(p => p.PalletPosition).ThenInclude(p => p.Rack)
+            .Include(t => t.Lines).ThenInclude(l => l.Picks).ThenInclude(p => p.MoveToPalletPosition).ThenInclude(p => p!.Rack)
             .FirstOrDefaultAsync(t => t.Id == request.PulloutId, cancellationToken)
             ?? throw new NotFoundException(nameof(PulloutTransaction), request.PulloutId);
         await db.Entry(transaction).ReloadAsync(cancellationToken);
@@ -51,24 +64,93 @@ public sealed class ConfirmPulloutPicklistHandler(
             throw new InvalidOperationException("This pick-list has already been confirmed.");
         }
 
-        var picks = transaction.Lines.SelectMany(l => l.Picks).ToList();
+        var picks = transaction.Lines.SelectMany(l => l.Picks.Select(p => (Line: l, Pick: p))).ToList();
         // The long-lived Blazor context may hold stale copies of picks another session just confirmed.
-        foreach (var pick in picks)
+        foreach (var (_, pick) in picks)
         {
             await db.Entry(pick).ReloadAsync(cancellationToken);
         }
 
-        var open = picks.Count(p => p.PickedAt is null);
+        var open = picks.Count(x => x.Pick.PickedAt is null);
         if (open > 0)
         {
             throw new InvalidOperationException($"Confirm every pick first - {open} pick(s) of this pick-list have not been confirmed yet.");
+        }
+
+        // 1. Boxes the picker did not find were already taken out of stock at upload: they go back where they were.
+        var returns = new List<StockChange>();
+        foreach (var (line, pick) in picks)
+        {
+            var picked = pick.PickedQuantityBoxes ?? pick.QuantityBoxes;
+            var shortfall = pick.QuantityBoxes - picked;
+            if (shortfall <= 0)
+            {
+                continue;
+            }
+
+            returns.Add(new StockChange(line.MaterialId, pick.MfgMonth, LocationSubtypeIds.Good, pick.PalletPosition, shortfall));
+            pick.QuantityBoxes = picked;
+            line.PickedQuantityBoxes -= shortfall;
+            line.Status = line.PickedQuantityBoxes >= line.RequestedQuantityBoxes
+                ? AllocationStatus.Fulfilled
+                : line.PickedQuantityBoxes > 0 ? AllocationStatus.Partial : AllocationStatus.Failed;
+            line.Remarks = line.Status == AllocationStatus.Fulfilled
+                ? null
+                : $"Picker picked {line.PickedQuantityBoxes:0.###} of {line.RequestedQuantityBoxes:0.###} box(es).";
+        }
+
+        if (returns.Count > 0)
+        {
+            await posting.ApplyAsync(
+                new StockPostingContext(StockLedgerEntryTypes.PickChange, "PICK", transaction.ReferenceNumber, "Short pick - returned to stock"),
+                returns, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        // 2. The remainders the picker chose to move, validated against the stock as it is now (one at a time, so two moves into the
+        //    same location are checked together).
+        var moved = 0m;
+        foreach (var (line, pick) in picks.Where(x => x.Pick is { MoveToPalletPositionId: not null, MoveQuantityBoxes: > 0 }))
+        {
+            var quantity = pick.MoveQuantityBoxes!.Value;
+            var source = pick.PalletPosition;
+            var destination = pick.MoveToPalletPosition!;
+            var onHand = await db.StockBatches.AsNoTracking()
+                .Where(b => b.PalletPositionId == source.Id && b.MaterialId == line.MaterialId && b.MfgMonth == pick.MfgMonth)
+                .SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;
+            if (quantity > onHand)
+            {
+                throw new InvalidOperationException(
+                    $"Only {onHand:0.###} box(es) remain at {source.LocationCode} now; the {quantity:0.###} you chose to move to {destination.LocationCode} are not all there. Edit the pick and confirm again.");
+            }
+
+            var problem = await RelocationRules.ValidateDestinationAsync(
+                db, destination, line.MaterialId, source.Id, transaction.WarehouseId, quantity, cancellationToken);
+            if (problem is not null)
+            {
+                throw new InvalidOperationException($"{problem} Edit the pick and choose another location.");
+            }
+
+            await posting.ApplyAsync(
+                new StockPostingContext(StockLedgerEntryTypes.PickRelocate, "PICK", transaction.ReferenceNumber, $"Remainder moved from {source.LocationCode}"),
+                [
+                    new StockChange(line.MaterialId, pick.MfgMonth, LocationSubtypeIds.Good, source, -quantity),
+                    new StockChange(line.MaterialId, pick.MfgMonth, LocationSubtypeIds.Good, destination, quantity)
+                ],
+                cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            moved += quantity;
         }
 
         transaction.ConfirmedAt = clock.UtcNow;
         transaction.ConfirmedByUserId = currentUser.UserId;
         transaction.ConfirmedByUserName = currentUser.UserName;
         transaction.RowVersion++;
+
+        // The picks are done: a virtual location that is now empty is free for reuse.
+        await posting.ReleaseEmptyVirtualLocationsAsync(picks.Select(x => x.Pick.PalletPosition), cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        return new ConfirmPulloutPicklistResult(transaction.ReferenceNumber, picks.Count, picks.Sum(p => p.PickedQuantityBoxes ?? p.QuantityBoxes));
+        return new ConfirmPulloutPicklistResult(
+            transaction.ReferenceNumber, picks.Count, picks.Sum(x => x.Pick.PickedQuantityBoxes ?? x.Pick.QuantityBoxes), moved);
     }
 }

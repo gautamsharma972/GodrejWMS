@@ -159,12 +159,12 @@
                     else if (_selected is null)
                     {
                         var rows = Rows();
-                        <p class="text-muted mb-2">Tap a pick to confirm or change it. <strong>@rows.Count(r => r.Done) of @rows.Count</strong> confirmed.</p>
+                        <p class="text-muted mb-2">Tap a pick to confirm or change it. <strong>@rows.Count(r => r.Done) of @rows.Count</strong> confirmed. You can still edit any pick until you confirm the pick-list.</p>
                         <div class="picker-location-list d-grid gap-2">
                             @foreach (var row in rows)
                             {
                                 <button type="button" class="btn text-start border rounded-3 p-3 d-flex justify-content-between align-items-center @(row.Done ? "picker-location-done" : "btn-outline-primary")"
-                                        disabled="@row.Done" @onclick="() => SelectPickAsync(row)">
+                                        @onclick="() => SelectPickAsync(row)">
                                     <span>
                                         <strong class="fs-5 @(row.Done ? "picker-location-code-done" : null)">@row.Pick.LocationCode</strong>
                                         @if (row.Pick.IsVirtual) { <span class="status-pill info ms-1" title="Virtual overflow location">Virtual</span> }
@@ -172,7 +172,7 @@
                                         <span class="small text-muted">@row.Line.MaterialNumber &middot; @row.Pick.MfgMonthLabel &middot; @row.Pick.QuantityBoxes.ToString("0.###") boxes</span><br />
                                         <span class="small text-muted">@row.Line.MaterialDescription</span>
                                     </span>
-                                    <span class="status-pill @(row.Done ? "success" : "warning")">@(row.Done ? $"Picked {(row.Pick.PickedQuantityBoxes ?? row.Pick.QuantityBoxes):0.###}" : "To pick")</span>
+                                    <span class="status-pill @(row.Done ? "success" : "warning")" title="@(row.Pick.MoveToLocationCode is null ? null : $"{row.Pick.MoveQuantityBoxes:0.###} box(es) will move to {row.Pick.MoveToLocationCode} when the pick-list is confirmed")">@(row.Done ? $"Picked {(row.Pick.PickedQuantityBoxes ?? row.Pick.QuantityBoxes):0.###}" + (row.Pick.MoveToLocationCode is null ? "" : $" · move {row.Pick.MoveQuantityBoxes:0.###} to {row.Pick.MoveToLocationCode}") : "To pick")</span>
                                 </button>
                             }
                         </div>
@@ -219,14 +219,14 @@
                                        @bind="_qty" @bind:event="oninput" @bind:after="OnQtyChangedAsync" />
                                 @if (_qty > 0 && _qty < pick.QuantityBoxes)
                                 {
-                                    <div class="small text-muted mb-2">@((pick.QuantityBoxes - _qty).ToString("0.###")) box(es) not found go back to stock at @pick.LocationCode.</div>
+                                    <div class="small text-muted mb-2">@((pick.QuantityBoxes - _qty).ToString("0.###")) box(es) not found go back to stock at @pick.LocationCode when you confirm the pick-list.</div>
                                 }
 
                                 @if (RemainingAfter > 0)
                                 {
                                     <div class="mt-3">
-                                        <div class="fw-semibold mb-1">Move the remaining @RemainingAfter.ToString("0.###") box(es)?</div>
-                                        <div class="small text-muted mb-2">They stay at @pick.LocationCode unless you move them. A lower location saves effort later.</div>
+                                        <div class="fw-semibold mb-1">Move the remaining @RemainingAfter.ToString("0.###") box(es)? <span class="text-muted fw-normal">(optional)</span></div>
+                                        <div class="small text-muted mb-2">They stay at @pick.LocationCode unless you choose a location. Nothing moves until you confirm the pick-list, so you can still change your mind.</div>
                                         <div class="d-grid gap-2 mb-2">
                                             <button type="button" class="btn text-start border rounded-3 p-3 @(!_moveEnabled ? "btn-primary" : "btn-outline-secondary")" @onclick="() => _moveEnabled = false">
                                                 Leave them at @pick.LocationCode
@@ -255,8 +255,12 @@
 
                                 <button type="button" class="btn btn-primary btn-lg w-100 mt-3" disabled="@(_submitting || _qty <= 0)" @onclick="ConfirmPickAsync">
                                     <i class="bi bi-check2-circle" aria-hidden="true"></i>
-                                    @(_submitting ? "Confirming..." : _moveEnabled && _destinationId > 0 ? $"Confirm pick & move {_moveQty:0.###} to {DestinationCode}" : $"Confirm pick of {_qty:0.###}")
+                                    @(_submitting ? "Saving..." : $"Confirm pick of {_qty:0.###}")
                                 </button>
+                                @if (_moveEnabled && _destinationId > 0 && RemainingAfter > 0)
+                                {
+                                    <div class="small text-muted mt-2">@_moveQty.ToString("0.###") box(es) will move to @DestinationCode when you confirm the pick-list.</div>
+                                }
                             }
                             else
                             {
@@ -423,16 +427,22 @@
         _selected = row;
         _formError = null;
         _changing = false;
-        _qty = row.Pick.QuantityBoxes;
-        _moveEnabled = false;
-        _destinationId = 0;
+        // A pick that was already confirmed opens with what the picker chose (it stays editable until the pick-list is confirmed).
+        _qty = row.Pick.PickedQuantityBoxes ?? row.Pick.QuantityBoxes;
+        _moveEnabled = row.Pick.MoveToPalletPositionId is > 0;
+        _destinationId = row.Pick.MoveToPalletPositionId ?? 0;
+        if (row.Pick.MoveToPalletPositionId is int chosenId && row.Pick.MoveToLocationCode is not null)
+        {
+            _destinationCodes[chosenId] = row.Pick.MoveToLocationCode;
+        }
+
         _otherDestinationId = 0;
         _suggestions = [];
         _remainder = null;
         try
         {
             _remainder = await Mediator.Send(new GetPickRemainderQuery(row.Pick.PickId));
-            _moveQty = RemainingAfter;
+            _moveQty = _moveEnabled ? row.Pick.MoveQuantityBoxes ?? RemainingAfter : RemainingAfter;
             await LoadSuggestionsAsync();
         }
         catch (Exception ex)
@@ -497,8 +507,8 @@
             var move = _moveEnabled && _destinationId > 0 && _moveQty > 0 ? new PulloutRemainderMove(_destinationId, _moveQty) : null;
             var result = await Mediator.Send(new ConfirmPulloutPickCommand(_selected.Pick.PickId, _qty, move));
             var message = result.MovedBoxes > 0
-                ? $"Pick confirmed. Moved {result.MovedBoxes:0.###} box(es) to {result.DestinationLocationCode}."
-                : result.ReturnedToStockBoxes > 0 ? $"Pick confirmed. {result.ReturnedToStockBoxes:0.###} box(es) not found went back to stock."
+                ? $"Pick confirmed. {result.MovedBoxes:0.###} box(es) will move to {result.DestinationLocationCode} when you confirm the pick-list."
+                : result.ReturnedToStockBoxes > 0 ? $"Pick confirmed. The {result.ReturnedToStockBoxes:0.###} box(es) not found go back to stock when you confirm the pick-list."
                 : "Pick confirmed.";
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast", message, "success");
             await AfterChangeAsync(_detail.Id);

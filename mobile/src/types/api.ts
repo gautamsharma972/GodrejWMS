@@ -291,6 +291,10 @@ export interface PulloutPickDto {
   isVirtual?: boolean;
   pickedAt?: string | null;
   pickedQuantityBoxes?: number | null;
+  /** The remainder move the picker chose; it is only carried out when the pick-list is confirmed. */
+  moveToPalletPositionId?: number | null;
+  moveToLocationCode?: string | null;
+  moveQuantityBoxes?: number | null;
 }
 
 /** A posted pullout the picker still has picks to confirm on (GET /api/pullout/picker/queue). */

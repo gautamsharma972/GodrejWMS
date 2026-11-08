@@ -76,6 +76,11 @@ public class PulloutPickConfiguration : IEntityTypeConfiguration<PulloutPick>
         builder.Property(p => p.PickedQuantityBoxes).HasPrecision(14, 3);
         builder.Property(p => p.PickedByUserId).HasMaxLength(450);
         builder.Property(p => p.PickedByUserName).HasMaxLength(256);
+        builder.Property(p => p.MoveQuantityBoxes).HasPrecision(14, 3);
+        builder.HasOne(p => p.MoveToPalletPosition)
+            .WithMany()
+            .HasForeignKey(p => p.MoveToPalletPositionId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(p => p.PalletPosition)
             .WithMany()

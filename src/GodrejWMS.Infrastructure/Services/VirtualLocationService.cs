@@ -74,22 +74,24 @@ public sealed class VirtualLocationService(AppDbContext db, IDateTimeProvider cl
             return false;
         }
 
-        // A pick the picker has not confirmed yet still means boxes physically waiting at this location, whether the order was
-        // posted on upload or is an older pending one. Picks changed in this unit of work count with their new values.
+        // A pick of a pullout whose pick-list is not confirmed yet still means boxes physically waiting at this location (and
+        // possible stock changes when it is confirmed), whether the order was posted on upload or is an older pending one.
+        // Picks changed in this unit of work count with their new values.
         var trackedPicks = db.ChangeTracker.Entries<PulloutPick>()
             .Where(e => e.State != EntityState.Deleted)
             .Select(e => e.Entity)
             .Where(p => p.PalletPositionId == position.Id || ReferenceEquals(p.PalletPosition, position))
             .ToList();
-        if (trackedPicks.Any(p => p.PickedAt == null && p.PulloutTransactionLine?.PulloutTransaction?.IsRejected != true))
+        if (trackedPicks.Any(p => p.PulloutTransactionLine?.PulloutTransaction is not { } t || (!t.IsRejected && t.ConfirmedAt == null)))
         {
             return false;
         }
 
         var trackedPickIds = db.ChangeTracker.Entries<PulloutPick>().Select(e => e.Entity.Id).Where(id => id != 0).ToList();
         var hasOpenPick = await db.PulloutPicks.AsNoTracking()
-            .AnyAsync(p => p.PalletPositionId == position.Id && p.PickedAt == null && !trackedPickIds.Contains(p.Id)
-                && !p.PulloutTransactionLine.PulloutTransaction.IsRejected, cancellationToken);
+            .AnyAsync(p => p.PalletPositionId == position.Id && !trackedPickIds.Contains(p.Id)
+                && !p.PulloutTransactionLine.PulloutTransaction.IsRejected
+                && p.PulloutTransactionLine.PulloutTransaction.ConfirmedAt == null, cancellationToken);
         if (hasOpenPick)
         {
             return false;

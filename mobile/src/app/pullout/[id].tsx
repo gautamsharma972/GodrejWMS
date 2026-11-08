@@ -122,9 +122,9 @@ export default function PulloutDetailScreen() {
   const handlePickConfirmed = async (result: ConfirmPickResult) => {
     setConfirmPick(null);
     const parts = [`Picked ${result.pickedBoxes} box(es).`];
-    if (result.returnedToStockBoxes > 0) parts.push(`${result.returnedToStockBoxes} not found - returned to stock.`);
-    if (result.movedBoxes > 0) parts.push(`Moved ${result.movedBoxes} remaining box(es) to ${result.destinationLocationCode}.`);
-    else if (result.remainingAtSourceBoxes > 0) parts.push(`${result.remainingAtSourceBoxes} box(es) left at the pick location.`);
+    if (result.returnedToStockBoxes > 0) parts.push(`${result.returnedToStockBoxes} not found - they go back to stock when you confirm the pick-list.`);
+    if (result.movedBoxes > 0) parts.push(`${result.movedBoxes} remaining box(es) will move to ${result.destinationLocationCode} when you confirm the pick-list.`);
+    else if (result.remainingAtSourceBoxes > 0) parts.push(`${result.remainingAtSourceBoxes} box(es) stay at the pick location.`);
     Alert.alert("Pick confirmed", parts.join("\n"));
     await load();
   };
@@ -194,13 +194,22 @@ export default function PulloutDetailScreen() {
                   </View>
                   <Text style={styles.pickDetail}>{pick.mfgMonthLabel} · {pick.quantityBoxes} boxes{pick.isVirtual ? " · virtual" : ""}</Text>
                 </View>
-                {posted && pick.pickId && pick.pickedAt && (
+                {posted && !picklistConfirmed && pick.pickId && pick.pickedAt && (
+                  <View style={styles.pickedRow}>
+                    <AppIcon name="checkmark-circle" size={18} color={colors.success} />
+                    <Text style={styles.pickedText}>
+                      Picked {pick.pickedQuantityBoxes ?? pick.quantityBoxes}
+                      {pick.moveToLocationCode ? ` · move ${pick.moveQuantityBoxes} to ${pick.moveToLocationCode}` : ""}
+                    </Text>
+                  </View>
+                )}
+                {posted && picklistConfirmed && pick.pickedAt && (
                   <View style={styles.pickedRow}>
                     <AppIcon name="checkmark-circle" size={18} color={colors.success} />
                     <Text style={styles.pickedText}>Picked {pick.pickedQuantityBoxes ?? pick.quantityBoxes}</Text>
                   </View>
                 )}
-                {posted && pick.pickId && !pick.pickedAt && (
+                {posted && !picklistConfirmed && pick.pickId && (
                   <View style={styles.pickActions}>
                     <TouchableOpacity
                       style={[styles.pickActionButton, styles.pickConfirmButton]}
@@ -213,10 +222,14 @@ export default function PulloutDetailScreen() {
                         mfgMonthLabel: pick.mfgMonthLabel,
                         quantityBoxes: pick.quantityBoxes,
                         isVirtual: pick.isVirtual,
+                        pickedQuantityBoxes: pick.pickedQuantityBoxes,
+                        moveToPalletPositionId: pick.moveToPalletPositionId,
+                        moveToLocationCode: pick.moveToLocationCode,
+                        moveQuantityBoxes: pick.moveQuantityBoxes,
                       })}
                     >
                       <AppIcon name="checkmark-circle-outline" size={20} color={colors.textOnPrimary} />
-                      <Text style={styles.pickConfirmText}>Confirm pick</Text>
+                      <Text style={styles.pickConfirmText}>{pick.pickedAt ? "Edit pick" : "Confirm pick"}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.pickActionButton}

@@ -85,7 +85,7 @@ public sealed class GetPulloutPickChangeOptionsHandler(IApplicationDbContext db)
         // A posted pullout has already taken its picks out of stock: the cell being replaced shows what is on the shelf plus
         // the boxes this pick would hand back, and a pick that is already confirmed can no longer be changed.
         var posted = transaction.IsConfirmed;
-        if (posted && matchingPicks.Any(p => p.PickedAt is not null))
+        if (posted && (transaction.ConfirmedAt is not null || transaction.UploadHash is null))
             return [];
         var returning = posted ? matchingPicks.Sum(p => p.QuantityBoxes) : 0m;
 

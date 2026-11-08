@@ -88,8 +88,10 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db, I
             .ToList();
         if (picksToReplace.Count == 0)
             throw new InvalidOperationException("The selected saved pick could not be found.");
-        if (posted && picksToReplace.Any(p => p.PickedAt is not null))
-            throw new InvalidOperationException("This pick has already been confirmed by the picker and can no longer be changed.");
+        // Picks stay editable - even ones the picker already confirmed - until the pick-list itself is confirmed. A replaced pick comes
+        // back unconfirmed, so the picker confirms the new source again.
+        if (posted && (transaction.ConfirmedAt is not null || transaction.UploadHash is null))
+            throw new InvalidOperationException("This pick-list has already been confirmed, so its picks can no longer be changed.");
         var replacedPickIds = picksToReplace.Select(p => p.Id).ToHashSet();
         decimal ReturningAt(int palletPositionId, int sourceMfgMonth) => posted
             ? picksToReplace.Where(p => p.PalletPositionId == palletPositionId && p.MfgMonth == sourceMfgMonth).Sum(p => p.QuantityBoxes)
