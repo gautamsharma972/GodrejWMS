@@ -3,6 +3,7 @@ using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Common.Permissions;
+using GodrejWMS.Application.Features.Inward;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
 using MediatR;
@@ -57,7 +58,8 @@ public sealed class PickerPlaceInwardPutawayValidator : AbstractValidator<Picker
     }
 }
 
-public sealed class PickerPlaceInwardPutawayHandler(IApplicationDbContext db, IPermissionService permissions, ICurrentUserService currentUser, IDateTimeProvider clock)
+public sealed class PickerPlaceInwardPutawayHandler(
+    IApplicationDbContext db, IStockPostingService posting, IUnitOfWork uow, IPermissionService permissions, ICurrentUserService currentUser, IDateTimeProvider clock)
     : IRequestHandler<PickerPlaceInwardPutawayCommand, PickerPlaceInwardPutawayResult>
 {
     public async Task<PickerPlaceInwardPutawayResult> Handle(PickerPlaceInwardPutawayCommand request, CancellationToken cancellationToken)
@@ -67,6 +69,11 @@ public sealed class PickerPlaceInwardPutawayHandler(IApplicationDbContext db, IP
             throw new InvalidOperationException("You do not have permission to update put-away locations.");
         }
 
+        return await InwardSubmissionLogic.RunOrderAsync(uow, ct => RunAsync(request, ct), cancellationToken);
+    }
+
+    private async Task<PickerPlaceInwardPutawayResult> RunAsync(PickerPlaceInwardPutawayCommand request, CancellationToken cancellationToken)
+    {
         var putaway = await db.InwardPutaways
             .Include(p => p.PalletPosition)
             .Include(p => p.InwardTransactionLine).ThenInclude(l => l.Material)
@@ -85,7 +92,10 @@ public sealed class PickerPlaceInwardPutawayHandler(IApplicationDbContext db, IP
             throw new InvalidOperationException("This GRN has been rejected.");
         }
 
-        if (putaway.IsConfirmed && putaway.ExcludedLocation is null)
+        // Stock posted on upload sits at the suggested location until the picker confirms or changes it; an order still pending
+        // from before posting on upload only has a reservation, which a supervisor confirms later.
+        var postedOrder = transaction.PostedAt is not null;
+        if (putaway.IsConfirmed && putaway.ExcludedLocation is null && !postedOrder)
         {
             throw new InvalidOperationException($"{putaway.PalletPosition.LocationCode} is already confirmed and can no longer be changed.");
         }
@@ -140,6 +150,9 @@ public sealed class PickerPlaceInwardPutawayHandler(IApplicationDbContext db, IP
         // Quantity actually put away: only the line's allocated total follows it. The requested quantity is the inward
         // order's own figure (the GRN's inbound volume) and is never changed by the picker.
         var originalQuantity = putaway.QuantityBoxes;
+        var hadStock = postedOrder && putaway.IsConfirmed && putaway.ExcludedLocation is null && line.MfgMonth is not null;
+        var oldPkm = line.MfgMonth;
+        var oldStockPosition = putaway.PalletPosition;
         // Remembered so the supervisor's Confirm can check the entries still add up to what the system allocated.
         putaway.SuggestedQuantityBoxes ??= originalQuantity;
         putaway.QuantityBoxes = request.QuantityBoxes;
@@ -157,6 +170,30 @@ public sealed class PickerPlaceInwardPutawayHandler(IApplicationDbContext db, IP
             RefreshLineStatus(touched);
         }
 
+        // Posted stock follows the picker's decision through the shared posting service: out of the old cell, into the new one
+        // (a GIT / NO RACK entry takes the stock out of inventory; correcting it back to a real location puts it in again).
+        if (postedOrder)
+        {
+            var changes = new List<StockChange>();
+            if (hadStock)
+            {
+                changes.Add(new StockChange(line.MaterialId, oldPkm!.Value, LocationSubtypeIds.Good, oldStockPosition, -originalQuantity));
+            }
+
+            if (excluded is null)
+            {
+                changes.Add(new StockChange(line.MaterialId, pkm!.Value, LocationSubtypeIds.Good, target!, request.QuantityBoxes));
+            }
+
+            if (changes.Count > 0)
+            {
+                await posting.ApplyAsync(
+                    new StockPostingContext(StockLedgerEntryTypes.PutawayChange, "GRN", transaction.ReferenceNumber,
+                        excluded is not null ? $"Set aside as {excluded} by picker" : "Location set by picker"),
+                    changes, cancellationToken);
+            }
+        }
+
         var oldPosition = putaway.PalletPosition;
         if (excluded is not null)
         {
@@ -170,12 +207,23 @@ public sealed class PickerPlaceInwardPutawayHandler(IApplicationDbContext db, IP
         }
         else
         {
-            // Corrected from GIT / NO RACK to a real location: it goes back to waiting for the supervisor's confirmation.
+            // A pending order goes back to waiting for the supervisor's confirmation; a posted one stays posted.
             putaway.ExcludedLocation = null;
-            putaway.IsConfirmed = false;
-            putaway.ConfirmedAt = null;
-            putaway.ConfirmedByUserId = null;
-            putaway.ConfirmedByUserName = null;
+            if (postedOrder)
+            {
+                putaway.IsConfirmed = true;
+                putaway.ConfirmedAt = clock.UtcNow;
+                putaway.ConfirmedByUserId = currentUser.UserId;
+                putaway.ConfirmedByUserName = currentUser.UserName;
+            }
+            else
+            {
+                putaway.IsConfirmed = false;
+                putaway.ConfirmedAt = null;
+                putaway.ConfirmedByUserId = null;
+                putaway.ConfirmedByUserName = null;
+            }
+
             putaway.IsPickerPlaced = true;
             putaway.OverrideReason = "Location set by picker";
             if (target!.Id != putaway.PalletPositionId)

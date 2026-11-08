@@ -88,7 +88,10 @@ public sealed class GetInwardHistoryHandler(IApplicationDbContext db)
                 t.IsRejected,
                 t.IsPkmless,
                 t.VehicleNumber,
-                t.LrNumber));
+                t.LrNumber,
+                0,
+                0,
+                t.Lines.SelectMany(l => l.Putaways).Count(p => p.PalletPosition.IsVirtual)));
 
         return PaginatedList<InwardHistoryDto>.CreateAsync(query, request.PageNumber, request.PageSize);
     }

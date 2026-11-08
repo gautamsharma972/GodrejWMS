@@ -32,7 +32,7 @@ public sealed class GetPulloutPickChangeOptionsHandler(IApplicationDbContext db)
             .SingleOrDefaultAsync(t => t.ReferenceNumber == request.ReferenceNumber, cancellationToken)
             ?? throw new NotFoundException(nameof(PulloutTransaction), request.ReferenceNumber);
 
-        if (transaction.IsConfirmed || transaction.IsRejected)
+        if (transaction.IsRejected)
             return [];
 
         var line = transaction.Lines.FirstOrDefault(l =>
@@ -82,14 +82,30 @@ public sealed class GetPulloutPickChangeOptionsHandler(IApplicationDbContext db)
             })
             .ToListAsync(cancellationToken);
 
-        return batches
+        // A posted pullout has already taken its picks out of stock: the cell being replaced shows what is on the shelf plus
+        // the boxes this pick would hand back, and a pick that is already confirmed can no longer be changed.
+        var posted = transaction.IsConfirmed;
+        if (posted && matchingPicks.Any(p => p.PickedAt is not null))
+            return [];
+        var returning = posted ? matchingPicks.Sum(p => p.QuantityBoxes) : 0m;
+
+        var options = batches
             .Select(b => new PulloutPickChangeOptionDto(
                 b.PalletPositionId,
                 b.LocationCode,
                 MfgMonthParser.Format(b.MfgMonth),
                 b.QuantityBoxes,
-                Math.Max(0, b.QuantityBoxes - otherQuantities.GetValueOrDefault((b.PalletPositionId, b.MfgMonth))),
+                Math.Max(0, b.QuantityBoxes - otherQuantities.GetValueOrDefault((b.PalletPositionId, b.MfgMonth))
+                    + (b.PalletPositionId == pick.PalletPositionId && b.MfgMonth == pick.MfgMonth ? returning : 0)),
                 b.PalletPositionId == pick.PalletPositionId && b.MfgMonth == pick.MfgMonth))
+            .ToList();
+        if (posted && options.All(o => !o.IsCurrent))
+        {
+            options.Add(new PulloutPickChangeOptionDto(
+                pick.PalletPositionId, pick.PalletPosition.LocationCode, MfgMonthParser.Format(pick.MfgMonth), 0, returning, true));
+        }
+
+        return options
             .Where(o => o.AvailableBoxes > 0)
             .OrderByDescending(o => o.IsCurrent)
             .ThenBy(o => o.LocationCode)

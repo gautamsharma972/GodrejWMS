@@ -92,7 +92,12 @@ public sealed record PulloutPickDto(
     string LocationCode,
     string MfgMonthLabel,
     decimal QuantityBoxes,
-    string? OverrideReason = null);
+    string? OverrideReason = null,
+    int PickId = 0,
+    int PalletPositionId = 0,
+    bool IsVirtual = false,
+    DateTimeOffset? PickedAt = null,
+    decimal? PickedQuantityBoxes = null);
 
 public sealed record PulloutPickChangeOptionDto(
     int PalletPositionId,

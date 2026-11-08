@@ -10,10 +10,24 @@ public sealed class EfUnitOfWork(AppDbContext db) : IUnitOfWork
 {
     public async Task<T> ExecuteInTransactionAsync<T>(Func<CancellationToken, Task<T>> action, CancellationToken cancellationToken = default)
     {
-        // The in-memory test provider has no transactions; and a nested call just joins the running one.
-        if (!db.Database.IsRelational() || db.Database.CurrentTransaction is not null)
+        // A nested call just joins the running transaction (the outer call cleans up after a failure).
+        if (db.Database.IsRelational() && db.Database.CurrentTransaction is not null)
         {
             return await action(cancellationToken);
+        }
+
+        // The in-memory test provider has no transactions: a failed block only has to leave nothing pending in the tracker.
+        if (!db.Database.IsRelational())
+        {
+            try
+            {
+                return await action(cancellationToken);
+            }
+            catch
+            {
+                db.ChangeTracker.Clear();
+                throw;
+            }
         }
 
         var strategy = db.Database.CreateExecutionStrategy();

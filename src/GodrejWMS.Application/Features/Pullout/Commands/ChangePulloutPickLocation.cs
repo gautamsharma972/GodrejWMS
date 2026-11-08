@@ -3,6 +3,7 @@ using FluentValidation;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Features.Inward;
 using GodrejWMS.Application.Features.Pullout.Dtos;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
@@ -42,10 +43,13 @@ public sealed class ChangePulloutPickLocationValidator : AbstractValidator<Chang
     }
 }
 
-public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db)
+public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db, IStockPostingService posting, IUnitOfWork uow)
     : IRequestHandler<ChangePulloutPickLocationCommand, PulloutResultDto>
 {
-    public async Task<PulloutResultDto> Handle(ChangePulloutPickLocationCommand request, CancellationToken cancellationToken)
+    public Task<PulloutResultDto> Handle(ChangePulloutPickLocationCommand request, CancellationToken cancellationToken) =>
+        InwardSubmissionLogic.RunOrderAsync(uow, ct => RunAsync(request, ct), cancellationToken);
+
+    private async Task<PulloutResultDto> RunAsync(ChangePulloutPickLocationCommand request, CancellationToken cancellationToken)
     {
         if (!MfgMonthParser.TryParse(request.MfgMonthLabel, out var mfgMonth))
             throw new InvalidOperationException("The selected pick has an invalid PKM period.");
@@ -69,8 +73,10 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db)
         await db.Entry(transaction).ReloadAsync(cancellationToken);
         if (transaction.IsRejected)
             throw new InvalidOperationException("This pullout was rejected and its pick locations can no longer be changed.");
-        if (transaction.IsConfirmed)
-            throw new InvalidOperationException("This pullout has already been confirmed and its pick locations can no longer be changed.");
+        // A posted pullout has already taken its picks out of stock: changing a pick source is a correction (the old
+        // source gets its boxes back, the new one is taken from). An order still pending from before posting on upload
+        // only has proposed picks, which are simply replaced.
+        var posted = transaction.IsConfirmed;
 
         var line = transaction.Lines.FirstOrDefault(l =>
                 l.Material.MaterialNumber == request.MaterialNumber &&
@@ -83,7 +89,12 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db)
             .ToList();
         if (picksToReplace.Count == 0)
             throw new InvalidOperationException("The selected saved pick could not be found.");
+        if (posted && picksToReplace.Any(p => p.PickedAt is not null))
+            throw new InvalidOperationException("This pick has already been confirmed by the picker and can no longer be changed.");
         var replacedPickIds = picksToReplace.Select(p => p.Id).ToHashSet();
+        decimal ReturningAt(int palletPositionId, int sourceMfgMonth) => posted
+            ? picksToReplace.Where(p => p.PalletPositionId == palletPositionId && p.MfgMonth == sourceMfgMonth).Sum(p => p.QuantityBoxes)
+            : 0m;
 
         // The replacement total no longer has to exactly match the pick being replaced - real-time
         // picking means the actual available/picked quantity at a location often differs from the
@@ -129,11 +140,13 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db)
             if (!position.IsActive || position.LocationSubtypeId != LocationSubtypeIds.Good)
                 throw new InvalidOperationException($"Location {position.LocationCode} is not an active good-stock picking location.");
 
-            if (!batchesBySource.TryGetValue((source.PalletPositionId, source.MfgMonth), out var batch))
+            var returning = ReturningAt(source.PalletPositionId, source.MfgMonth);
+            batchesBySource.TryGetValue((source.PalletPositionId, source.MfgMonth), out var batch);
+            if (batch is null && returning <= 0)
                 throw new InvalidOperationException(
                     $"Location {position.LocationCode} does not contain this SKU and PKM as available good stock.");
 
-            var available = batch.QuantityBoxes
+            var available = (batch?.QuantityBoxes ?? 0m) + returning
                 - allocatedByOtherPicks.GetValueOrDefault((source.PalletPositionId, source.MfgMonth));
             if (source.QuantityBoxes > available)
                 throw new InvalidOperationException(
@@ -192,6 +205,21 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db)
 
         if (!changed)
             throw new InvalidOperationException("The selected pick is no longer present in the saved allocation.");
+
+        if (posted)
+        {
+            var positionIdsToPost = picksToReplace.Select(p => p.PalletPositionId)
+                .Concat(parsedSources.Select(s => s.PalletPositionId)).Distinct().ToList();
+            var tracked = await db.PalletPositions.Include(p => p.Rack)
+                .Where(p => positionIdsToPost.Contains(p.Id)).ToDictionaryAsync(p => p.Id, cancellationToken);
+            var changes = picksToReplace
+                .Select(p => new StockChange(line.MaterialId, p.MfgMonth, LocationSubtypeIds.Good, tracked[p.PalletPositionId], p.QuantityBoxes))
+                .Concat(parsedSources.Select(s => new StockChange(line.MaterialId, s.MfgMonth, LocationSubtypeIds.Good, tracked[s.PalletPositionId], -s.QuantityBoxes)))
+                .ToList();
+            await posting.ApplyAsync(
+                new StockPostingContext(StockLedgerEntryTypes.PickChange, "PICK", transaction.ReferenceNumber, $"Pick location changed: {reason}"),
+                changes, cancellationToken);
+        }
 
         foreach (var pick in picksToReplace)
             line.Picks.Remove(pick);

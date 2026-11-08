@@ -65,7 +65,7 @@ public class PulloutPickLocationChangeTests
         var current = Assert.Single(options);
         Assert.True(current.IsCurrent);
 
-        var updated = await new ChangePulloutPickLocationHandler(db).Handle(
+        var updated = await new ChangePulloutPickLocationHandler(db, TestServices.Posting(db), TestServices.Uow(db)).Handle(
             new(transaction.ReferenceNumber, material.MaterialNumber, position.LocationCode, "OCT|2026",
                 [new(position.Id, "OCT|2026", 3)], "Reduce actual picked quantity"), default);
 
@@ -156,7 +156,7 @@ public class PulloutPickLocationChangeTests
         // original pick - only fit within what the line overall requested. Picking less than the
         // original 30 (only 10 available right now) now succeeds, and the line is reclassified
         // Partial with a shortfall remark instead of throwing.
-        var partial = await new ChangePulloutPickLocationHandler(db).Handle(
+        var partial = await new ChangePulloutPickLocationHandler(db, TestServices.Posting(db), TestServices.Uow(db)).Handle(
             new(preview.ReferenceNumber, material.MaterialNumber, originalPick.LocationCode,
                 originalPick.MfgMonthLabel,
                 [new(alternate.Id, alternateOption.MfgMonthLabel, 10)],
@@ -171,7 +171,7 @@ public class PulloutPickLocationChangeTests
 
         // Selecting more than the line ever requested is still refused.
         var excessive = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new ChangePulloutPickLocationHandler(db).Handle(
+            new ChangePulloutPickLocationHandler(db, TestServices.Posting(db), TestServices.Uow(db)).Handle(
                 new(preview.ReferenceNumber, material.MaterialNumber, alternate.LocationCode,
                     alternateOption.MfgMonthLabel,
                     [new(alternate.Id, alternateOption.MfgMonthLabel, 31)],
@@ -181,7 +181,7 @@ public class PulloutPickLocationChangeTests
 
         // The pick now lives at the alternate location (from the partial change above) - restore
         // full coverage by redistributing across both locations.
-        var changed = await new ChangePulloutPickLocationHandler(db).Handle(
+        var changed = await new ChangePulloutPickLocationHandler(db, TestServices.Posting(db), TestServices.Uow(db)).Handle(
             new(preview.ReferenceNumber, material.MaterialNumber, alternate.LocationCode,
                 alternateOption.MfgMonthLabel,
                 [

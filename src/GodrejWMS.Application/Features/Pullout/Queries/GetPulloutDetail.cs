@@ -59,7 +59,12 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
                         p.PalletPosition.LocationCode,
                         MfgMonthParser.Format(p.MfgMonth),
                         p.QuantityBoxes,
-                        p.OverrideReason))
+                        p.OverrideReason,
+                        p.Id,
+                        p.PalletPositionId,
+                        p.PalletPosition.IsVirtual,
+                        p.PickedAt,
+                        p.PickedQuantityBoxes))
                     .ToList()),
                 l.PlantName,
                 l.Priority))
@@ -86,7 +91,12 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
                 group.First().LocationCode,
                 group.First().MfgMonthLabel,
                 group.Sum(pick => pick.QuantityBoxes),
-                group.Select(pick => pick.OverrideReason).FirstOrDefault(reason => !string.IsNullOrWhiteSpace(reason))))
+                group.Select(pick => pick.OverrideReason).FirstOrDefault(reason => !string.IsNullOrWhiteSpace(reason)),
+                group.First().PickId,
+                group.First().PalletPositionId,
+                group.First().IsVirtual,
+                group.All(pick => pick.PickedAt is not null) ? group.First().PickedAt : null,
+                group.All(pick => pick.PickedQuantityBoxes is not null) ? group.Sum(pick => pick.PickedQuantityBoxes) : null))
             .OrderBy(pick => pick.MfgMonthLabel)
             .ThenBy(pick => pick.LocationCode)
             .ToList();

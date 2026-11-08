@@ -263,7 +263,7 @@ public class PickerPlaceInwardPutawayTests
         return (db, a, b, grn, putaway, positions);
     }
 
-    private static PickerPlaceInwardPutawayHandler Handler(AppDbContext db) => new(db, new AllowAll(), new FragUser(), new FragClock());
+    private static PickerPlaceInwardPutawayHandler Handler(AppDbContext db) => new(db, TestServices.Posting(db), TestServices.Uow(db), new AllowAll(), new FragUser(), new FragClock());
 
     [Fact]
     public async Task ChangesLocationQuantityAndPkm_MovingThePutawayToTheLineOfThatPkm()

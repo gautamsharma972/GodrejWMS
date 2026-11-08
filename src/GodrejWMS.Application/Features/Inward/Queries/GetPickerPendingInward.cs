@@ -19,8 +19,13 @@ public sealed class GetPickerPendingInwardHandler(IApplicationDbContext db)
     public Task<PaginatedList<InwardHistoryDto>> Handle(GetPickerPendingInwardQuery request, CancellationToken cancellationToken)
     {
         var transactions = db.InwardTransactions.AsNoTracking()
+            // Needs the picker: an open reservation, or - for an order posted on upload - a location the picker has not confirmed
+            // or changed yet. (Only an order still pending from before posting on upload keeps a GIT / NO RACK entry open
+            // for correction until the supervisor confirms it.)
             .Where(t => !t.IsRejected
-                && t.Lines.Any(l => l.Putaways.Any(p => !p.IsConfirmed || (p.ExcludedLocation != null && !p.IsExcludedLocked))));
+                && t.Lines.Any(l => l.Putaways.Any(p => !p.IsConfirmed
+                    || (t.PostedAt != null && !p.IsPickerPlaced && p.ExcludedLocation == null)
+                    || (t.PostedAt == null && p.ExcludedLocation != null && !p.IsExcludedLocked))));
 
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
@@ -47,7 +52,8 @@ public sealed class GetPickerPendingInwardHandler(IApplicationDbContext db)
                 VehicleNumber: t.VehicleNumber,
                 LrNumber: t.LrNumber,
                 LocationCount: t.Lines.SelectMany(l => l.Putaways).Count(),
-                SubmittedLocationCount: t.Lines.SelectMany(l => l.Putaways).Count(p => p.IsConfirmed || p.IsPickerPlaced)));
+                SubmittedLocationCount: t.Lines.SelectMany(l => l.Putaways).Count(p => p.IsPickerPlaced || (p.IsConfirmed && t.PostedAt == null)),
+                VirtualLocationCount: t.Lines.SelectMany(l => l.Putaways).Count(p => p.PalletPosition.IsVirtual)));
 
         return PaginatedList<InwardHistoryDto>.CreateAsync(query, request.PageNumber, request.PageSize);
     }

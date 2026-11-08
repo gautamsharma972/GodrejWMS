@@ -102,7 +102,8 @@ public sealed record InwardHistoryDto(
     string? VehicleNumber = null,
     string? LrNumber = null,
     int LocationCount = 0,
-    int SubmittedLocationCount = 0);
+    int SubmittedLocationCount = 0,
+    int VirtualLocationCount = 0);
 
 public sealed record InwardPutawayDto(
     string LocationCode,
