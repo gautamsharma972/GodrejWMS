@@ -52,6 +52,8 @@ public class RejectPulloutTests
         var (db, submit, reference) = await SeedPendingPulloutAsync();
         var saved = GetSavedPreview(db, reference);
         await submit.Handle(new([new SubmitPulloutLine(123, 4)], saved), CancellationToken.None);
+        db.PulloutTransactions.Single().ConfirmedAt = null; // posted on upload: the picker has not confirmed the pick-list yet
+        await db.SaveChangesAsync();
         Assert.Equal(6, db.StockBatches.Single().QuantityBoxes);
 
         await Reject(db).Handle(new RejectPulloutCommand(reference, "Wrong order"), CancellationToken.None);
@@ -68,6 +70,7 @@ public class RejectPulloutTests
         var (db, submit, reference) = await SeedPendingPulloutAsync();
         var saved = GetSavedPreview(db, reference);
         await submit.Handle(new([new SubmitPulloutLine(123, 4)], saved), CancellationToken.None);
+        db.PulloutTransactions.Single().ConfirmedAt = null; // posted on upload, pick-list not confirmed
         db.PulloutPicks.First().PickedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync();
 

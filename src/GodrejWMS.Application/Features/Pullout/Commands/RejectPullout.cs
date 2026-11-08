@@ -51,6 +51,12 @@ public sealed class RejectPulloutHandler(
 
         if (transaction.IsConfirmed)
         {
+            // An older confirmed pullout, or one whose pick-list the picker has confirmed, has been shipped.
+            if (transaction.ConfirmedAt != null || transaction.UploadHash == null)
+            {
+                throw new InvalidOperationException("This pullout can't be rejected because it has already been confirmed and inventory was updated.");
+            }
+
             // Posted on upload: the stock was already taken out, so cancelling puts it back - but only while nothing is picked yet.
             if (transaction.Lines.SelectMany(l => l.Picks).Any(p => p.PickedAt is not null))
             {

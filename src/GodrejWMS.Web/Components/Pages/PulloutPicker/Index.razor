@@ -176,6 +176,21 @@
                                 </button>
                             }
                         </div>
+                        <div class="mt-3">
+                            @if (_confirmError is not null)
+                            {
+                                <div class="alert alert-danger" role="alert"><i class="bi bi-x-octagon" aria-hidden="true"></i> @_confirmError</div>
+                            }
+                            <button type="button" class="btn btn-primary btn-lg w-100" disabled="@(_confirmingPicklist || rows.Any(r => !r.Done))" @onclick="ConfirmPicklistAsync">
+                                <i class="bi bi-check2-all" aria-hidden="true"></i>
+                                @(_confirmingPicklist ? "Confirming..." : "Confirm pick-list")
+                            </button>
+                            <p class="small text-muted mt-2 mb-0">
+                                @(rows.Any(r => !r.Done)
+                                    ? "Confirm every pick first, then confirm the pick-list to close this pick reference."
+                                    : "Every pick is confirmed. Confirm the pick-list to close this pick reference.")
+                            </p>
+                        </div>
                     }
                     else
                     {
@@ -302,6 +317,8 @@
     private string? _formError;
     private bool _submitting;
     private bool _changing;
+    private string? _confirmError;
+    private bool _confirmingPicklist;
 
     // Confirm form
     private decimal _qty;
@@ -389,6 +406,7 @@
     private void CloseDetail()
     {
         _isDetailOpen = false;
+        _confirmError = null;
         _detail = null;
         _detailError = null;
         _selected = null;
@@ -547,10 +565,28 @@
         _selected = null;
         _changing = false;
         _detail = await Mediator.Send(new GetPulloutDetailQuery(pulloutId));
-        if (Rows().All(r => r.Done))
+    }
+
+    private async Task ConfirmPicklistAsync()
+    {
+        if (_detail is null || _confirmingPicklist) return;
+
+        _confirmingPicklist = true;
+        _confirmError = null;
+        try
         {
+            var result = await Mediator.Send(new ConfirmPulloutPicklistCommand(_detail.Id));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"{result.ReferenceNumber} confirmed.", "success");
             CloseDetail();
             await LoadPageAsync(_pageNumber);
+        }
+        catch (Exception ex)
+        {
+            _confirmError = ex.Message;
+        }
+        finally
+        {
+            _confirmingPicklist = false;
         }
     }
 }

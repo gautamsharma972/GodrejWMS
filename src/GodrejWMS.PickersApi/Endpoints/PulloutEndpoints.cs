@@ -101,6 +101,15 @@ public static class PulloutEndpoints
             .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
             .WithName("GetPickerPulloutQueue");
 
+        group.MapPost("/pullout/{id:int}/confirm-picklist", async (
+                int id,
+                IMediator mediator,
+                CancellationToken cancellationToken) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                    Results.Ok(await mediator.Send(new ConfirmPulloutPicklistCommand(id), cancellationToken))))
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .WithName("ConfirmPulloutPicklist");
+
         group.MapGet("/pullout/picks/{pickId:int}/remainder", async (
                 int pickId,
                 IMediator mediator,

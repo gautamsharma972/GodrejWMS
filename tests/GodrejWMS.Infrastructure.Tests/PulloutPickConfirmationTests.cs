@@ -191,7 +191,43 @@ public class PulloutPickConfirmationTests
 
         await Handler(s.Db).Handle(new ConfirmPulloutPickCommand(s.Db.PulloutPicks.AsNoTracking().Single().Id, 45), default);
 
+        // Every pick is confirmed, but the pick-list stays on the picker's list until they press Confirm on it.
+        Assert.Single((await list.Handle(new GetPickerPendingPulloutsQuery(), default)).Items);
+
+        await new ConfirmPulloutPicklistHandler(s.Db, new PickAllow(), new SvcClock(), new SvcUser())
+            .Handle(new ConfirmPulloutPicklistCommand(s.Db.PulloutTransactions.AsNoTracking().Single().Id), default);
         Assert.Empty((await list.Handle(new GetPickerPendingPulloutsQuery(), default)).Items);
+    }
+
+    [Fact]
+    public async Task ConfirmingThePickList_NeedsEveryPickConfirmed_ThenSetsThePickReferenceToConfirmed()
+    {
+        var s = await SeedAsync();
+        using var _ = s.Db;
+        var pulloutId = s.Db.PulloutTransactions.AsNoTracking().Single().Id;
+        var confirm = new ConfirmPulloutPicklistHandler(s.Db, new PickAllow(), new SvcClock(), new SvcUser());
+        var history = new GetPulloutHistoryHandler(s.Db);
+
+        // Posted on upload: not confirmed until the picker says so.
+        Assert.False((await new GetPulloutDetailHandler(s.Db).Handle(new GetPulloutDetailQuery(pulloutId), default)).PickingConfirmed);
+        Assert.False(Assert.Single((await history.Handle(new GetPulloutHistoryQuery(), default)).Items).IsConfirmed);
+
+        var early = await Assert.ThrowsAsync<InvalidOperationException>(() => confirm.Handle(new ConfirmPulloutPicklistCommand(pulloutId), default));
+        Assert.Contains("Confirm every pick first", early.Message);
+
+        await Handler(s.Db).Handle(new ConfirmPulloutPickCommand(s.Db.PulloutPicks.AsNoTracking().Single().Id, 45), default);
+        var result = await confirm.Handle(new ConfirmPulloutPicklistCommand(pulloutId), default);
+
+        Assert.Equal(1, result.PickCount);
+        var detail = await new GetPulloutDetailHandler(s.Db).Handle(new GetPulloutDetailQuery(pulloutId), default);
+        Assert.True(detail.PickingConfirmed);
+        Assert.NotNull(detail.PickingConfirmedByUserName);
+        Assert.True(Assert.Single((await history.Handle(new GetPulloutHistoryQuery(), default)).Items).IsConfirmed);
+
+        // Confirmed means shipped: it can no longer be confirmed again or rejected.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => confirm.Handle(new ConfirmPulloutPicklistCommand(pulloutId), default));
+        var reject = new RejectPulloutHandler(s.Db, TestServices.Posting(s.Db), TestServices.Uow(s.Db), new SvcClock(), new SvcUser());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => reject.Handle(new RejectPulloutCommand(detail.ReferenceNumber, "Too late"), default));
     }
 
     [Fact]

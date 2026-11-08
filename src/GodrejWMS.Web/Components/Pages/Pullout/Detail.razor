@@ -48,7 +48,7 @@
                 <i class="bi @(_detail.IsRejected ? "bi-x-circle" : _detail.IsConfirmed ? "bi-check2-circle" : "bi-clock-history")" aria-hidden="true"></i>
             </div>
             <div class="info-bar-content">
-                <h2>@(_detail.IsRejected ? "Pullout rejected" : _detail.IsConfirmed ? "Pullout posted" : "Confirmation pending")</h2>
+                <h2>@(_detail.IsRejected ? "Pullout rejected" : _detail.PickingConfirmed ? "Pullout confirmed" : _detail.IsConfirmed ? "Picking in progress" : "Confirmation pending")</h2>
                 @if (_detail.IsRejected)
                 {
                     <p>
@@ -61,10 +61,10 @@
                 }
                 else
                 {
-                    <p>@(_detail.IsConfirmed ? PostedMessage() : "This pullout is saved for later. Inventory will update only after confirmation.")</p>
+                    <p>@(_detail.PickingConfirmed && _detail.PickingConfirmedAt.HasValue ? $"Picking was confirmed{(string.IsNullOrWhiteSpace(_detail.PickingConfirmedByUserName) ? "" : " by " + _detail.PickingConfirmedByUserName)} on {_detail.PickingConfirmedAt.Value.ToLocalTime():dd MMM yyyy, hh:mm tt}. Inventory is updated." : _detail.IsConfirmed ? PostedMessage() : "This pullout is saved for later. Inventory will update only after confirmation.")</p>
                 }
             </div>
-            <span class="status-pill @(_detail.IsRejected ? "danger" : _detail.IsConfirmed ? "success" : "warning")">@(_detail.IsRejected ? "Rejected" : _detail.IsConfirmed ? "Inventory updated" : "Not confirmed")</span>
+            <span class="status-pill @(_detail.IsRejected ? "danger" : _detail.IsConfirmed ? "success" : "warning")">@(_detail.IsRejected ? "Rejected" : _detail.PickingConfirmed ? "Confirmed" : _detail.IsConfirmed ? "Picking in progress" : "Not confirmed")</span>
         </div>
         @if (!string.IsNullOrEmpty(_error))
         {
@@ -82,7 +82,7 @@
                         Reject Pullout
                     </button>
                 }
-                @if (_detail.IsConfirmed && !PickingStarted)
+                @if (_detail.IsConfirmed && !PickingStarted && !_detail.PickingConfirmed)
                 {
                     <button type="button" class="btn btn-outline-danger" @onclick="ToggleRejectPanel" disabled="@(_saving || _rejecting)"
                             title="Puts the picked-out stock back into inventory (only possible while nothing is picked yet)">
@@ -328,7 +328,7 @@
 
     private async Task RejectPulloutAsync()
     {
-        if (_detail is null || _detail.IsRejected || (_detail.IsConfirmed && PickingStarted) || string.IsNullOrWhiteSpace(_rejectReason))
+        if (_detail is null || _detail.IsRejected || (_detail.IsConfirmed && (PickingStarted || _detail.PickingConfirmed)) || string.IsNullOrWhiteSpace(_rejectReason))
         {
             return;
         }

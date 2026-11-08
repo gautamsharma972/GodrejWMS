@@ -399,6 +399,8 @@ export interface PulloutDetailDto {
   rejectionReason?: string | null;
   headerFields?: PulloutLoadingSheetFieldsDto | null;
   warehouseAddress?: string | null;
+  /** The pick-list is confirmed (older confirmed pullout, or a posted one the picker confirmed). isConfirmed only says stock was posted. */
+  pickingConfirmed?: boolean;
 }
 
 export interface PulloutPickChangeOptionDto {

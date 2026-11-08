@@ -28,9 +28,10 @@ public sealed class GetPulloutHistoryHandler(IApplicationDbContext db)
         var transactions = db.PulloutTransactions.AsNoTracking();
         // "Not confirmed" means still pending: a rejected pullout is neither confirmed nor pending.
         if (request.IsConfirmed.HasValue)
+            // "Confirmed" = the pick-list is confirmed: an older confirmed pullout, or a posted one whose picker confirmed it.
             transactions = request.IsConfirmed.Value
-                ? transactions.Where(t => t.IsConfirmed)
-                : transactions.Where(t => !t.IsConfirmed && !t.IsRejected);
+                ? transactions.Where(t => t.IsConfirmed && (t.ConfirmedAt != null || t.UploadHash == null))
+                : transactions.Where(t => !(t.IsConfirmed && (t.ConfirmedAt != null || t.UploadHash == null)) && !t.IsRejected);
         if (request.IsRejected == true)
             transactions = transactions.Where(t => t.IsRejected);
 
@@ -107,7 +108,7 @@ public sealed class GetPulloutHistoryHandler(IApplicationDbContext db)
                     : t.Lines.Any(l => l.Status != AllocationStatus.Fulfilled)
                         ? AllocationStatus.Partial
                         : AllocationStatus.Fulfilled,
-                t.IsConfirmed,
+                t.IsConfirmed && (t.ConfirmedAt != null || t.UploadHash == null),
                 t.IsRejected,
                 t.Lines.Where(l => l.PlantName != null && l.PlantName != "")
                     .Select(l => l.PlantName).FirstOrDefault(),

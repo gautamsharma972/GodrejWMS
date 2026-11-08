@@ -75,9 +75,10 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
             transaction.PlanTime, transaction.DateText, transaction.StartTime, transaction.EndTime,
             transaction.WeightText, transaction.VolumeText);
 
+        var pickingConfirmed = transaction.IsConfirmed && (transaction.ConfirmedAt != null || transaction.UploadHash == null);
         return new PulloutDetailDto(transaction.Id, transaction.ReferenceNumber, transaction.CreatedAt, lines, transaction.IsConfirmed,
             transaction.IsRejected, transaction.RejectedAt, transaction.RejectedByUserName, transaction.RejectionReason,
-            headerFields, warehouseAddress);
+            headerFields, warehouseAddress, pickingConfirmed, transaction.ConfirmedAt, transaction.ConfirmedByUserName);
     }
 
     private static IReadOnlyList<PulloutPickDto> MergePicks(IEnumerable<PulloutPickDto> picks) =>

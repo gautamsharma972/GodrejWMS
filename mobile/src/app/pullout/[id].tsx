@@ -1,8 +1,8 @@
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ApiError } from "../../api/client";
-import { changePulloutPickLocation, confirmPullout, getPulloutDetail } from "../../api/endpoints";
+import { changePulloutPickLocation, confirmPullout, confirmPulloutPicklist, getPulloutDetail } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import {
   PulloutPickLocationChangeModal,
@@ -24,6 +24,7 @@ import { formatDateTime } from "../../utils/status";
 export default function PulloutDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { token } = useAuth();
+  const router = useRouter();
 
   const [detail, setDetail] = useState<PulloutDetailDto | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -31,6 +32,8 @@ export default function PulloutDetailScreen() {
   const [pickMode, setPickMode] = useState<PickChangeMode>("move");
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmPick, setConfirmPick] = useState<ConfirmablePick | null>(null);
+  const [isConfirmingPicklist, setIsConfirmingPicklist] = useState(false);
+  const [picklistError, setPicklistError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token || !id) return;
@@ -92,6 +95,7 @@ export default function PulloutDetailScreen() {
 
   // A posted pullout already took its stock out at upload: the picker's job is confirming each pick on the floor.
   const posted = detail.isConfirmed && !detail.isRejected;
+  const picklistConfirmed = !!detail.pickingConfirmed;
   const allPicks = detail.lines.flatMap((line) => line.picks);
   const picksDone = allPicks.filter((pick) => pick.pickedAt).length;
   const totalRequested = detail.lines.reduce((total, line) => total + line.requestedQuantityBoxes, 0);
@@ -99,6 +103,21 @@ export default function PulloutDetailScreen() {
   const progress = posted
     ? (allPicks.length > 0 ? (picksDone / allPicks.length) * 100 : 0)
     : (totalRequested > 0 ? Math.min(100, (totalPicked / totalRequested) * 100) : 0);
+
+  const handleConfirmPicklist = async () => {
+    setIsConfirmingPicklist(true);
+    setPicklistError(null);
+    try {
+      await confirmPulloutPicklist(token, detail.id);
+      successPulse();
+      router.back();
+    } catch (err) {
+      errorPulse();
+      setPicklistError(err instanceof ApiError ? err.message : "Could not confirm this pick-list.");
+    } finally {
+      setIsConfirmingPicklist(false);
+    }
+  };
 
   const handlePickConfirmed = async (result: ConfirmPickResult) => {
     setConfirmPick(null);
@@ -132,7 +151,11 @@ export default function PulloutDetailScreen() {
         </View>
         {posted && (
           <View style={styles.confirmedBanner}>
-            <Text style={styles.confirmedBannerText}>Stock for this pullout was deducted when it was uploaded. Confirm each pick as you take it.</Text>
+            <Text style={styles.confirmedBannerText}>
+              {picklistConfirmed
+                ? "This pick-list is confirmed."
+                : "Stock for this pullout was deducted when it was uploaded. Confirm each pick as you take it, then confirm the pick-list."}
+            </Text>
           </View>
         )}
         {detail.isRejected && (
@@ -273,6 +296,23 @@ export default function PulloutDetailScreen() {
         </View>
       )}
 
+      {posted && !picklistConfirmed && (
+        <View style={styles.picklistBar}>
+          {picklistError && <Text style={styles.picklistError}>{picklistError}</Text>}
+          <Button
+            title="Confirm pick-list"
+            size="lg"
+            loading={isConfirmingPicklist}
+            disabled={picksDone < allPicks.length}
+            onPress={handleConfirmPicklist}
+            icon={<AppIcon name="checkmark-done-outline" size={22} color={colors.textOnPrimary} />}
+          />
+          <Text style={styles.picklistHint}>
+            {picksDone < allPicks.length ? "Confirm every pick first, then confirm the pick-list." : "Every pick is confirmed."}
+          </Text>
+        </View>
+      )}
+
       <PulloutPickConfirmModal pick={confirmPick} token={token} onClose={() => setConfirmPick(null)} onDone={handlePickConfirmed} />
 
       <PulloutPickLocationChangeModal
@@ -300,6 +340,9 @@ const styles = StyleSheet.create({
   progressValue: { ...typography.caption, color: colors.primaryText, fontWeight: "800" },
   progressTrack: { height: 7, backgroundColor: "#dbe2f3", borderRadius: radius.pill, overflow: "hidden" },
   progressFill: { height: "100%", backgroundColor: colors.primary, borderRadius: radius.pill },
+  picklistBar: { backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, padding: spacing.lg },
+  picklistError: { backgroundColor: colors.dangerSoft, color: colors.dangerText, borderRadius: radius.md, padding: spacing.md, fontWeight: "700", marginBottom: spacing.md },
+  picklistHint: { ...typography.caption, color: colors.textSecondary, textAlign: "center", marginTop: spacing.sm },
   confirmedBanner: { backgroundColor: colors.successSoft, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg },
   confirmedBannerText: { color: colors.successText, fontWeight: "700", fontSize: 13 },
   rejectedBanner: { backgroundColor: colors.dangerSoft, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg },

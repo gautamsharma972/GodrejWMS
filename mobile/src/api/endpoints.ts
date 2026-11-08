@@ -155,6 +155,11 @@ export function getPickerPulloutQueue(
   });
 }
 
+/** The picker's final Confirm of a pick-list once every pick is confirmed: sets the pick reference to confirmed. */
+export function confirmPulloutPicklist(token: string, pulloutId: number): Promise<{ referenceNumber: string; pickCount: number; pickedBoxes: number }> {
+  return apiRequest<{ referenceNumber: string; pickCount: number; pickedBoxes: number }>(`/api/pullout/${pulloutId}/confirm-picklist`, { token, method: "POST" });
+}
+
 /** The boxes left at a pick's location now, so "move the remaining X" can be offered before the pick is confirmed. */
 export function getPickRemainder(token: string, pickId: number): Promise<PickRemainderDto> {
   return apiRequest<PickRemainderDto>(`/api/pullout/picks/${pickId}/remainder`, { token });

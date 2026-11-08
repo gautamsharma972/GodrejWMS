@@ -242,10 +242,9 @@ public sealed class SubmitPulloutHandler(
                 {
                     // Posted on upload: the picks are deducted from inventory right now, in this order's transaction.
                     await DeductAsync(transaction, proposedLines, cancellationToken);
+                    // Posted, but the pick-list is only "confirmed" (ConfirmedAt) once the picker has confirmed every pick and
+                    // pressed Confirm on the pullout - see ConfirmPulloutPicklistCommand.
                     transaction.IsConfirmed = true;
-                    transaction.ConfirmedAt = clock.UtcNow;
-                    transaction.ConfirmedByUserId = currentUser.UserId;
-                    transaction.ConfirmedByUserName = currentUser.UserName;
                 }
                 else
                 {

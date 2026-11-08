@@ -161,4 +161,9 @@ public sealed record PulloutDetailDto(
     string? RejectedByUserName = null,
     string? RejectionReason = null,
     PulloutLoadingSheetFieldsDto? HeaderFields = null,
-    string? WarehouseAddress = null);
+    string? WarehouseAddress = null,
+    /// <summary>The pick-list is confirmed: an older confirmed pullout, or a posted one whose picker pressed Confirm.
+    /// <see cref="IsConfirmed"/> only says the stock was posted.</summary>
+    bool PickingConfirmed = false,
+    DateTimeOffset? PickingConfirmedAt = null,
+    string? PickingConfirmedByUserName = null);
