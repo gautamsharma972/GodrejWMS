@@ -128,9 +128,12 @@ export function PulloutPickLocationChangeModal({ pick, mode, token, onClose, onS
     return true;
   };
 
+  // A reason is only asked for when a chosen source skips older stock (overrides FIFO), e.g. because that stock is damaged.
+  const overridesFifo = (isMove ? (moveSplit ? [moveSplit] : []) : extraSplits).some((split) => split.option.breaksFifo);
+  const reasonOk = !overridesFifo || reason.trim().length > 0;
   const canSubmit = isMove
-    ? moveSplit !== null && moveSplit.quantityBoxes > 0 && reason.trim().length > 0
-    : extraSplits.length > 0 && extraSplits.every((split) => split.quantityBoxes > 0) && !overAllocated && reason.trim().length > 0;
+    ? moveSplit !== null && moveSplit.quantityBoxes > 0 && reasonOk
+    : extraSplits.length > 0 && extraSplits.every((split) => split.quantityBoxes > 0) && !overAllocated && reasonOk;
 
   const handleSubmit = async () => {
     if (!canSubmit || !pick) return;
@@ -144,7 +147,7 @@ export function PulloutPickLocationChangeModal({ pick, mode, token, onClose, onS
     setIsSaving(true);
     setError(null);
     try {
-      await onSubmit(finalSplits, reason.trim());
+      await onSubmit(finalSplits, overridesFifo ? reason.trim() : "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not change pick location.");
     } finally {
@@ -291,14 +294,16 @@ export function PulloutPickLocationChangeModal({ pick, mode, token, onClose, onS
 
           {!showBrowseList && (isMove ? moveSplit !== null : true) && (
             <View style={styles.form}>
-              <TextField
-                label="Reason"
-                value={reason}
-                onChangeText={setReason}
-                placeholder={isMove ? "Why are you moving this pick?" : "Why are you changing this pick?"}
-                multiline
-                style={styles.reasonInput}
-              />
+              {overridesFifo && (
+                <TextField
+                  label="Reason for overriding FIFO"
+                  value={reason}
+                  onChangeText={setReason}
+                  placeholder="A newer PKM is selected - why? e.g. older stock is damaged"
+                  multiline
+                  style={styles.reasonInput}
+                />
+              )}
 
               {error && <Text style={styles.error}>{error}</Text>}
 

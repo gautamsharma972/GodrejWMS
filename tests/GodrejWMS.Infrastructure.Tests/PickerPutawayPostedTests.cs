@@ -78,6 +78,33 @@ public class PickerPutawayPostedTests
     }
 
     [Fact]
+    public async Task OlderGrnNotPostedOnUpload_CanBeConfirmedByThePickerToo_AndTheSupervisorStillPostsTheStock()
+    {
+        var (db, _, positions, putaway) = await SeedAsync();
+        using var _ = db;
+        // Turn the seeded GRN into one from before posting on upload: reserved, nothing in inventory.
+        var transaction = await db.InwardTransactions.SingleAsync();
+        transaction.PostedAt = null;
+        putaway.IsConfirmed = false;
+        db.StockBatches.RemoveRange(db.StockBatches);
+        db.StockLedgerEntries.RemoveRange(db.StockLedgerEntries);
+        await db.SaveChangesAsync();
+        var confirm = new ConfirmPickerPutawayHandler(db, new PPAllow());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => confirm.Handle(new ConfirmPickerPutawayCommand(transaction.Id), default));
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", putaway.PalletPositionId, null), default);
+
+        var result = await confirm.Handle(new ConfirmPickerPutawayCommand(transaction.Id), default);
+
+        Assert.False(result.StockPosted); // a supervisor still has to confirm the GRN to post the stock
+        Assert.Empty((await new GetPickerPendingInwardHandler(db).Handle(new GetPickerPendingInwardQuery(), default)).Items);
+        Assert.Empty(db.StockBatches);
+        var locked = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", positions.Last().Id, null), default));
+        Assert.Contains("already been confirmed", locked.Message);
+    }
+
+    [Fact]
     public async Task PostedGrn_NeedsThePicker_UntilTheyConfirmTheLocation()
     {
         var (db, _, _, putaway) = await SeedAsync();

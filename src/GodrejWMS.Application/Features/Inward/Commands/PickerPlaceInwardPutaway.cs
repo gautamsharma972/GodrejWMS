@@ -101,9 +101,9 @@ public sealed class PickerPlaceInwardPutawayHandler(
         }
 
         // A GIT / NO RACK entry can be corrected until a supervisor confirms the GRN, or it is rejected.
-        if (putaway.IsExcludedLocked && (putaway.ExcludedLocation is not null || postedOrder))
+        if (putaway.IsExcludedLocked)
         {
-            throw new InvalidOperationException("This GRN has already been confirmed, so GIT / NO RACK can no longer be corrected.");
+            throw new InvalidOperationException("This GRN has already been confirmed, so its locations, PKM and GIT / NO RACK entries can no longer be changed.");
         }
 
         var excluded = PickerExcludedLocations.Normalize(request.ExcludedLocation);

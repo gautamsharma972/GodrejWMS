@@ -105,6 +105,16 @@ public sealed class GetPulloutPickChangeOptionsHandler(IApplicationDbContext db)
                 pick.PalletPositionId, pick.PalletPosition.LocationCode, MfgMonthParser.Format(pick.MfgMonth), 0, returning, true));
         }
 
+        // FIFO: a cell whose PKM is newer than the oldest PKM still available skips older stock - overriding it needs a reason
+        // (e.g. the older stock is damaged).
+        var available = options.Where(o => o.AvailableBoxes > 0).ToList();
+        var oldest = available
+            .Select(o => MfgMonthParser.TryParse(o.MfgMonthLabel, out var month) ? month : int.MaxValue)
+            .DefaultIfEmpty(int.MaxValue).Min();
+        options = options
+            .Select(o => MfgMonthParser.TryParse(o.MfgMonthLabel, out var month) && month > oldest ? o with { BreaksFifo = true } : o)
+            .ToList();
+
         return options
             .Where(o => o.AvailableBoxes > 0)
             .OrderByDescending(o => o.IsCurrent)

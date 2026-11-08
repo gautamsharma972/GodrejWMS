@@ -40,17 +40,21 @@
                     <div class="alert alert-danger mb-3">@_changeLocationError</div>
                 }
 
-                <div class="pick-location-reason-card">
-                    <div class="pick-location-section-heading">
-                        <span class="pick-location-section-icon" aria-hidden="true"><i class="bi bi-chat-left-text"></i></span>
-                        <div>
-                            <label class="form-label" for="pick-location-reason">Reason for change <span class="text-danger">*</span></label>
+                @if (RequiresReason)
+                {
+                    <div class="pick-location-reason-card">
+                        <div class="pick-location-section-heading">
+                            <span class="pick-location-section-icon" aria-hidden="true"><i class="bi bi-chat-left-text"></i></span>
+                            <div>
+                                <label class="form-label" for="pick-location-reason">Reason for overriding FIFO <span class="text-danger">*</span></label>
+                                <div class="small text-muted">A newer PKM than the oldest one available is selected.</div>
+                            </div>
                         </div>
+                        <input id="pick-location-reason" class="form-control pick-location-reason-input" maxlength="250"
+                               placeholder="e.g. Older stock is damaged"
+                               @bind="_changeLocationReason" @bind:event="oninput" />
                     </div>
-                    <input id="pick-location-reason" class="form-control pick-location-reason-input" maxlength="250"
-                           placeholder="e.g. Pallet is inaccessible during picking"
-                           @bind="_changeLocationReason" @bind:event="oninput" />
-                </div>
+                }
 
                 @if (_pickChangeOptions is null)
                 {
@@ -195,7 +199,7 @@
                 <div class="pick-location-footer-actions">
                     <button type="button" class="btn btn-outline-secondary" @onclick="CloseAsync">Cancel</button>
                     <button type="button" class="btn btn-primary"
-                            disabled="@(_changingPickLocation || SelectedPickQuantity <= 0 || _selectedPickSources.Count == 0 || string.IsNullOrWhiteSpace(_changeLocationReason))"
+                            disabled="@(_changingPickLocation || SelectedPickQuantity <= 0 || _selectedPickSources.Count == 0 || (RequiresReason && string.IsNullOrWhiteSpace(_changeLocationReason)))"
                             @onclick="ApplyAsync">
                         <i class="bi bi-check2-circle" aria-hidden="true"></i>
                         @(_changingPickLocation ? "Saving…" : "Apply pick sources")
@@ -357,11 +361,15 @@
 
     private decimal SelectedPickQuantity => _selectedPickSources.Sum(source => source.QuantityBoxes);
 
+    /// <summary>A reason is only asked for when a selected source skips older stock (overrides FIFO).</summary>
+    private bool RequiresReason => _selectedPickSources.Any(source => _pickChangeOptions?.Any(option =>
+        option.PalletPositionId == source.PalletPositionId && option.MfgMonthLabel == source.MfgMonthLabel && option.BreaksFifo) == true);
+
     private decimal RemainingPickQuantity => Math.Max(0, _changeRequiredQuantity - SelectedPickQuantity);
 
     private async Task ApplyAsync()
     {
-        if (_changingPickLocation || string.IsNullOrWhiteSpace(_changeLocationReason)
+        if (_changingPickLocation || (RequiresReason && string.IsNullOrWhiteSpace(_changeLocationReason))
             || _selectedPickSources.Count == 0 || SelectedPickQuantity <= 0)
             return;
 
@@ -378,7 +386,7 @@
                     source.PalletPositionId,
                     source.MfgMonthLabel,
                     source.QuantityBoxes)).ToList(),
-                _changeLocationReason));
+                RequiresReason ? _changeLocationReason : string.Empty));
             await OnChanged.InvokeAsync(updated);
             await OnClose.InvokeAsync();
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Pick sources updated. Review the allocation before confirming.");

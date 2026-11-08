@@ -105,7 +105,9 @@ public sealed record PulloutPickChangeOptionDto(
     string MfgMonthLabel,
     decimal StockBoxes,
     decimal AvailableBoxes,
-    bool IsCurrent);
+    bool IsCurrent,
+    /// <summary>Taking from this cell skips older stock that is still available (FIFO by PKM): a reason is then required.</summary>
+    bool BreaksFifo = false);
 
 public sealed record PulloutLineResultDto(
     long MaterialNumber,

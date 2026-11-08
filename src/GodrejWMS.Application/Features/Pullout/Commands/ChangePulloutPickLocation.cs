@@ -37,9 +37,8 @@ public sealed class ChangePulloutPickLocationValidator : AbstractValidator<Chang
             source.RuleFor(x => x.MfgMonthLabel).NotEmpty();
             source.RuleFor(x => x.QuantityBoxes).GreaterThan(0);
         });
-        RuleFor(x => x.Reason)
-            .NotEmpty().WithMessage("A reason is required when changing pick locations.")
-            .MaximumLength(250);
+        // The reason is only required when the change overrides FIFO; the handler enforces that.
+        RuleFor(x => x.Reason).MaximumLength(250);
     }
 }
 
@@ -154,12 +153,26 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db, I
                     + $"{source.QuantityBoxes:0.###} were selected.");
         }
 
-        var reason = request.Reason.Trim();
+        // FIFO override: taking a PKM newer than the oldest one still available skips older stock (typically because it is
+        // damaged). That is allowed, but only with a reason; a change that keeps FIFO needs none.
+        var oldestAvailable = await db.StockBatches.AsNoTracking()
+            .Where(b => b.MaterialId == line.MaterialId && b.StockSubtypeId == LocationSubtypeIds.Good && b.QuantityBoxes > 0
+                && b.PalletPosition.IsActive && b.PalletPosition.LocationSubtypeId == LocationSubtypeIds.Good
+                && b.PalletPosition.Rack.WarehouseId == transaction.WarehouseId)
+            .MinAsync(b => (int?)b.MfgMonth, cancellationToken);
+        // Boxes a posted pick hands back count as available too (its cell may be empty right now).
+        var candidates = picksToReplace.Where(_ => posted).Select(p => (int?)p.MfgMonth).Append(oldestAvailable).Where(m => m.HasValue).Select(m => m!.Value).ToList();
+        var oldest = candidates.Count > 0 ? candidates.Min() : int.MaxValue;
+        var overridesFifo = parsedSources.Any(source => source.MfgMonth > oldest);
+        var reason = (request.Reason ?? string.Empty).Trim();
+        if (overridesFifo && reason.Length == 0)
+            throw new InvalidOperationException(
+                $"This takes a newer PKM than the oldest one available ({MfgMonthParser.Format(oldest)}), which overrides FIFO. Enter a reason for the override.");
         var replacementPreviewPicks = parsedSources.Select(source => new PulloutPickDto(
             positions[source.PalletPositionId].LocationCode,
             MfgMonthParser.Format(source.MfgMonth),
             source.QuantityBoxes,
-            reason)).ToList();
+            reason.Length == 0 ? null : reason)).ToList();
 
         // The line's own picked-quantity/status/remarks need to reflect the new total too - the
         // same classification SubmitPulloutHandler uses when it first allocates a line.
@@ -217,7 +230,8 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db, I
                 .Concat(parsedSources.Select(s => new StockChange(line.MaterialId, s.MfgMonth, LocationSubtypeIds.Good, tracked[s.PalletPositionId], -s.QuantityBoxes)))
                 .ToList();
             await posting.ApplyAsync(
-                new StockPostingContext(StockLedgerEntryTypes.PickChange, "PICK", transaction.ReferenceNumber, $"Pick location changed: {reason}"),
+                new StockPostingContext(StockLedgerEntryTypes.PickChange, "PICK", transaction.ReferenceNumber,
+                    reason.Length == 0 ? "Pick location changed" : $"Pick location changed: {reason}"),
                 changes, cancellationToken);
         }
 
@@ -231,7 +245,7 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db, I
                 PalletPositionId = source.PalletPositionId,
                 MfgMonth = source.MfgMonth,
                 QuantityBoxes = source.QuantityBoxes,
-                OverrideReason = reason
+                OverrideReason = reason.Length == 0 ? null : reason
             });
         }
         line.PickedQuantityBoxes = newLineTotal;

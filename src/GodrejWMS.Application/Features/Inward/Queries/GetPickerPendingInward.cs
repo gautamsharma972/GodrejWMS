@@ -23,9 +23,8 @@ public sealed class GetPickerPendingInwardHandler(IApplicationDbContext db)
             // or changed yet. (Only an order still pending from before posting on upload keeps a GIT / NO RACK entry open
             // for correction until the supervisor confirms it.)
             .Where(t => !t.IsRejected
-                && t.Lines.Any(l => l.Putaways.Any(p => !p.IsConfirmed
-                    || (t.PostedAt != null && !p.IsExcludedLocked)
-                    || (t.PostedAt == null && p.ExcludedLocation != null && !p.IsExcludedLocked))));
+                && t.Lines.Any(l => l.Putaways.Any(p => !p.IsExcludedLocked
+                    && (!p.IsConfirmed || t.PostedAt != null || p.ExcludedLocation != null))));
 
         if (!string.IsNullOrWhiteSpace(request.Search))
         {

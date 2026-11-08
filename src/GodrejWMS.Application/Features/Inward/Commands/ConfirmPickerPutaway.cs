@@ -8,12 +8,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.Inward.Commands;
 
-/// <summary>The picker's final Confirm of a GRN posted on upload, once every location has been submitted. Until then the picker can
-/// keep changing locations, PKM and GIT / NO RACK entries; confirming locks every row of the GRN against further picker changes and
-/// takes it off the picker's pending list.</summary>
+/// <summary>The picker's final Confirm of a GRN, once every location has been submitted. Until then the picker can keep changing
+/// locations, PKM and GIT / NO RACK entries; confirming locks every row of the GRN against further picker changes and takes it off the
+/// picker's pending list. For a GRN posted on upload the stock is already in inventory; for an older GRN a supervisor still posts it.</summary>
 public sealed record ConfirmPickerPutawayCommand(int TransactionId) : IRequest<ConfirmPickerPutawayResult>;
 
-public sealed record ConfirmPickerPutawayResult(string ReferenceNumber, int LocationCount);
+public sealed record ConfirmPickerPutawayResult(string ReferenceNumber, int LocationCount, bool StockPosted);
 
 public sealed class ConfirmPickerPutawayValidator : AbstractValidator<ConfirmPickerPutawayCommand>
 {
@@ -40,11 +40,6 @@ public sealed class ConfirmPickerPutawayHandler(IApplicationDbContext db, IPermi
             throw new InvalidOperationException("This GRN has been rejected.");
         }
 
-        if (transaction.PostedAt is null)
-        {
-            throw new InvalidOperationException("This GRN was not posted on upload; its put-away is confirmed by a supervisor.");
-        }
-
         var putaways = transaction.Lines.SelectMany(l => l.Putaways).ToList();
         // The long-lived Blazor context may hold stale copies of rows another session just changed.
         foreach (var putaway in putaways)
@@ -52,7 +47,8 @@ public sealed class ConfirmPickerPutawayHandler(IApplicationDbContext db, IPermi
             await db.Entry(putaway).ReloadAsync(cancellationToken);
         }
 
-        var notSubmitted = putaways.Count(p => !p.IsPickerPlaced);
+        // A row a supervisor already confirmed on an older GRN counts as done; everything else needs the picker's own submission.
+        var notSubmitted = putaways.Count(p => !p.IsPickerPlaced && !(transaction.PostedAt is null && p.IsConfirmed));
         if (notSubmitted > 0)
         {
             throw new InvalidOperationException(
@@ -65,6 +61,6 @@ public sealed class ConfirmPickerPutawayHandler(IApplicationDbContext db, IPermi
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        return new ConfirmPickerPutawayResult(transaction.ReferenceNumber, putaways.Count);
+        return new ConfirmPickerPutawayResult(transaction.ReferenceNumber, putaways.Count, transaction.PostedAt is not null);
     }
 }

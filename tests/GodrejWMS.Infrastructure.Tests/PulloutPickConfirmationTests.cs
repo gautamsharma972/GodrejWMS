@@ -195,6 +195,40 @@ public class PulloutPickConfirmationTests
     }
 
     [Fact]
+    public async Task OverridingFifo_NeedsAReason_ButKeepingFifoDoesNot()
+    {
+        var s = await SeedAsync();
+        using var _ = s.Db;
+        // Newer stock (NOV|2026) sits in the ground bin; the allocated pick is the oldest PKM (OCT|2026).
+        s.Db.StockBatches.Add(new StockBatch { MaterialId = s.Material.Id, PalletPositionId = s.Ground.Id, MfgMonth = 202611, QuantityBoxes = 50 });
+        await s.Db.SaveChangesAsync();
+        var change = new ChangePulloutPickLocationHandler(s.Db, TestServices.Posting(s.Db), TestServices.Uow(s.Db));
+        ChangePulloutPickLocationCommand ToNewer(string reason) => new(
+            s.Reference, s.Material.MaterialNumber, "A-01-01", "OCT|2026", [new PulloutPickSource(s.Ground.Id, "NOV|2026", 45)], reason);
+
+        var options = await new GetPulloutPickChangeOptionsHandler(s.Db).Handle(
+            new GetPulloutPickChangeOptionsQuery(s.Reference, s.Material.MaterialNumber, "A-01-01", "OCT|2026"), default);
+        Assert.True(options.Single(o => o.LocationCode == "A-02-01").BreaksFifo);
+        Assert.False(options.Single(o => o.LocationCode == "A-03-01").BreaksFifo);
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => change.Handle(ToNewer(""), default));
+        Assert.Contains("overrides FIFO", refused.Message);
+        Assert.Equal(45, s.Db.PulloutPicks.AsNoTracking().Single().QuantityBoxes);
+        Assert.Equal(5, OnHand(s.Db, s.TopLevel)); // nothing moved
+
+        await change.Handle(ToNewer("Older stock is damaged"), default);
+        var pick = s.Db.PulloutPicks.AsNoTracking().Single();
+        Assert.Equal(s.Ground.Id, pick.PalletPositionId);
+        Assert.Equal("Older stock is damaged", pick.OverrideReason);
+
+        // Keeping FIFO (another location of the oldest PKM) needs no reason at all.
+        var freeChange = await change.Handle(new ChangePulloutPickLocationCommand(
+            s.Reference, s.Material.MaterialNumber, "A-02-01", "NOV|2026", [new PulloutPickSource(s.Other.Id, "OCT|2026", 45)], ""), default);
+        Assert.Equal(s.Other.Id, s.Db.PulloutPicks.AsNoTracking().Single().PalletPositionId);
+        Assert.Null(s.Db.PulloutPicks.AsNoTracking().Single().OverrideReason);
+    }
+
+    [Fact]
     public async Task ChangingThePickLocation_OfAPostedPullout_HandsBackTheOldSourceAndTakesFromTheNewOne()
     {
         var s = await SeedAsync();

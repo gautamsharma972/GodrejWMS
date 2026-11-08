@@ -408,6 +408,8 @@ export interface PulloutPickChangeOptionDto {
   stockBoxes: number;
   availableBoxes: number;
   isCurrent: boolean;
+  /** Taking from this cell skips older stock still available (FIFO): a reason is then required. */
+  breaksFifo?: boolean;
 }
 
 export interface PulloutPickSource {

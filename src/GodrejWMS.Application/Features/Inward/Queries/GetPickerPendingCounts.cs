@@ -18,8 +18,8 @@ public sealed class GetPickerPendingCountsHandler(IApplicationDbContext db)
 
         // GRNs with a location the picker has not submitted yet (a GIT / NO RACK entry or a saved location counts as submitted).
         var putaway = await open
-            .CountAsync(t => t.Lines.Any(l => l.Putaways.Any(p =>
-                (!p.IsPickerPlaced && !p.IsConfirmed) || (t.PostedAt != null && !p.IsExcludedLocked))), cancellationToken);
+            .CountAsync(t => t.Lines.Any(l => l.Putaways.Any(p => !p.IsExcludedLocked
+                && (!p.IsConfirmed || t.PostedAt != null || p.ExcludedLocation != null))), cancellationToken);
 
         // Inward (No PKM) GRNs that still have a location waiting for its PKM.
         var pkm = await open

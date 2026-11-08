@@ -171,10 +171,7 @@ export default function PickerPutawayDetailScreen() {
       setSelectedPutawayId(null);
       const refreshed = await getInwardDetail(token, Number(id));
       setDetail(refreshed);
-      // A GRN posted on upload ends with the picker's own Confirm, so the list stays open; an older one closes once everything is done.
-      if (!refreshed.postedAt && buildRows(refreshed).every((r) => r.done)) {
-        router.back();
-      }
+      // Every GRN ends with the picker's own Confirm, so the list stays open after the last submit.
     } catch (err) {
       errorPulse();
       setSubmitError(err instanceof ApiError ? err.message : "Could not save this put-away.");
@@ -211,7 +208,7 @@ export default function PickerPutawayDetailScreen() {
             keyExtractor={(row) => String(row.putaway.id)}
             contentContainerStyle={{ paddingBottom: 24 }}
             ListFooterComponent={
-              detail.postedAt ? (
+              rows.some((r) => !r.putaway.isExcludedLocked) ? (
                 <View style={styles.confirmFooter}>
                   {confirmError && <Text style={styles.confirmError}>{confirmError}</Text>}
                   <Button
@@ -246,7 +243,7 @@ export default function PickerPutawayDetailScreen() {
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={[styles.row, item.done && styles.rowDone]}
-                disabled={detail?.postedAt ? item.putaway.isExcludedLocked : item.putaway.isConfirmed && !(item.putaway.excludedLocation && !item.putaway.isExcludedLocked)}
+                disabled={item.putaway.isExcludedLocked || (!detail?.postedAt && item.putaway.isConfirmed && !item.putaway.excludedLocation)}
                 onPress={() => selectRow(item)}
               >
                 <View style={[styles.locationIcon, item.done && styles.locationIconDone]}>

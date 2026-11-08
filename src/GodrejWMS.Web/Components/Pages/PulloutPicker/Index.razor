@@ -221,11 +221,17 @@
                                         {
                                             <button type="button" class="btn text-start border rounded-3 p-3 @(_changeTo == option ? "btn-primary" : "btn-outline-secondary")" disabled="@option.IsCurrent" @onclick="() => _changeTo = option">
                                                 <strong>@option.LocationCode</strong> &middot; PKM @option.MfgMonthLabel<br />
-                                                <span class="small">@option.AvailableBoxes.ToString("0.###") box(es) available@(option.IsCurrent ? " - current location" : "")</span>
+                                                <span class="small">@option.AvailableBoxes.ToString("0.###") box(es) available@(option.IsCurrent ? " - current location" : "")@(option.BreaksFifo ? " - newer PKM (overrides FIFO)" : "")</span>
                                             </button>
                                         }
                                     </div>
-                                    <button type="button" class="btn btn-primary btn-lg w-100" disabled="@(_submitting || _changeTo is null)" @onclick="ChangeLocationAsync">
+                                    @if (_changeTo?.BreaksFifo == true)
+                                    {
+                                        <label class="text-muted small mb-1" for="picklist-fifo-reason">Reason for overriding FIFO <span class="text-danger">*</span></label>
+                                        <input id="picklist-fifo-reason" class="form-control mb-3" maxlength="250" placeholder="e.g. Older stock is damaged"
+                                               @bind="_fifoReason" @bind:event="oninput" />
+                                    }
+                                    <button type="button" class="btn btn-primary btn-lg w-100" disabled="@(_submitting || _changeTo is null || (_changeTo.BreaksFifo && string.IsNullOrWhiteSpace(_fifoReason)))" @onclick="ChangeLocationAsync">
                                         <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
                                         @(_submitting ? "Saving..." : _changeTo is null ? "Select a location" : $"Take from {_changeTo.LocationCode}")
                                     </button>
@@ -271,6 +277,7 @@
     // Change-location form
     private IReadOnlyList<PulloutPickChangeOptionDto>? _changeOptions;
     private PulloutPickChangeOptionDto? _changeTo;
+    private string _fifoReason = string.Empty;
 
     private sealed record PickRow(PulloutDetailLineDto Line, PulloutPickDto Pick)
     {
@@ -454,6 +461,7 @@
 
         _changing = true;
         _formError = null;
+        _fifoReason = string.Empty;
         _changeTo = null;
         _changeOptions = null;
         try
@@ -479,7 +487,8 @@
             var quantity = Math.Min(_selected.Pick.QuantityBoxes, _changeTo.AvailableBoxes);
             await Mediator.Send(new ChangePulloutPickLocationCommand(
                 _detail.ReferenceNumber, _selected.Line.MaterialNumber, _selected.Pick.LocationCode, _selected.Pick.MfgMonthLabel,
-                [new PulloutPickSource(_changeTo.PalletPositionId, _changeTo.MfgMonthLabel, quantity)], "Changed by picker"));
+                [new PulloutPickSource(_changeTo.PalletPositionId, _changeTo.MfgMonthLabel, quantity)],
+                _changeTo.BreaksFifo ? _fifoReason.Trim() : string.Empty));
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Pick moved to {_changeTo.LocationCode}.", "success");
             await AfterChangeAsync(_detail.Id);
         }
