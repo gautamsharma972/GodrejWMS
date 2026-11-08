@@ -26,12 +26,18 @@ public sealed class RejectPulloutValidator : AbstractValidator<RejectPulloutComm
 
 public sealed class RejectPulloutHandler(
     IApplicationDbContext db,
+    IStockPostingService posting,
+    IUnitOfWork uow,
     IDateTimeProvider clock,
     ICurrentUserService currentUser) : IRequestHandler<RejectPulloutCommand, Unit>
 {
-    public async Task<Unit> Handle(RejectPulloutCommand request, CancellationToken cancellationToken)
+    public Task<Unit> Handle(RejectPulloutCommand request, CancellationToken cancellationToken) =>
+        uow.ExecuteInTransactionAsync(ct => RunAsync(request, ct), cancellationToken);
+
+    private async Task<Unit> RunAsync(RejectPulloutCommand request, CancellationToken cancellationToken)
     {
         var transaction = await db.PulloutTransactions
+            .Include(t => t.Lines).ThenInclude(l => l.Picks).ThenInclude(p => p.PalletPosition)
             .FirstOrDefaultAsync(t => t.ReferenceNumber == request.ReferenceNumber, cancellationToken)
             ?? throw new NotFoundException(nameof(PulloutTransaction), request.ReferenceNumber);
 
@@ -45,12 +51,28 @@ public sealed class RejectPulloutHandler(
 
         if (transaction.IsConfirmed)
         {
-            throw new InvalidOperationException(
-                "This pullout can't be rejected because it has already been confirmed and inventory was updated.");
+            // Posted on upload: the stock was already taken out, so cancelling puts it back - but only while nothing is picked yet.
+            if (transaction.Lines.SelectMany(l => l.Picks).Any(p => p.PickedAt is not null))
+            {
+                throw new InvalidOperationException(
+                    "This pullout can't be rejected because picking has already started and the picked stock has left the warehouse.");
+            }
+
+            var returns = transaction.Lines
+                .SelectMany(l => l.Picks.Select(p => new StockChange(l.MaterialId, p.MfgMonth, LocationSubtypeIds.Good, p.PalletPosition, p.QuantityBoxes)))
+                .ToList();
+            if (returns.Count > 0)
+            {
+                await posting.ApplyAsync(
+                    new StockPostingContext(StockLedgerEntryTypes.Reversal, "PICK", transaction.ReferenceNumber, "Pullout rejected"),
+                    returns, cancellationToken);
+            }
+
+            transaction.IsConfirmed = false;
         }
 
-        // A saved pullout is only a proposal (stock isn't reserved), so rejecting it just records
-        // the decision; the proposed lines and picks stay as the audit record of what was rejected.
+        // The proposed/posted lines and picks stay as the audit record of what was rejected.
+        transaction.UploadHash = null;
         transaction.IsRejected = true;
         transaction.RejectedAt = clock.UtcNow;
         transaction.RejectedByUserId = currentUser.UserId;

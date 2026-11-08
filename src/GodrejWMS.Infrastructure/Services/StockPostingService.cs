@@ -120,6 +120,12 @@ public sealed class StockPostingService(
             .FirstOrDefault(Matches);
         if (tracked is not null || change.Position.Id == 0)
         {
+            // An untouched copy may be stale in a long-lived (Blazor circuit) context: read it again before relying on it.
+            if (tracked is not null && tracked.Id != 0 && db.ChangeTracker.Entries<StockBatch>().First(e => e.Entity == tracked).State == EntityState.Unchanged)
+            {
+                await db.ChangeTracker.Entries<StockBatch>().First(e => e.Entity == tracked).ReloadAsync(cancellationToken);
+            }
+
             return tracked;
         }
 

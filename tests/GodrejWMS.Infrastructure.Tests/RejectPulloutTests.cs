@@ -23,12 +23,12 @@ public class RejectPulloutTests
         db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = position.Id, MfgMonth = 202601, QuantityBoxes = 10 });
         await db.SaveChangesAsync();
 
-        var submit = new SubmitPulloutHandler(db, new PulloutAllocationService(db), new TestClock(), new TestCurrentUser());
-        var preview = await submit.Handle(new([new SubmitPulloutLine(123, 4)], WarehouseId: 1), CancellationToken.None);
+        var submit = new SubmitPulloutHandler(db, new PulloutAllocationService(db), TestServices.Posting(db), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
+        var preview = await submit.Handle(new([new SubmitPulloutLine(123, 4)], WarehouseId: 1, PreviewOnly: true), CancellationToken.None);
         return (db, submit, preview.ReferenceNumber);
     }
 
-    private static RejectPulloutHandler Reject(AppDbContext db) => new(db, new TestClock(), new TestCurrentUser());
+    private static RejectPulloutHandler Reject(AppDbContext db) => new(db, TestServices.Posting(db), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
 
     [Fact]
     public async Task Reject_MarksPendingPulloutRejected_RecordsWhoAndWhy_AndLeavesInventoryUntouched()
@@ -47,17 +47,36 @@ public class RejectPulloutTests
     }
 
     [Fact]
-    public async Task Reject_Throws_WhenPulloutAlreadyConfirmed()
+    public async Task Reject_OfAPostedPullout_PutsTheStockBackAndWritesAReversal()
     {
         var (db, submit, reference) = await SeedPendingPulloutAsync();
         var saved = GetSavedPreview(db, reference);
         await submit.Handle(new([new SubmitPulloutLine(123, 4)], saved), CancellationToken.None);
+        Assert.Equal(6, db.StockBatches.Single().QuantityBoxes);
+
+        await Reject(db).Handle(new RejectPulloutCommand(reference, "Wrong order"), CancellationToken.None);
+
+        Assert.True(db.PulloutTransactions.Single().IsRejected);
+        Assert.Equal(10, db.StockBatches.Single().QuantityBoxes);
+        var reversal = Assert.Single(db.StockLedgerEntries.Where(e => e.EntryType == StockLedgerEntryTypes.Reversal));
+        Assert.Equal(4, reversal.QuantityBoxes);
+    }
+
+    [Fact]
+    public async Task Reject_Throws_WhenPickingHasAlreadyStarted()
+    {
+        var (db, submit, reference) = await SeedPendingPulloutAsync();
+        var saved = GetSavedPreview(db, reference);
+        await submit.Handle(new([new SubmitPulloutLine(123, 4)], saved), CancellationToken.None);
+        db.PulloutPicks.First().PickedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             Reject(db).Handle(new RejectPulloutCommand(reference, "Too late"), CancellationToken.None));
 
-        Assert.Contains("already been confirmed", exception.Message);
+        Assert.Contains("picking has already started", exception.Message);
         Assert.False(db.PulloutTransactions.Single().IsRejected);
+        Assert.Equal(6, db.StockBatches.Single().QuantityBoxes);
     }
 
     [Fact]

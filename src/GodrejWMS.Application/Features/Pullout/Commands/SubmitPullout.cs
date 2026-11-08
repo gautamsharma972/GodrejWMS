@@ -1,6 +1,7 @@
 using FluentValidation;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Features.Inward;
 using GodrejWMS.Application.Features.Pullout.Dtos;
 using GodrejWMS.Domain.Entities;
 using MediatR;
@@ -9,7 +10,9 @@ using System.Text.Json;
 
 namespace GodrejWMS.Application.Features.Pullout.Commands;
 
-/// <summary>Saves a pending preview, refreshes an existing draft, or confirms reviewed picks.
+/// <summary>Posts a new pullout on upload (the picks are allocated and deducted from inventory at once, with ledger entries),
+/// or - only with <paramref name="PreviewOnly"/>, kept for orders still pending from before posting on upload - saves a
+/// pending preview, refreshes an existing draft, or confirms reviewed picks.
 /// <paramref name="HeaderFields"/> and <paramref name="WarehouseId"/> are only applied on the very
 /// first call for a new pullout (when both <paramref name="ConfirmedPreview"/> and
 /// <paramref name="RefreshReference"/> are null) - they're persisted on the transaction then, and
@@ -18,7 +21,7 @@ namespace GodrejWMS.Application.Features.Pullout.Commands;
 public sealed record SubmitPulloutCommand(IReadOnlyList<SubmitPulloutLine> Lines,
     PulloutResultDto? ConfirmedPreview = null, string? RefreshReference = null,
     PulloutLoadingSheetFieldsDto? HeaderFields = null, int? WarehouseId = null,
-    string? ClientIndentNumber = null) : IRequest<PulloutResultDto>;
+    string? ClientIndentNumber = null, bool PreviewOnly = false) : IRequest<PulloutResultDto>;
 
 public sealed record SubmitPulloutLine(long MaterialCode, decimal QuantityBoxes, string? PlantName = null, string? Priority = null, string? MaterialDescription = null);
 
@@ -47,10 +50,15 @@ public sealed class SubmitPulloutValidator : AbstractValidator<SubmitPulloutComm
 public sealed class SubmitPulloutHandler(
     IApplicationDbContext db,
     IPulloutAllocationService allocator,
+    IStockPostingService posting,
+    IUnitOfWork uow,
     IDateTimeProvider clock,
     ICurrentUserService currentUser) : IRequestHandler<SubmitPulloutCommand, PulloutResultDto>
 {
-    public async Task<PulloutResultDto> Handle(SubmitPulloutCommand request, CancellationToken cancellationToken)
+    public Task<PulloutResultDto> Handle(SubmitPulloutCommand request, CancellationToken cancellationToken) =>
+        InwardSubmissionLogic.RunOrderAsync(uow, ct => RunAsync(request, ct), cancellationToken);
+
+    private async Task<PulloutResultDto> RunAsync(SubmitPulloutCommand request, CancellationToken cancellationToken)
     {
         var reference = request.ConfirmedPreview?.ReferenceNumber ?? request.RefreshReference;
         PulloutTransaction transaction;
@@ -73,12 +81,32 @@ public sealed class SubmitPulloutHandler(
         else
         {
             var createdAt = clock.UtcNow;
+            // Re-uploading the same file must not deduct the stock twice.
+            var uploadHash = UploadFingerprint.Compute(
+                request.WarehouseId!.Value,
+                [request.ClientIndentNumber, request.HeaderFields?.VehicleNumber, request.HeaderFields?.TransportName],
+                lines.Select(l => $"{l.MaterialCode}|{l.QuantityBoxes}|{l.PlantName?.Trim().ToUpperInvariant()}|{l.Priority?.Trim().ToUpperInvariant()}"));
+            if (!request.PreviewOnly)
+            {
+                var since = createdAt - UploadFingerprint.DuplicateWindow;
+                var duplicate = await db.PulloutTransactions.AsNoTracking()
+                    .Where(t => t.WarehouseId == request.WarehouseId.Value && t.UploadHash == uploadHash && !t.IsRejected && t.CreatedAt >= since)
+                    .Select(t => t.ReferenceNumber)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (duplicate is not null)
+                {
+                    throw new InvalidOperationException(
+                        $"This file was already uploaded and posted as {duplicate} within the last 24 hours, so it was not posted again. Reject {duplicate} first if it must be uploaded again.");
+                }
+            }
+
             transaction = new PulloutTransaction
             {
                 WarehouseId = request.WarehouseId!.Value,
                 ReferenceNumber = await NextReferenceAsync(createdAt, cancellationToken), CreatedAt = createdAt,
                 CreatedByUserId = currentUser.UserId, IsConfirmed = false,
-                ClientIndentNumber = request.ClientIndentNumber
+                ClientIndentNumber = request.ClientIndentNumber,
+                UploadHash = uploadHash
             };
             if (request.HeaderFields is { } fields)
             {
@@ -210,7 +238,19 @@ public sealed class SubmitPulloutHandler(
                 transaction.Lines = proposedLines;
                 transaction.PreviewJson = JsonSerializer.Serialize(result);
                 if (reference is null) db.PulloutTransactions.Add(transaction);
-                await TouchReservedStockAsync(proposedLines, cancellationToken);
+                if (reference is null && !request.PreviewOnly)
+                {
+                    // Posted on upload: the picks are deducted from inventory right now, in this order's transaction.
+                    await DeductAsync(transaction, proposedLines, cancellationToken);
+                    transaction.IsConfirmed = true;
+                    transaction.ConfirmedAt = clock.UtcNow;
+                    transaction.ConfirmedByUserId = currentUser.UserId;
+                    transaction.ConfirmedByUserName = currentUser.UserName;
+                }
+                else
+                {
+                    await TouchReservedStockAsync(proposedLines, cancellationToken);
+                }
             }
             transaction.RowVersion++;
             for (var attempt = 0; ; attempt++)
@@ -246,6 +286,26 @@ public sealed class SubmitPulloutHandler(
             db.ChangeTracker.Clear();
             throw;
         }
+    }
+
+    /// <summary>Deducts every pick of a newly uploaded order from inventory through the shared posting service.</summary>
+    private async Task DeductAsync(PulloutTransaction transaction, IReadOnlyList<PulloutTransactionLine> lines, CancellationToken cancellationToken)
+    {
+        var positionIds = lines.SelectMany(l => l.Picks).Select(p => p.PalletPositionId).Distinct().ToList();
+        if (positionIds.Count == 0)
+        {
+            return;
+        }
+
+        var positions = await db.PalletPositions.Include(p => p.Rack)
+            .Where(p => positionIds.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, cancellationToken);
+        var changes = lines
+            .SelectMany(line => line.Picks.Select(pick => new StockChange(
+                line.MaterialId, pick.MfgMonth, LocationSubtypeIds.Good, positions[pick.PalletPositionId], -pick.QuantityBoxes)))
+            .ToList();
+        await posting.ApplyAsync(
+            new StockPostingContext(StockLedgerEntryTypes.PulloutDeduct, "PICK", transaction.ReferenceNumber), changes, cancellationToken);
     }
 
     private async Task TouchReservedStockAsync(
@@ -293,10 +353,10 @@ public sealed class SubmitPulloutHandler(
                         $"Stock at {pick.LocationCode} for {pick.MfgMonthLabel} is no longer available in the allocated quantity. Reload and review the pullout before confirming.");
                 }
 
-                batch.QuantityBoxes -= pick.QuantityBoxes;
-                batch.RowVersion++;
-                if (batch.QuantityBoxes <= 0)
-                    db.StockBatches.Remove(batch);
+                await posting.ApplyAsync(
+                    new StockPostingContext(StockLedgerEntryTypes.PulloutDeduct, "PICK", preview.ReferenceNumber),
+                    [new StockChange(batch.MaterialId, mfgMonth, LocationSubtypeIds.Good, batch.PalletPosition, -pick.QuantityBoxes)],
+                    cancellationToken);
             }
         }
     }

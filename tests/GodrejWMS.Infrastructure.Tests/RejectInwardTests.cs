@@ -63,7 +63,7 @@ public class RejectInwardTests
     public async Task Reject_MarksTransactionRejected_AndReleasesTheReservedLocation()
     {
         var (db, position, transaction, putaway) = SeedScenario();
-        var handler = new RejectInwardHandler(db, new TestClock(), new TestCurrentUser());
+        var handler = new RejectInwardHandler(db, TestServices.Posting(db), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
 
         var result = await handler.Handle(new RejectInwardCommand(transaction.Id, "Vendor sent wrong material"), CancellationToken.None);
 
@@ -81,28 +81,46 @@ public class RejectInwardTests
     }
 
     [Fact]
-    public async Task Reject_Throws_WhenAnyPutawayAlreadyConfirmed()
+    public async Task Reject_OfAPostedGrn_TakesTheStockBackOut()
     {
-        var (db, _, transaction, putaway) = SeedScenario();
+        var (db, position, transaction, putaway) = SeedScenario();
         putaway.IsConfirmed = true;
+        transaction.UploadHash = "HASH";
+        db.StockBatches.Add(new StockBatch { MaterialId = putaway.InwardTransactionLine.MaterialId, PalletPositionId = position.Id, MfgMonth = 201001, QuantityBoxes = 20 });
         await db.SaveChangesAsync();
+        var handler = new RejectInwardHandler(db, TestServices.Posting(db), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
 
-        var handler = new RejectInwardHandler(db, new TestClock(), new TestCurrentUser());
+        await handler.Handle(new RejectInwardCommand(transaction.Id, "Wrong GRN"), CancellationToken.None);
+
+        Assert.True(db.InwardTransactions.Single(t => t.Id == transaction.Id).IsRejected);
+        Assert.Null(db.InwardTransactions.Single(t => t.Id == transaction.Id).UploadHash); // the corrected file can be uploaded again
+        Assert.Equal(0, db.StockBatches.Single().QuantityBoxes);
+        Assert.Equal(-20, Assert.Single(db.StockLedgerEntries.Where(e => e.EntryType == StockLedgerEntryTypes.Reversal)).QuantityBoxes);
+    }
+
+    [Fact]
+    public async Task Reject_Throws_WhenThePostedStockIsNoLongerWhereItWasPlaced()
+    {
+        var (db, position, transaction, putaway) = SeedScenario();
+        putaway.IsConfirmed = true;
+        db.StockBatches.Add(new StockBatch { MaterialId = putaway.InwardTransactionLine.MaterialId, PalletPositionId = position.Id, MfgMonth = 201001, QuantityBoxes = 5 });
+        await db.SaveChangesAsync();
+        var handler = new RejectInwardHandler(db, TestServices.Posting(db), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             handler.Handle(new RejectInwardCommand(transaction.Id, "Too late"), CancellationToken.None));
-        Assert.Contains("already been confirmed", ex.Message);
+        Assert.Contains("no longer where it was placed", ex.Message);
 
         // Nothing should have been touched.
-        Assert.True(db.InwardPutaways.Single(p => p.Id == putaway.Id).IsConfirmed);
         Assert.False(db.InwardTransactions.Single(t => t.Id == transaction.Id).IsRejected);
+        Assert.Equal(5, db.StockBatches.Single().QuantityBoxes);
     }
 
     [Fact]
     public async Task Reject_Throws_WhenAlreadyRejected()
     {
         var (db, _, transaction, _) = SeedScenario();
-        var handler = new RejectInwardHandler(db, new TestClock(), new TestCurrentUser());
+        var handler = new RejectInwardHandler(db, TestServices.Posting(db), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
         await handler.Handle(new RejectInwardCommand(transaction.Id, "First rejection"), CancellationToken.None);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -137,7 +155,7 @@ public class RejectInwardTests
         db.InwardTransactions.Add(transaction);
         await db.SaveChangesAsync();
 
-        var handler = new RejectInwardHandler(db, new TestClock(), new TestCurrentUser());
+        var handler = new RejectInwardHandler(db, TestServices.Posting(db), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
         var result = await handler.Handle(new RejectInwardCommand(transaction.Id, "No point keeping a failed GRN pending"), CancellationToken.None);
 
         Assert.True(result.IsRejected);

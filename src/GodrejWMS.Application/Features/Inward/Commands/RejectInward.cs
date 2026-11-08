@@ -28,10 +28,15 @@ public sealed class RejectInwardValidator : AbstractValidator<RejectInwardComman
 
 public sealed class RejectInwardHandler(
     IApplicationDbContext db,
+    IStockPostingService posting,
+    IUnitOfWork uow,
     IDateTimeProvider clock,
     ICurrentUserService currentUser) : IRequestHandler<RejectInwardCommand, InwardResultDto>
 {
-    public async Task<InwardResultDto> Handle(RejectInwardCommand request, CancellationToken cancellationToken)
+    public Task<InwardResultDto> Handle(RejectInwardCommand request, CancellationToken cancellationToken) =>
+        uow.ExecuteInTransactionAsync(ct => RunAsync(request, ct), cancellationToken);
+
+    private async Task<InwardResultDto> RunAsync(RejectInwardCommand request, CancellationToken cancellationToken)
     {
         var transaction = await db.InwardTransactions
             .Include(t => t.Lines)
@@ -47,23 +52,41 @@ public sealed class RejectInwardHandler(
             throw new InvalidOperationException("This GRN has already been rejected.");
         }
 
-        if (transaction.Lines.Any(l => l.Putaways.Any(p => p.IsConfirmed)))
+        // Stock posted on upload is taken back out where it was placed (a picker's relocation is followed). That only
+        // works while it is still there: boxes that were picked or moved elsewhere cannot be reversed by a rejection.
+        var posted = transaction.Lines
+            .SelectMany(l => l.Putaways.Where(p => p.IsConfirmed && p.ExcludedLocation is null).Select(p => (Line: l, Putaway: p)))
+            .Where(x => x.Line.MfgMonth is not null)
+            .ToList();
+        if (posted.Count > 0)
         {
-            throw new InvalidOperationException(
-                "This GRN can't be rejected because some of its stock has already been confirmed into inventory.");
+            try
+            {
+                await posting.ApplyAsync(
+                    new StockPostingContext(StockLedgerEntryTypes.Reversal, "GRN", transaction.ReferenceNumber, "GRN rejected"),
+                    posted.Select(x => new StockChange(
+                        x.Line.MaterialId, x.Line.MfgMonth!.Value, LocationSubtypeIds.Good, x.Putaway.PalletPosition, -x.Putaway.QuantityBoxes)).ToList(),
+                    cancellationToken);
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw new InvalidOperationException(
+                    $"This GRN can't be rejected because its stock is no longer where it was placed ({ex.Message}).");
+            }
         }
 
-        // Nothing was confirmed, so no real StockBatch inventory exists yet for this GRN - the
-        // only thing "undoing" it needs to do is release the pending location reservations so
-        // that capacity is free again for other allocations. The line-level requested/allocated
-        // quantities stay on InwardTransactionLine as the audit record of what was rejected.
+        // Open (unposted) reservations are simply released so their capacity is free for other allocations. The line-level
+        // requested/allocated quantities stay on InwardTransactionLine as the audit record of what was rejected.
         foreach (var line in transaction.Lines)
         {
-            foreach (var putaway in line.Putaways.ToList())
+            foreach (var putaway in line.Putaways.Where(p => !p.IsConfirmed).ToList())
             {
                 db.InwardPutaways.Remove(putaway);
             }
         }
+
+        // Frees the upload fingerprint, so a corrected file can be uploaded again.
+        transaction.UploadHash = null;
 
         transaction.IsRejected = true;
         transaction.RejectedAt = clock.UtcNow;

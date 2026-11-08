@@ -62,6 +62,7 @@ public static class DependencyInjection
         services.AddScoped<IPalletAllocationService, PalletAllocationService>();
         services.AddScoped<IPulloutAllocationService, PulloutAllocationService>();
         services.AddScoped<IInventoryMovementService, InventoryMovementService>();
+        services.Configure<GodrejWMS.Application.Common.PickingOptions>(configuration.GetSection("Picking"));
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped<IVirtualLocationService, VirtualLocationService>();
         services.AddScoped<IStockPostingService, StockPostingService>();

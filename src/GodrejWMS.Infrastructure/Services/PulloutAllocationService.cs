@@ -1,7 +1,9 @@
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
+using GodrejWMS.Application.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace GodrejWMS.Infrastructure.Services;
 
@@ -11,7 +13,7 @@ namespace GodrejWMS.Infrastructure.Services;
 /// (A-01-01, A-01-02, ...) before moving to the next column - mirroring the put-away fill order.
 /// Only good stock in active good locations is pickable; damage, expired, and hold stock remain isolated.
 /// </summary>
-public class PulloutAllocationService(IApplicationDbContext db) : IPulloutAllocationService
+public class PulloutAllocationService(IApplicationDbContext db, IOptions<PickingOptions>? options = null) : IPulloutAllocationService
 {
     public async Task<PulloutAllocationResult> AllocateAsync(
         int materialId,
@@ -23,6 +25,7 @@ public class PulloutAllocationService(IApplicationDbContext db) : IPulloutAlloca
     {
         var remaining = quantityBoxes;
         var picks = new List<PulloutPickLine>();
+        var virtualFirst = options?.Value.PickFromVirtualFirst ?? new PickingOptions().PickFromVirtualFirst;
 
         var query = db.StockBatches.AsQueryable();
         if (preview) query = query.AsNoTracking();
@@ -36,6 +39,8 @@ public class PulloutAllocationService(IApplicationDbContext db) : IPulloutAlloca
                 && b.PalletPosition.Rack.WarehouseId == warehouseId)
             .Include(b => b.PalletPosition)
             .OrderBy(b => b.MfgMonth)
+            // Same PKM: virtual overflow locations first (when configured) so they empty out and get reused.
+            .ThenBy(b => virtualFirst && b.PalletPosition.IsVirtual ? 0 : 1)
             .ThenBy(b => b.PalletPosition.Rack.Code)
             .ThenBy(b => b.PalletPosition.Column)
             .ThenBy(b => b.PalletPosition.Level)

@@ -138,9 +138,9 @@ public class PulloutPickLocationChangeTests
             new StockBatch { MaterialId = material.Id, PalletPositionId = alternate.Id, MfgMonth = 202609, QuantityBoxes = 10 });
         await db.SaveChangesAsync();
 
-        var submit = new SubmitPulloutHandler(db, new PulloutAllocationService(db), new ChangeClock(), new ChangeUser());
+        var submit = new SubmitPulloutHandler(db, new PulloutAllocationService(db), TestServices.Posting(db), TestServices.Uow(db), new ChangeClock(), new ChangeUser());
         var requestLines = new[] { new SubmitPulloutLine(material.MaterialNumber, 30) };
-        var preview = await submit.Handle(new(requestLines, WarehouseId: 1), default);
+        var preview = await submit.Handle(new(requestLines, WarehouseId: 1, PreviewOnly: true), default);
         var originalPick = Assert.Single(Assert.Single(preview.Lines).Picks);
         Assert.Equal(original.LocationCode, originalPick.LocationCode);
 
@@ -206,7 +206,7 @@ public class PulloutPickLocationChangeTests
         await submit.Handle(new(requestLines, changed), default);
 
         Assert.Equal(20, db.StockBatches.Single(b => b.PalletPositionId == original.Id).QuantityBoxes);
-        Assert.DoesNotContain(db.StockBatches, b => b.PalletPositionId == alternate.Id);
+        Assert.DoesNotContain(db.StockBatches, b => b.PalletPositionId == alternate.Id && b.QuantityBoxes > 0); // depleted cells stay as zero rows
         Assert.True(db.PulloutTransactions.Single().IsConfirmed);
     }
 }

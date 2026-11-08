@@ -29,9 +29,9 @@ public class PulloutAllocationServiceTests
         });
         await db.SaveChangesAsync();
 
-        var handler = new SubmitPulloutHandler(db, new PulloutAllocationService(db), new PulloutClock(), new PulloutUser());
-        var first = await handler.Handle(new SubmitPulloutCommand([new(material.MaterialNumber, 7)], WarehouseId: 1), default);
-        var second = await handler.Handle(new SubmitPulloutCommand([new(material.MaterialNumber, 7)], WarehouseId: 1), default);
+        var handler = new SubmitPulloutHandler(db, new PulloutAllocationService(db), TestServices.Posting(db), TestServices.Uow(db), new PulloutClock(), new PulloutUser());
+        var first = await handler.Handle(new SubmitPulloutCommand([new(material.MaterialNumber, 7)], WarehouseId: 1, PreviewOnly: true), default);
+        var second = await handler.Handle(new SubmitPulloutCommand([new(material.MaterialNumber, 7)], WarehouseId: 1, PreviewOnly: true), default);
 
         Assert.Equal(7, Assert.Single(first.Lines).PickedQuantityBoxes);
         Assert.Equal(3, Assert.Single(second.Lines).PickedQuantityBoxes);
@@ -65,12 +65,11 @@ public class PulloutAllocationServiceTests
         });
         await db.SaveChangesAsync();
 
-        var handler = new SubmitPulloutHandler(
-            db, new PulloutAllocationService(db), new PulloutClock(), new PulloutUser());
+        var handler = new SubmitPulloutHandler(db, new PulloutAllocationService(db), TestServices.Posting(db), TestServices.Uow(db), new PulloutClock(), new PulloutUser());
         var preview = await handler.Handle(new SubmitPulloutCommand([
             new SubmitPulloutLine(material.MaterialNumber, 300, "Bangalore"),
             new SubmitPulloutLine(material.MaterialNumber, 200, "A-bad")
-        ], WarehouseId: 1), default);
+        ], WarehouseId: 1, PreviewOnly: true), default);
 
         Assert.Collection(preview.Lines,
             line =>
@@ -129,18 +128,18 @@ public class PulloutAllocationServiceTests
         await db.SaveChangesAsync();
         var clock = new PulloutClock { UtcNow = new(2026, 9, 16, 17, 0, 0, TimeSpan.Zero) };
         var handler = new GodrejWMS.Application.Features.Pullout.Commands.SubmitPulloutHandler(
-            db, new PulloutAllocationService(db), clock, new PulloutUser());
+            db, new PulloutAllocationService(db), TestServices.Posting(db), TestServices.Uow(db), clock, new PulloutUser());
         GodrejWMS.Application.Features.Pullout.Commands.SubmitPulloutLine[] lines = [new(123, 1)];
 
-        var first = await handler.Handle(new(lines, WarehouseId: 1), default);
-        var second = await handler.Handle(new(lines, WarehouseId: 1), default);
+        var first = await handler.Handle(new(lines, WarehouseId: 1, PreviewOnly: true), default);
+        var second = await handler.Handle(new(lines, WarehouseId: 1, PreviewOnly: true), default);
         Assert.Equal("PICK-20260916-162052", first.ReferenceNumber);
         Assert.Equal("PICK-20260916-162053", second.ReferenceNumber);
         var refreshed = await handler.Handle(new(lines, RefreshReference: first.ReferenceNumber), default);
         Assert.Equal(first.ReferenceNumber, refreshed.ReferenceNumber);
 
         clock.UtcNow = clock.UtcNow.AddDays(1);
-        var nextDay = await handler.Handle(new(lines, WarehouseId: 1), default);
+        var nextDay = await handler.Handle(new(lines, WarehouseId: 1, PreviewOnly: true), default);
         Assert.Equal("PICK-20260917-000001", nextDay.ReferenceNumber);
     }
 
@@ -158,9 +157,9 @@ public class PulloutAllocationServiceTests
         db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = position.Id, MfgMonth = 202601, QuantityBoxes = 10 });
         await db.SaveChangesAsync();
         var handler = new GodrejWMS.Application.Features.Pullout.Commands.SubmitPulloutHandler(
-            db, new PulloutAllocationService(db), new PulloutClock(), new PulloutUser());
+            db, new PulloutAllocationService(db), TestServices.Posting(db), TestServices.Uow(db), new PulloutClock(), new PulloutUser());
         GodrejWMS.Application.Features.Pullout.Commands.SubmitPulloutLine[] lines = [new(123, 3), new(123, 2)];
-        var preview = await handler.Handle(new(lines, WarehouseId: 1), default);
+        var preview = await handler.Handle(new(lines, WarehouseId: 1, PreviewOnly: true), default);
         await db.SaveChangesAsync();
         Assert.Equal(10, db.StockBatches.Single().QuantityBoxes);
         Assert.False(Assert.Single(db.PulloutTransactions).IsConfirmed);
@@ -183,7 +182,7 @@ public class PulloutAllocationServiceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(new(lines, preview), default));
         Assert.Equal(5, db.StockBatches.Single().QuantityBoxes);
 
-        var nextPreview = await handler.Handle(new(lines, WarehouseId: 1), default);
+        var nextPreview = await handler.Handle(new(lines, WarehouseId: 1, PreviewOnly: true), default);
         db.StockBatches.Single().QuantityBoxes = 1;
         await db.SaveChangesAsync();
         await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(new(lines, nextPreview), default));
@@ -196,7 +195,7 @@ public class PulloutAllocationServiceTests
         Assert.Equal(1, db.StockBatches.Single().QuantityBoxes);
         Assert.Equal(2, db.PulloutTransactions.Count());
         await handler.Handle(new(lines, refreshed), default);
-        Assert.Empty(db.StockBatches);
+        Assert.Equal(0, db.StockBatches.Single().QuantityBoxes); // a depleted cell stays as a zero row
         Assert.All(db.PulloutTransactions, t => Assert.True(t.IsConfirmed));
     }
 

@@ -30,7 +30,7 @@ public class ImportPulloutWorkbookHandlerTests
         db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = position.Id, MfgMonth = 202601, QuantityBoxes = 1000 });
         db.SaveChangesAsync().GetAwaiter().GetResult();
 
-        var submitHandler = new SubmitPulloutHandler(db, new PulloutAllocationService(db), new TestClock(), new TestCurrentUser());
+        var submitHandler = new SubmitPulloutHandler(db, new PulloutAllocationService(db), TestServices.Posting(db), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
         var mediator = new SingleHandlerMediator(submitHandler);
         var handler = new ImportPulloutWorkbookHandler(new ClosedXmlExcelService(), mediator, db, new TestClock());
         return (db, handler);
