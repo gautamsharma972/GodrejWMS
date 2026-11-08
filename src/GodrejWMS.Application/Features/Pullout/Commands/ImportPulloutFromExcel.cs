@@ -30,7 +30,7 @@ public sealed class ImportPulloutFromExcelHandler(IExcelService excel, IMediator
             .ToList();
 
         return await mediator.Send(
-            new SubmitPulloutCommand(lines, HeaderFields: headerFields, WarehouseId: request.WarehouseId, ClientIndentNumber: clientIndentNumber),
+            new SubmitPulloutCommand(lines, HeaderFields: headerFields, WarehouseId: request.WarehouseId, ClientIndentNumber: clientIndentNumber, CheckDuplicateUpload: true),
             cancellationToken);
     }
 }

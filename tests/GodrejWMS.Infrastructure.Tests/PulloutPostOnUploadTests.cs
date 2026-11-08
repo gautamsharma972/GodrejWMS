@@ -39,8 +39,8 @@ public class PulloutPostOnUploadTests
         new(db, new PulloutAllocationService(db, Options.Create(new GodrejWMS.Application.Common.PickingOptions { PickFromVirtualFirst = virtualFirst })),
             TestServices.Posting(db), TestServices.Uow(db), new SvcClock(), new SvcUser());
 
-    private static Task<GodrejWMS.Application.Features.Pullout.Dtos.PulloutResultDto> UploadAsync(AppDbContext db, int quantity, bool virtualFirst = true) =>
-        Handler(db, virtualFirst).Handle(new SubmitPulloutCommand([new SubmitPulloutLine(40000001, quantity)], WarehouseId: 1), default);
+    private static Task<GodrejWMS.Application.Features.Pullout.Dtos.PulloutResultDto> UploadAsync(AppDbContext db, int quantity, bool virtualFirst = true, bool fromFile = false) =>
+        Handler(db, virtualFirst).Handle(new SubmitPulloutCommand([new SubmitPulloutLine(40000001, quantity)], WarehouseId: 1, CheckDuplicateUpload: fromFile), default);
 
     [Fact]
     public async Task Upload_DeductsTheStockImmediately_AndWritesTheLedger()
@@ -122,13 +122,26 @@ public class PulloutPostOnUploadTests
     {
         var (db, _, physical, _) = await SeedAsync(50, 202610, 30, 202611);
         using var _ = db;
-        var first = await UploadAsync(db, 20);
+        var first = await UploadAsync(db, 20, fromFile: true);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => UploadAsync(db, 20));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => UploadAsync(db, 20, fromFile: true));
 
         Assert.Contains(first.ReferenceNumber, ex.Message);
         Assert.Equal(30, db.StockBatches.Single(b => b.PalletPositionId == physical.Id).QuantityBoxes);
         Assert.Single(db.PulloutTransactions);
+    }
+
+    [Fact]
+    public async Task ManualPullout_OfTheSameMaterialAndQuantity_IsNotTreatedAsAReUpload()
+    {
+        var (db, _, physical, _) = await SeedAsync(50, 202610, 30, 202611);
+        using var _ = db;
+        await UploadAsync(db, 10);
+
+        await UploadAsync(db, 10);
+
+        Assert.Equal(2, db.PulloutTransactions.Count());
+        Assert.Equal(30, db.StockBatches.Single(b => b.PalletPositionId == physical.Id).QuantityBoxes);
     }
 }
 

@@ -87,7 +87,7 @@ public sealed class ImportPulloutWorkbookHandler(IExcelService excel, IMediator 
                     .ToList();
 
                 var result = await mediator.Send(
-                    new SubmitPulloutCommand(lines, HeaderFields: sheet.HeaderFields, WarehouseId: request.WarehouseId),
+                    new SubmitPulloutCommand(lines, HeaderFields: sheet.HeaderFields, WarehouseId: request.WarehouseId, CheckDuplicateUpload: true),
                     cancellationToken);
 
                 outcomes.Add(new PulloutSheetImportOutcome(sheet.SheetName, PulloutSheetImportStatus.Created, result.ReferenceNumber,

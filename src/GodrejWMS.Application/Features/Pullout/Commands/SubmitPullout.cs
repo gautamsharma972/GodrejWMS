@@ -21,7 +21,7 @@ namespace GodrejWMS.Application.Features.Pullout.Commands;
 public sealed record SubmitPulloutCommand(IReadOnlyList<SubmitPulloutLine> Lines,
     PulloutResultDto? ConfirmedPreview = null, string? RefreshReference = null,
     PulloutLoadingSheetFieldsDto? HeaderFields = null, int? WarehouseId = null,
-    string? ClientIndentNumber = null, bool PreviewOnly = false) : IRequest<PulloutResultDto>;
+    string? ClientIndentNumber = null, bool PreviewOnly = false, bool CheckDuplicateUpload = false) : IRequest<PulloutResultDto>;
 
 public sealed record SubmitPulloutLine(long MaterialCode, decimal QuantityBoxes, string? PlantName = null, string? Priority = null, string? MaterialDescription = null);
 
@@ -86,7 +86,8 @@ public sealed class SubmitPulloutHandler(
                 request.WarehouseId!.Value,
                 [request.ClientIndentNumber, request.HeaderFields?.VehicleNumber, request.HeaderFields?.TransportName],
                 lines.Select(l => $"{l.MaterialCode}|{l.QuantityBoxes}|{l.PlantName?.Trim().ToUpperInvariant()}|{l.Priority?.Trim().ToUpperInvariant()}"));
-            if (!request.PreviewOnly)
+            // Only Excel/file uploads are guarded; manual or pasted entries may legitimately repeat.
+            if (!request.PreviewOnly && request.CheckDuplicateUpload)
             {
                 var since = createdAt - UploadFingerprint.DuplicateWindow;
                 var duplicate = await db.PulloutTransactions.AsNoTracking()
