@@ -33,11 +33,7 @@ public class RefreshInwardFragmentationTests
         await db.SaveChangesAsync();
 
         var allocator = new PalletAllocationService(db, new FragClock());
-        var submitted = await new SubmitInwardHandler(db, allocator, new FragClock(), new FragUser()).Handle(
-            new SubmitInwardCommand(
-                [new SubmitInwardLine(material.MaterialNumber, 200, "OCT|2026"), new SubmitInwardLine(material.MaterialNumber, 200, "SEP|2026")],
-                WarehouseId: 1),
-            default);
+        var submitted = await TestServices.PendingGrnAsync(db, allocator, (material, 200, 202610), (material, 200, 202609));
         AssertPackedLikeOneStream(db);
         var before = Rows(db);
 
@@ -65,7 +61,7 @@ public class RefreshInwardFragmentationTests
         db.Materials.Add(material);
         await db.SaveChangesAsync();
 
-        var result = await new SubmitInwardHandler(db, new PalletAllocationService(db, new FragClock()), new FragClock(), new FragUser()).Handle(
+        var result = await new SubmitInwardHandler(db, TestServices.Placement(db, new PalletAllocationService(db, new FragClock())), TestServices.Uow(db), new FragClock(), new FragUser()).Handle(
             new SubmitInwardCommand(
                 [new SubmitInwardLine(material.MaterialNumber, 200, "OCT|2026"), new SubmitInwardLine(material.MaterialNumber, 200, "oct|2026")],
                 WarehouseId: 1),
@@ -211,8 +207,7 @@ public class RefreshInwardDeactivatedMaterialTests
         await db.SaveChangesAsync();
 
         var allocator = new PalletAllocationService(db, new FragClock());
-        var submitted = await new SubmitInwardHandler(db, allocator, new FragClock(), new FragUser()).Handle(
-            new SubmitInwardCommand([new SubmitInwardLine(material.MaterialNumber, 20, "OCT|2026")], WarehouseId: 1), default);
+        var submitted = await TestServices.PendingGrnAsync(db, allocator, (material, 20, 202610));
         Assert.Equal(20, Assert.Single(submitted.Lines).AllocatedQuantityBoxes);
 
         material.IsActive = false;
@@ -302,7 +297,7 @@ public class PickerPlaceInwardPutawayTests
             new PickerPlaceInwardPutawayCommand(putaway.Id, 31, "OCT|2026", positions[0].Id, null), default)).Saved);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new ConfirmInwardPutawayHandler(db, new FragClock(), new FragUser(), new AllowAll())
+            new ConfirmInwardPutawayHandler(db, TestServices.Posting(db), new FragClock(), new FragUser(), new AllowAll())
                 .Handle(new ConfirmInwardPutawayCommand("GRN-1"), default));
         Assert.Contains("more than the 30", ex.Message);
         Assert.False(db.InwardPutaways.Single().IsConfirmed);
@@ -318,7 +313,7 @@ public class PickerPlaceInwardPutawayTests
             new PickerPlaceInwardPutawayCommand(putaway.Id, 28, "OCT|2026", positions[0].Id, null), default)).Saved);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new ConfirmInwardPutawayHandler(db, new FragClock(), new FragUser(), new AllowAll())
+            new ConfirmInwardPutawayHandler(db, TestServices.Posting(db), new FragClock(), new FragUser(), new AllowAll())
                 .Handle(new ConfirmInwardPutawayCommand("GRN-1"), default));
         Assert.Contains("less than the 30", ex.Message);
         Assert.Contains("28", ex.Message);
@@ -345,7 +340,7 @@ public class PickerPlaceInwardPutawayTests
         // A total that does not match is only reported when the supervisor confirms.
         Assert.True((await Handler(db).Handle(
             new PickerPlaceInwardPutawayCommand(second.Id, 20, "OCT|2026", positions[1].Id, null), default)).Saved);
-        var confirm = new ConfirmInwardPutawayHandler(db, new FragClock(), new FragUser(), new AllowAll());
+        var confirm = new ConfirmInwardPutawayHandler(db, TestServices.Posting(db), new FragClock(), new FragUser(), new AllowAll());
         var under = await Assert.ThrowsAsync<InvalidOperationException>(() => confirm.Handle(new ConfirmInwardPutawayCommand("GRN-1"), default));
         Assert.Contains("less than the 50", under.Message);
 
@@ -375,7 +370,7 @@ public class PickerPlaceInwardPutawayTests
         Assert.True(saved.Saved);
 
         // The location is full of another material, yet the picker's choice confirms into stock.
-        var confirmed = await new ConfirmInwardPutawayHandler(db, new FragClock(), new FragUser(), new AllowAll())
+        var confirmed = await new ConfirmInwardPutawayHandler(db, TestServices.Posting(db), new FragClock(), new FragUser(), new AllowAll())
             .Handle(new ConfirmInwardPutawayCommand("GRN-1"), default);
         Assert.NotNull(confirmed);
         Assert.Equal(2, db.StockBatches.Count(s => s.PalletPositionId == positions[1].Id));
@@ -424,7 +419,7 @@ public class PickerPlaceInwardPutawayTests
         using var _ = db;
         await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "GIT"), default);
 
-        await new ConfirmInwardPutawayHandler(db, new FragClock(), new FragUser(), new AllowAll())
+        await new ConfirmInwardPutawayHandler(db, TestServices.Posting(db), new FragClock(), new FragUser(), new AllowAll())
             .Handle(new ConfirmInwardPutawayCommand("GRN-1"), default);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>

@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddSingleton<PermissionRevision>();
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddScoped<IWarehouseAccessService, WarehouseAccessService>();
+        services.AddScoped<IInwardPlacementService, GodrejWMS.Application.Features.Inward.InwardPlacementService>();
 
         return services;
     }

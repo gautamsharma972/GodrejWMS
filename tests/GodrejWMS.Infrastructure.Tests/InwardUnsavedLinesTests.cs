@@ -40,10 +40,10 @@ public class InwardUnsavedLinesTests
     }
 
     private static SubmitInwardHandler PkmHandler(AppDbContext db) =>
-        new(db, new PalletAllocationService(db, new Clock()), new Clock(), new User());
+        new(db, TestServices.Placement(db, new PalletAllocationService(db, new Clock())), TestServices.Uow(db), new Clock(), new User());
 
     private static SubmitInwardWithoutPkmHandler NoPkmHandler(AppDbContext db) =>
-        new(db, new PalletAllocationService(db, new Clock()), new Clock(), new User());
+        new(db, TestServices.Placement(db, new PalletAllocationService(db, new Clock())), TestServices.Uow(db), new Clock(), new User());
 
     // ───────────── totals ─────────────
 

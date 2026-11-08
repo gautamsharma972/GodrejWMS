@@ -36,7 +36,7 @@ public class ImportInwardWorkbookHandlerTests
         db.Materials.Add(material);
         db.SaveChanges();
 
-        var submitHandler = new SubmitInwardHandler(db, new PalletAllocationService(db, new TestClock()), new TestClock(), new TestCurrentUser());
+        var submitHandler = new SubmitInwardHandler(db, TestServices.Placement(db, new PalletAllocationService(db, new TestClock())), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
         var mediator = new SingleHandlerMediator(submitHandler);
         var handler = new ImportInwardWorkbookHandler(new ClosedXmlExcelService(), mediator, db, new TestClock());
         return (db, handler);

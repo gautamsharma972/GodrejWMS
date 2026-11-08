@@ -367,7 +367,7 @@ public class PalletAllocationServiceTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new ConfirmInwardPutawayHandler(db, new TestClock(), new TestCurrentUser(), new AllowAllPermissions());
+        var sut = new ConfirmInwardPutawayHandler(db, TestServices.Posting(db), new TestClock(), new TestCurrentUser(), new AllowAllPermissions());
 
         var result = await sut.Handle(new ConfirmInwardPutawayCommand("GRN-CONFIRM"), CancellationToken.None);
 
@@ -426,7 +426,7 @@ public class PalletAllocationServiceTests
     {
         var (db, material, _) = SeedWarehouse(capacityBoxes: 40);
         var allocator = new PalletAllocationService(db, new TestClock());
-        var sut = new SubmitInwardHandler(db, allocator, new TestClock(), new TestCurrentUser());
+        var sut = new SubmitInwardHandler(db, TestServices.Placement(db, allocator), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
 
         var result = await sut.Handle(
             new SubmitInwardCommand([new SubmitInwardLine(material.MaterialNumber, 10, "MAR|2010")], WarehouseId: 1),
@@ -443,7 +443,7 @@ public class PalletAllocationServiceTests
         var (db, material, _) = SeedWarehouse(capacityBoxes: 40);
         material.IsActive = false;
         await db.SaveChangesAsync();
-        var sut = new SubmitInwardHandler(db, new PalletAllocationService(db, new TestClock()), new TestClock(), new TestCurrentUser());
+        var sut = new SubmitInwardHandler(db, TestServices.Placement(db, new PalletAllocationService(db, new TestClock())), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
 
         var result = await sut.Handle(
             new SubmitInwardCommand([new SubmitInwardLine(material.MaterialNumber, 10, "MAR|2010")], WarehouseId: 1),
@@ -481,7 +481,7 @@ public class PalletAllocationServiceTests
         db.Materials.AddRange(low, high);
         await db.SaveChangesAsync();
 
-        var sut = new SubmitInwardHandler(db, new PalletAllocationService(db, new TestClock()), new TestClock(), new TestCurrentUser());
+        var sut = new SubmitInwardHandler(db, TestServices.Placement(db, new PalletAllocationService(db, new TestClock())), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
 
         // Sheet order is deliberately the reverse of the intended allocation order.
         var result = await sut.Handle(new SubmitInwardCommand([

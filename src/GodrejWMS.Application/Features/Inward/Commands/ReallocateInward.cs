@@ -71,7 +71,7 @@ public sealed class ReallocateInwardHandler(
     }
 
     /// <summary>
-    /// Same retry-on-concurrency-conflict shape as <c>SubmitInwardHandler.AllocateAndReserveLineAsync</c>
+    /// Same retry-on-concurrency-conflict shape the inward upload used to have
     /// (one line's own <c>SaveChangesAsync</c>, retried independently so one line's conflict
     /// doesn't force redoing every other line) - see that method's remarks for why the atomicity
     /// this relies on is a standard relational-provider guarantee, not proven by an InMemory test.

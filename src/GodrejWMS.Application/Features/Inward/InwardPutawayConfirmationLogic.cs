@@ -17,6 +17,7 @@ internal static class InwardPutawayConfirmationLogic
 {
     public static async Task ConfirmAsync(
         IApplicationDbContext db,
+        IStockPostingService posting,
         InwardTransactionLine line,
         InwardPutaway putaway,
         IDateTimeProvider clock,
@@ -47,7 +48,7 @@ internal static class InwardPutawayConfirmationLogic
         // already be full, so the checks below only guard system-suggested locations.
         if (putaway.IsPickerPlaced)
         {
-            await AddStockAsync(db, line, putaway, position, cancellationToken);
+            await AddStockAsync(posting, line, putaway, position, cancellationToken);
             Close(putaway, clock, currentUser);
             return;
         }
@@ -94,36 +95,17 @@ internal static class InwardPutawayConfirmationLogic
                 $"(only {Math.Max(0, free):0.###} available now - another confirmation may have used it first). Re-route it to a new location.");
         }
 
-        await AddStockAsync(db, line, putaway, position, cancellationToken);
+        await AddStockAsync(posting, line, putaway, position, cancellationToken);
         Close(putaway, clock, currentUser);
     }
 
-    private static async Task AddStockAsync(IApplicationDbContext db, InwardTransactionLine line, InwardPutaway putaway, PalletPosition position, CancellationToken cancellationToken)
+    /// <summary>Posts the boxes into inventory through the shared posting service (stock, ledger, virtual-location bookkeeping).</summary>
+    private static async Task AddStockAsync(IStockPostingService posting, InwardTransactionLine line, InwardPutaway putaway, PalletPosition position, CancellationToken cancellationToken)
     {
-        var batch = await db.StockBatches.FirstOrDefaultAsync(b =>
-            b.MaterialId == line.MaterialId &&
-            b.PalletPositionId == putaway.PalletPositionId &&
-            b.MfgMonth == line.MfgMonth &&
-            b.StockSubtypeId == position.LocationSubtypeId,
+        await posting.ApplyAsync(
+            new StockPostingContext(StockLedgerEntryTypes.InwardPost, "GRN", line.InwardTransaction?.ReferenceNumber),
+            [new StockChange(line.MaterialId, line.MfgMonth!.Value, position.LocationSubtypeId, position, putaway.QuantityBoxes)],
             cancellationToken);
-
-        if (batch is null)
-        {
-            db.StockBatches.Add(new StockBatch
-            {
-                MaterialId = line.MaterialId,
-                PalletPositionId = putaway.PalletPositionId,
-                MfgMonth = line.MfgMonth.Value, // guarded non-null above
-                StockSubtypeId = position.LocationSubtypeId,
-                QuantityBoxes = putaway.QuantityBoxes,
-                RowVersion = 1
-            });
-        }
-        else
-        {
-            batch.QuantityBoxes += putaway.QuantityBoxes;
-            batch.RowVersion++;
-        }
     }
 
     private static void Close(InwardPutaway putaway, IDateTimeProvider clock, ICurrentUserService currentUser)

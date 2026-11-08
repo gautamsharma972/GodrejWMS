@@ -18,6 +18,7 @@ public sealed record ConfirmSingleInwardPutawayCommand(int PutawayId) : IRequest
 
 public sealed class ConfirmSingleInwardPutawayHandler(
     IApplicationDbContext db,
+    IStockPostingService posting,
     IDateTimeProvider clock,
     ICurrentUserService currentUser,
     IPermissionService permissions) : IRequestHandler<ConfirmSingleInwardPutawayCommand, InwardResultDto>
@@ -33,6 +34,8 @@ public sealed class ConfirmSingleInwardPutawayHandler(
             .Include(p => p.PalletPosition)
             .Include(p => p.InwardTransactionLine)
                 .ThenInclude(l => l.Material)
+            .Include(p => p.InwardTransactionLine)
+                .ThenInclude(l => l.InwardTransaction)
             .FirstOrDefaultAsync(p => p.Id == request.PutawayId, cancellationToken)
             ?? throw new NotFoundException(nameof(InwardPutaway), request.PutawayId);
 
@@ -43,7 +46,7 @@ public sealed class ConfirmSingleInwardPutawayHandler(
 
         var transactionId = putaway.InwardTransactionLine.InwardTransactionId;
 
-        await InwardPutawayConfirmationLogic.ConfirmAsync(db, putaway.InwardTransactionLine, putaway, clock, currentUser, cancellationToken);
+        await InwardPutawayConfirmationLogic.ConfirmAsync(db, posting, putaway.InwardTransactionLine, putaway, clock, currentUser, cancellationToken);
 
         try
         {

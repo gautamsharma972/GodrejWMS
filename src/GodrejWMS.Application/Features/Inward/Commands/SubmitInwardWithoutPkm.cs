@@ -1,4 +1,5 @@
 using FluentValidation;
+using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Domain.Entities;
@@ -44,7 +45,8 @@ public sealed class SubmitInwardWithoutPkmValidator : AbstractValidator<SubmitIn
 
 public sealed class SubmitInwardWithoutPkmHandler(
     IApplicationDbContext db,
-    IPalletAllocationService allocator,
+    IInwardPlacementService placement,
+    IUnitOfWork uow,
     IDateTimeProvider clock,
     ICurrentUserService currentUser) : IRequestHandler<SubmitInwardWithoutPkmCommand, InwardResultDto>
 {
@@ -60,10 +62,27 @@ public sealed class SubmitInwardWithoutPkmHandler(
                 g.Select(l => l.Description).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d))))
             .ToList();
 
+        return await InwardSubmissionLogic.RunOrderAsync(uow, ct => RunAsync(request, requestLines, ct), cancellationToken);
+    }
+
+    private async Task<InwardResultDto> RunAsync(SubmitInwardWithoutPkmCommand request, List<SubmitInwardWithoutPkmLine> requestLines, CancellationToken cancellationToken)
+    {
         var materialCodes = requestLines.Select(l => l.MaterialCode).ToList();
         var materialsByCode = await db.Materials
             .Where(m => m.IsActive && materialCodes.Contains(m.MaterialNumber))
             .ToDictionaryAsync(m => m.MaterialNumber, cancellationToken);
+
+        // Re-uploading the same file must not create a second order.
+        var uploadHash = UploadFingerprint.Compute(
+            request.WarehouseId,
+            [request.VehicleNumber, request.LrNumber, request.ReceivedFrom, "NOPKM"],
+            requestLines.Select(l => $"{l.MaterialCode}|{l.QuantityBoxes}"));
+        var duplicate = await InwardSubmissionLogic.FindDuplicateAsync(db, request.WarehouseId, uploadHash, clock.UtcNow, cancellationToken);
+        if (duplicate is not null)
+        {
+            throw new InvalidOperationException(
+                $"This file was already uploaded and posted as {duplicate} within the last 24 hours, so it was not posted again. Reject {duplicate} first if it must be uploaded again.");
+        }
 
         var createdAt = clock.UtcNow;
         var transaction = new InwardTransaction
@@ -76,6 +95,7 @@ public sealed class SubmitInwardWithoutPkmHandler(
             LrNumber = request.LrNumber,
             ReceivedFrom = request.ReceivedFrom,
             UploadHeaderJson = request.UploadHeaderJson,
+            UploadHash = uploadHash,
             IsPkmless = true
         };
 
@@ -108,8 +128,10 @@ public sealed class SubmitInwardWithoutPkmHandler(
                 continue;
             }
 
-            var (transactionLine, reservedRows, allocation) =
-                await InwardSubmissionLogic.AllocateAndReserveLineAsync(db, allocator, transaction, material, line.QuantityBoxes, mfgMonth: null, request.WarehouseId, cancellationToken);
+            var placed = await placement.PlaceLineAsync(transaction, material, line.QuantityBoxes, mfgMonth: null, request.WarehouseId, cancellationToken);
+            var transactionLine = placed.Line;
+            var reservedRows = placed.Placed;
+            var allocation = placed.Allocation;
 
             resultLines.Add(new InwardLineResultDto(
                 material.MaterialNumber,
@@ -126,7 +148,8 @@ public sealed class SubmitInwardWithoutPkmHandler(
                         r.Putaway.QuantityBoxes,
                         r.Reason,
                         IsConfirmed: r.Putaway.IsConfirmed,
-                        PutawayId: r.Putaway.Id))
+                        PutawayId: r.Putaway.Id,
+                        IsVirtual: r.IsVirtual))
                     .ToList(),
                 IsConfirmed: transactionLine.Putaways.Count == 0));
         }

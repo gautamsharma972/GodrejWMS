@@ -41,7 +41,7 @@ public class SubmitInwardWithoutPkmHandlerTests
     public async Task Handle_CreatesPkmlessGrn_WithNullMfgMonthOnLines()
     {
         var (db, material) = SeedWarehouse();
-        var handler = new SubmitInwardWithoutPkmHandler(db, new PalletAllocationService(db, new TestClock()), new TestClock(), new TestCurrentUser());
+        var handler = new SubmitInwardWithoutPkmHandler(db, TestServices.Placement(db, new PalletAllocationService(db, new TestClock())), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
 
         var result = await handler.Handle(
             new SubmitInwardWithoutPkmCommand([new SubmitInwardWithoutPkmLine(material.MaterialNumber, 10)], WarehouseId: 1),
@@ -84,7 +84,7 @@ public class SubmitInwardWithoutPkmHandlerTests
     {
         var (db, material) = SeedWarehouse();
         var header = SampleHeaderJson();
-        var handler = new SubmitInwardWithoutPkmHandler(db, new PalletAllocationService(db, new TestClock()), new TestClock(), new TestCurrentUser());
+        var handler = new SubmitInwardWithoutPkmHandler(db, TestServices.Placement(db, new PalletAllocationService(db, new TestClock())), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
 
         var result = await handler.Handle(
             new SubmitInwardWithoutPkmCommand([new SubmitInwardWithoutPkmLine(material.MaterialNumber, 10)], WarehouseId: 1,
@@ -99,7 +99,7 @@ public class SubmitInwardWithoutPkmHandlerTests
     {
         var (db, material) = SeedWarehouse();
         var header = SampleHeaderJson();
-        var handler = new SubmitInwardHandler(db, new PalletAllocationService(db, new TestClock()), new TestClock(), new TestCurrentUser());
+        var handler = new SubmitInwardHandler(db, TestServices.Placement(db, new PalletAllocationService(db, new TestClock())), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
 
         var result = await handler.Handle(
             new SubmitInwardCommand([new SubmitInwardLine(material.MaterialNumber, 10, "MAR|2026")], WarehouseId: 1,
@@ -113,13 +113,13 @@ public class SubmitInwardWithoutPkmHandlerTests
     public async Task Handle_AcrossMultipleCalls_GeneratesDistinctReferences()
     {
         var (db, material) = SeedWarehouse();
-        var handler = new SubmitInwardWithoutPkmHandler(db, new PalletAllocationService(db, new TestClock()), new TestClock(), new TestCurrentUser());
+        var handler = new SubmitInwardWithoutPkmHandler(db, TestServices.Placement(db, new PalletAllocationService(db, new TestClock())), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
 
         var first = await handler.Handle(
             new SubmitInwardWithoutPkmCommand([new SubmitInwardWithoutPkmLine(material.MaterialNumber, 5)], WarehouseId: 1),
             CancellationToken.None);
         var second = await handler.Handle(
-            new SubmitInwardWithoutPkmCommand([new SubmitInwardWithoutPkmLine(material.MaterialNumber, 5)], WarehouseId: 1),
+            new SubmitInwardWithoutPkmCommand([new SubmitInwardWithoutPkmLine(material.MaterialNumber, 6)], WarehouseId: 1),
             CancellationToken.None);
 
         Assert.NotEqual(first.ReferenceNumber, second.ReferenceNumber);
@@ -129,7 +129,7 @@ public class SubmitInwardWithoutPkmHandlerTests
     public async Task HistoryQuery_OnlyReturnsPendingPkmlessGrns()
     {
         var (db, material) = SeedWarehouse();
-        var submitHandler = new SubmitInwardWithoutPkmHandler(db, new PalletAllocationService(db, new TestClock()), new TestClock(), new TestCurrentUser());
+        var submitHandler = new SubmitInwardWithoutPkmHandler(db, TestServices.Placement(db, new PalletAllocationService(db, new TestClock())), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
         var pkmless = await submitHandler.Handle(
             new SubmitInwardWithoutPkmCommand([new SubmitInwardWithoutPkmLine(material.MaterialNumber, 5)], WarehouseId: 1),
             CancellationToken.None);
@@ -152,7 +152,7 @@ public class SubmitInwardWithoutPkmHandlerTests
     public async Task HistoryQuery_ExcludesConfirmedPkmlessGrn()
     {
         var (db, material) = SeedWarehouse();
-        var submitHandler = new SubmitInwardWithoutPkmHandler(db, new PalletAllocationService(db, new TestClock()), new TestClock(), new TestCurrentUser());
+        var submitHandler = new SubmitInwardWithoutPkmHandler(db, TestServices.Placement(db, new PalletAllocationService(db, new TestClock())), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
         var pkmless = await submitHandler.Handle(
             new SubmitInwardWithoutPkmCommand([new SubmitInwardWithoutPkmLine(material.MaterialNumber, 5)], WarehouseId: 1),
             CancellationToken.None);

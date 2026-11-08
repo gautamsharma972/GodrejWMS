@@ -13,6 +13,7 @@ public sealed record ConfirmInwardPutawayCommand(string ReferenceNumber) : IRequ
 
 public sealed class ConfirmInwardPutawayHandler(
     IApplicationDbContext db,
+    IStockPostingService posting,
     IDateTimeProvider clock,
     ICurrentUserService currentUser,
     IPermissionService permissions) : IRequestHandler<ConfirmInwardPutawayCommand, InwardResultDto>
@@ -74,7 +75,7 @@ public sealed class ConfirmInwardPutawayHandler(
         {
             foreach (var putaway in line.Putaways.Where(p => !p.IsConfirmed))
             {
-                await InwardPutawayConfirmationLogic.ConfirmAsync(db, line, putaway, clock, currentUser, cancellationToken);
+                await InwardPutawayConfirmationLogic.ConfirmAsync(db, posting, line, putaway, clock, currentUser, cancellationToken);
             }
         }
 

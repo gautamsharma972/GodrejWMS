@@ -74,7 +74,7 @@ public sealed record InwardLineResultDto(
     IReadOnlyList<InwardAllocationLineDto> AllocatedTo,
     bool IsConfirmed = false);
 
-public sealed record InwardAllocationLineDto(string LocationCode, decimal QuantityBoxes, string? Reason = null, bool IsConfirmed = false, int? PutawayId = null);
+public sealed record InwardAllocationLineDto(string LocationCode, decimal QuantityBoxes, string? Reason = null, bool IsConfirmed = false, int? PutawayId = null, bool IsVirtual = false);
 
 public sealed record InwardResultDto(
     int Id,
@@ -116,7 +116,8 @@ public sealed record InwardPutawayDto(
     string? ExcludedLocation = null,
     int PalletPositionId = 0,
     bool IsPickerPlaced = false,
-    bool IsExcludedLocked = false);
+    bool IsExcludedLocked = false,
+    bool IsVirtual = false);
 
 public sealed record InwardDetailLineDto(
     long MaterialNumber,

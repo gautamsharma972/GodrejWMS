@@ -30,9 +30,13 @@ public sealed class RetryInwardUnsavedLinesValidator : AbstractValidator<RetryIn
 
 public sealed class RetryInwardUnsavedLinesHandler(
     IApplicationDbContext db,
-    IPalletAllocationService allocator) : IRequestHandler<RetryInwardUnsavedLinesCommand, RetryInwardUnsavedLinesResult>
+    IInwardPlacementService placement,
+    IUnitOfWork uow) : IRequestHandler<RetryInwardUnsavedLinesCommand, RetryInwardUnsavedLinesResult>
 {
-    public async Task<RetryInwardUnsavedLinesResult> Handle(RetryInwardUnsavedLinesCommand request, CancellationToken cancellationToken)
+    public Task<RetryInwardUnsavedLinesResult> Handle(RetryInwardUnsavedLinesCommand request, CancellationToken cancellationToken) =>
+        InwardSubmissionLogic.RunOrderAsync(uow, ct => RunAsync(request, ct), cancellationToken);
+
+    private async Task<RetryInwardUnsavedLinesResult> RunAsync(RetryInwardUnsavedLinesCommand request, CancellationToken cancellationToken)
     {
         var transaction = await db.InwardTransactions
             .Include(t => t.Lines)
@@ -86,11 +90,11 @@ public sealed class RetryInwardUnsavedLinesHandler(
 
             // Removed in the same SaveChanges that adds the new line, so the quantity is never counted twice or lost.
             db.InwardUnsavedLines.Remove(line);
-            var (_, _, allocation) = await InwardSubmissionLogic.AllocateAndReserveLineAsync(
-                db, allocator, transaction, material, line.QuantityBoxes, mfgMonth, transaction.WarehouseId, cancellationToken);
+            var placed = await placement.PlaceLineAsync(
+                transaction, material, line.QuantityBoxes, mfgMonth, transaction.WarehouseId, cancellationToken);
 
             placedLines++;
-            placedBoxes += allocation.AllocatedQuantityBoxes;
+            placedBoxes += placed.Allocation.AllocatedQuantityBoxes;
         }
 
         return new RetryInwardUnsavedLinesResult(placedLines, placedBoxes, stillMissing, needsPkm);

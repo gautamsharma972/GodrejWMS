@@ -42,7 +42,8 @@ public sealed class SubmitInwardValidator : AbstractValidator<SubmitInwardComman
 
 public sealed class SubmitInwardHandler(
     IApplicationDbContext db,
-    IPalletAllocationService allocator,
+    IInwardPlacementService placement,
+    IUnitOfWork uow,
     IDateTimeProvider clock,
     ICurrentUserService currentUser) : IRequestHandler<SubmitInwardCommand, InwardResultDto>
 {
@@ -60,10 +61,27 @@ public sealed class SubmitInwardHandler(
                 g.Select(l => l.Description).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d))))
             .ToList();
 
+        return await InwardSubmissionLogic.RunOrderAsync(uow, ct => RunAsync(request, requestLines, ct), cancellationToken);
+    }
+
+    private async Task<InwardResultDto> RunAsync(SubmitInwardCommand request, List<SubmitInwardLine> requestLines, CancellationToken cancellationToken)
+    {
         var materialCodes = requestLines.Select(l => l.MaterialCode).ToList();
         var materialsByCode = await db.Materials
             .Where(m => m.IsActive && materialCodes.Contains(m.MaterialNumber))
             .ToDictionaryAsync(m => m.MaterialNumber, cancellationToken);
+
+        // Re-uploading the same file must not post it twice.
+        var uploadHash = UploadFingerprint.Compute(
+            request.WarehouseId,
+            [request.VehicleNumber, request.LrNumber, request.ReceivedFrom],
+            requestLines.Select(l => $"{l.MaterialCode}|{(MfgMonthParser.TryParse(l.MfgMonthText, out var key) ? key.ToString() : l.MfgMonthText.Trim().ToUpperInvariant())}|{l.QuantityBoxes}"));
+        var duplicate = await InwardSubmissionLogic.FindDuplicateAsync(db, request.WarehouseId, uploadHash, clock.UtcNow, cancellationToken);
+        if (duplicate is not null)
+        {
+            throw new InvalidOperationException(
+                $"This file was already uploaded and posted as {duplicate} within the last 24 hours, so it was not posted again. Reject {duplicate} first if it must be uploaded again.");
+        }
 
         var createdAt = clock.UtcNow;
         var transaction = new InwardTransaction
@@ -75,7 +93,8 @@ public sealed class SubmitInwardHandler(
             VehicleNumber = request.VehicleNumber,
             LrNumber = request.LrNumber,
             ReceivedFrom = request.ReceivedFrom,
-            UploadHeaderJson = request.UploadHeaderJson
+            UploadHeaderJson = request.UploadHeaderJson,
+            UploadHash = uploadHash
         };
 
         db.InwardTransactions.Add(transaction);
@@ -116,8 +135,10 @@ public sealed class SubmitInwardHandler(
 
             MfgMonthParser.TryParse(line.MfgMonthText, out var mfgMonth);
 
-            var (transactionLine, reservedRows, allocation) =
-                await InwardSubmissionLogic.AllocateAndReserveLineAsync(db, allocator, transaction, material, line.QuantityBoxes, mfgMonth, request.WarehouseId, cancellationToken);
+            var placed = await placement.PlaceLineAsync(transaction, material, line.QuantityBoxes, mfgMonth, request.WarehouseId, cancellationToken);
+            var transactionLine = placed.Line;
+            var reservedRows = placed.Placed;
+            var allocation = placed.Allocation;
 
             resultLines.Add(new InwardLineResultDto(
                 material.MaterialNumber,
@@ -134,9 +155,10 @@ public sealed class SubmitInwardHandler(
                         r.Putaway.QuantityBoxes,
                         r.Reason,
                         IsConfirmed: r.Putaway.IsConfirmed,
-                        PutawayId: r.Putaway.Id))
+                        PutawayId: r.Putaway.Id,
+                        IsVirtual: r.IsVirtual))
                     .ToList(),
-                IsConfirmed: transactionLine.Putaways.Count == 0));
+                IsConfirmed: transactionLine.Putaways.All(p => p.IsConfirmed)));
         }
 
         // Sheet rows that could not even be read as a material line still carry boxes: record them against the

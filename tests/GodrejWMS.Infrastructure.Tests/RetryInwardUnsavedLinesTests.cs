@@ -31,7 +31,7 @@ public class RetryInwardUnsavedLinesTests
     };
 
     private static Task<GodrejWMS.Application.Features.Inward.Dtos.InwardResultDto> SubmitAsync(AppDbContext db, PalletAllocationService allocator) =>
-        new SubmitInwardHandler(db, allocator, new RetryClock(), new RetryUser()).Handle(
+        new SubmitInwardHandler(db, TestServices.Placement(db, allocator), TestServices.Uow(db), new RetryClock(), new RetryUser()).Handle(
             new SubmitInwardCommand(
                 [new SubmitInwardLine(1, 10, "OCT|2026"), new SubmitInwardLine(40064374, 50, "OCT|2026", "PA DISCOVER")],
                 WarehouseId: 1),
@@ -48,7 +48,7 @@ public class RetryInwardUnsavedLinesTests
         db.Materials.Add(NewMaterial(40064374));
         await db.SaveChangesAsync();
 
-        var result = await new RetryInwardUnsavedLinesHandler(db, allocator)
+        var result = await new RetryInwardUnsavedLinesHandler(db, TestServices.Placement(db, allocator), TestServices.Uow(db))
             .Handle(new RetryInwardUnsavedLinesCommand(grn.Id), default);
 
         Assert.Equal(1, result.PlacedLines);
@@ -58,7 +58,9 @@ public class RetryInwardUnsavedLinesTests
         Assert.Equal(50, line.RequestedQuantityBoxes);
         Assert.Equal(50, line.AllocatedQuantityBoxes);
         Assert.Equal(202610, line.MfgMonth);
-        Assert.Equal(50, db.InwardPutaways.Where(p => p.InwardTransactionLineId == line.Id && !p.IsConfirmed).Sum(p => p.QuantityBoxes));
+        // With a PKM the retried line is posted straight into inventory.
+        Assert.Equal(50, db.InwardPutaways.Where(p => p.InwardTransactionLineId == line.Id && p.IsConfirmed).Sum(p => p.QuantityBoxes));
+        Assert.Equal(50, db.StockBatches.Where(b => b.Material.MaterialNumber == 40064374).Sum(b => b.QuantityBoxes));
     }
 
     [Fact]
@@ -67,7 +69,7 @@ public class RetryInwardUnsavedLinesTests
         var (db, allocator) = await SeedAsync();
         var grn = await SubmitAsync(db, allocator);
 
-        var result = await new RetryInwardUnsavedLinesHandler(db, allocator)
+        var result = await new RetryInwardUnsavedLinesHandler(db, TestServices.Placement(db, allocator), TestServices.Uow(db))
             .Handle(new RetryInwardUnsavedLinesCommand(grn.Id), default);
 
         Assert.Equal(0, result.PlacedLines);
@@ -83,7 +85,7 @@ public class RetryInwardUnsavedLinesTests
         db.InwardUnsavedLines.Single().MfgMonth = null; // as saved by an older build
         db.Materials.Add(NewMaterial(40064374));
         await db.SaveChangesAsync();
-        var handler = new RetryInwardUnsavedLinesHandler(db, allocator);
+        var handler = new RetryInwardUnsavedLinesHandler(db, TestServices.Placement(db, allocator), TestServices.Uow(db));
 
         var without = await handler.Handle(new RetryInwardUnsavedLinesCommand(grn.Id), default);
         Assert.Equal(1, without.NeedsPkmLines);

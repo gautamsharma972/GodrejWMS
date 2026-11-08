@@ -26,6 +26,7 @@ public interface IPalletAllocationService
         int warehouseId,
         int stockSubtypeId = LocationSubtypeIds.Good,
         int? excludeInwardTransactionLineId = null,
+        bool allowVirtualOverflow = false,
         CancellationToken cancellationToken = default);
 }
 
@@ -33,6 +34,7 @@ public sealed record InwardAllocationResult(
     AllocationStatus Status,
     decimal AllocatedQuantityBoxes,
     IReadOnlyList<InwardAllocationLine> Lines,
-    string? Remarks);
+    string? Remarks,
+    IReadOnlyList<decimal>? OverflowChunks = null);
 
 public sealed record InwardAllocationLine(string LocationCode, decimal QuantityBoxes, string Reason);

@@ -392,7 +392,7 @@ public class AopDescriptionLocationPreferenceTests
             new AopDescriptionLocationPreference { AopDescriptionId = aop2.Id, FromPalletPositionId = Pos(rackC, 1, 1).Id, ToPalletPositionId = Pos(rackC, 1, 2).Id, IsActive = true });
         db.SaveChanges();
 
-        var handler = new SubmitInwardHandler(db, new PalletAllocationService(db, new FixedClock()), new FixedClock(), new FixedUser());
+        var handler = new SubmitInwardHandler(db, TestServices.Placement(db, new PalletAllocationService(db, new FixedClock())), TestServices.Uow(db), new FixedClock(), new FixedUser());
         var result = await handler.Handle(
             new SubmitInwardCommand(
             [

@@ -54,6 +54,7 @@ public class PalletAllocationService(
         int warehouseId,
         int stockSubtypeId = LocationSubtypeIds.Good,
         int? excludeInwardTransactionLineId = null,
+        bool allowVirtualOverflow = false,
         CancellationToken cancellationToken = default)
     {
         var material = await db.Materials
@@ -104,7 +105,10 @@ public class PalletAllocationService(
         var candidatePositions = await db.PalletPositions
             .Where(p => p.IsActive && p.LocationSubtypeId == stockSubtypeId && p.Rack.WarehouseId == warehouseId
                 && (requiredZoneTypeId == null || p.ZoneTypeId == requiredZoneTypeId)
-                && (!groundFloorOnly || p.Level == GroundFloorRule.GroundLevel))
+                && (!groundFloorOnly || p.Level == GroundFloorRule.GroundLevel)
+                // A virtual location is only a candidate while it holds this warehouse's overflow stock (Tier 1 top-up below);
+                // a FREE one is never a candidate - it is handed out by the virtual-location service when nothing physical fits.
+                && (!p.IsVirtual || p.VirtualStatus == VirtualLocationStatus.InUse))
             .Include(p => p.Rack)
             .Include(p => p.StockBatches.Where(b => b.Material.IsActive))
             .AsNoTracking()
@@ -142,6 +146,26 @@ public class PalletAllocationService(
                 hasAnchor, remaining, isAopPreferredPhase: false);
         }
 
+        // Pallets that no physical location could take go to virtual locations - one per pallet, sized by the same
+        // capacity function as a physical bin. The caller acquires them (this method stays a read-only computation).
+        // A material pinned to a zone cannot be placed in the Overflow zone, so it keeps failing as before.
+        IReadOnlyList<decimal>? overflowChunks = null;
+        if (remaining > 0 && allowVirtualOverflow && stockSubtypeId == LocationSubtypeIds.Good && requiredZoneTypeId is null)
+        {
+            var chunkCapacity = PalletCapacityCalculator.EffectiveCapacityBoxes(1, material.PalletCapacityBoxes);
+            if (chunkCapacity > 0)
+            {
+                var chunks = new List<decimal>();
+                for (var left = remaining; left > 0; left -= chunkCapacity)
+                {
+                    chunks.Add(Math.Min(left, chunkCapacity));
+                }
+
+                overflowChunks = chunks;
+                remaining = 0;
+            }
+        }
+
         var allocated = quantityBoxes - remaining;
         var status = remaining <= 0
             ? AllocationStatus.Fulfilled
@@ -158,7 +182,7 @@ public class PalletAllocationService(
                 ? $"No eligible capacity in this SKU's required zone - {remaining:0.###} box(es) could not be reserved in a matching {stockSubtypeCode} location."
                 : $"Warehouse at capacity - {remaining:0.###} box(es) could not be reserved in a matching {stockSubtypeCode} location.";
 
-        return new InwardAllocationResult(status, allocated, lines, remarks);
+        return new InwardAllocationResult(status, allocated, lines, remarks, overflowChunks);
     }
 
     /// <summary>Why the ground-floor locations could not take more of a ground-floor-only material: of the ground
@@ -209,13 +233,17 @@ public class PalletAllocationService(
         // (same-SKU+PKM top-up) or Tier 2 (same-rack consolidation) to match against - both are
         // skipped entirely and every box goes straight to Tier 3 below, landing on a genuinely
         // empty pallet position.
+        var physicalPositions = positions.Where(p => !p.IsVirtual).ToList();
         if (incomingMfgMonth is { } knownMfgMonth)
         {
+            // Tier 1 also tops up this SKU+PKM's overflow pallets, exactly like a physical partial pallet - but only after
+            // the physical ones (a virtual location is the last resort for new stock, not a preferred home).
             foreach (var position in positions
                 .Where(p => (HasSameSkuPkmStock(p, materialId, knownMfgMonth, stockSubtypeId)
                         || HasSameSkuPkmReservation(p.Id, pendingReservations, materialId, knownMfgMonth, stockSubtypeId))
                     && (allowPkmMixing || !HasDifferentPkmForMaterial(p, materialId, knownMfgMonth, pendingReservations)))
-                .OrderBy(p => ScoreLocation(p, material, activeSeasonId, incomingMfgMonth, oldestMfgMonth: null))
+                .OrderBy(p => p.IsVirtual)
+                .ThenBy(p => ScoreLocation(p, material, activeSeasonId, incomingMfgMonth, oldestMfgMonth: null))
                 .ThenBy(p => p.Rack.Code)
                 .ThenBy(p => p.Column)
                 .ThenBy(p => p.Level))
@@ -231,13 +259,13 @@ public class PalletAllocationService(
             if (hasAnchor)
             {
                 remaining = FillSameRackConsolidation(
-                    positions, pendingReservations, reservedByPosition, lines,
+                    physicalPositions, pendingReservations, reservedByPosition, lines,
                     materialId, stockSubtypeId, material, activeSeasonId, knownMfgMonth, oldestMfgMonth,
                     allowPkmMixing, remaining, isAopPreferredPhase);
             }
         }
 
-        foreach (var position in positions
+        foreach (var position in physicalPositions
             // A depleted batch row (quantity 0, e.g. left behind after stock was moved out) does not make a location non-empty.
             .Where(p => !p.StockBatches.Any(b => b.QuantityBoxes > 0) && !HasAnyReservation(p.Id, pendingReservations) && !reservedByPosition.ContainsKey(p.Id))
             .OrderBy(p => ScoreLocation(p, material, activeSeasonId, incomingMfgMonth, oldestMfgMonth))

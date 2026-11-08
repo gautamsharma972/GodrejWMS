@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -28,88 +29,38 @@ internal static class InwardSubmissionLogic
 
     private const int MaxAllocationAttempts = 3;
 
-    /// <summary>
-    /// Runs the allocation engine, reserves the resulting locations, and saves - retrying if a
-    /// concurrent submission reserved against the same position(s) first. Each pallet position
-    /// touched by a reservation has its <see cref="PalletPosition.RowVersion"/> incremented, so a
-    /// losing concurrent save fails with <see cref="DbUpdateConcurrencyException"/> instead of
-    /// silently overbooking the location; the loser discards its attempt and re-runs allocation
-    /// against the now-current state (which will see the winner's reservation and route around it).
-    /// <paramref name="mfgMonth"/> is null only for the Pickers' "Inward without PKM" flow, which
-    /// the allocator routes straight to empty pallet positions - see
-    /// <see cref="IPalletAllocationService.AllocateAsync"/>.
-    ///
-    /// This relies on <c>SaveChangesAsync</c> being atomic - a thrown <see cref="DbUpdateConcurrencyException"/>
-    /// means NONE of this attempt's changes (including the newly-Added line/putaways) were
-    /// persisted, which is a standard guarantee of every EF Core relational provider, including
-    /// the Pomelo MySQL provider this app runs on in production. (EF Core's InMemory *test*
-    /// provider does not honor this for a mixed Added+Modified batch, which is why this specific
-    /// retry-recovers-cleanly path is verified by this comment and by relational-provider
-    /// documentation rather than by an InMemory-backed test - see SubmitInwardConcurrencyTests.)
-    /// </summary>
-    public static async Task<(InwardTransactionLine Line, List<(InwardPutaway Putaway, string LocationCode, string? Reason)> Reserved, InwardAllocationResult Allocation)>
-        AllocateAndReserveLineAsync(
-            IApplicationDbContext db, IPalletAllocationService allocator,
-            InwardTransaction transaction, Material material, decimal quantityBoxes, int? mfgMonth, int warehouseId, CancellationToken cancellationToken)
+    /// <summary>Runs one inward order in one transaction. A concurrent upload that took the same location is detected through the
+    /// location / stock row versions; the whole order is then rolled back and run again against the new state.</summary>
+    public static async Task<T> RunOrderAsync<T>(IUnitOfWork uow, Func<CancellationToken, Task<T>> body, CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= MaxAllocationAttempts; attempt++)
         {
-            var allocation = await allocator.AllocateAsync(material.Id, quantityBoxes, mfgMonth, warehouseId, cancellationToken: cancellationToken);
-
-            var transactionLine = new InwardTransactionLine
-            {
-                MaterialId = material.Id,
-                MfgMonth = mfgMonth,
-                RequestedQuantityBoxes = quantityBoxes,
-                AllocatedQuantityBoxes = allocation.AllocatedQuantityBoxes,
-                Status = allocation.Status,
-                Remarks = allocation.Remarks
-            };
-
-            var reservedRows = new List<(InwardPutaway Putaway, string LocationCode, string? Reason)>();
-
-            foreach (var putaway in allocation.Lines)
-            {
-                var position = await db.PalletPositions
-                    .FirstAsync(p => p.LocationCode == putaway.LocationCode, cancellationToken);
-                position.RowVersion++;
-
-                var reservedPutaway = new InwardPutaway
-                {
-                    PalletPositionId = position.Id,
-                    QuantityBoxes = putaway.QuantityBoxes,
-                    AllocationReason = putaway.Reason,
-                    IsConfirmed = false
-                };
-
-                transactionLine.Putaways.Add(reservedPutaway);
-                reservedRows.Add((reservedPutaway, putaway.LocationCode, putaway.Reason));
-            }
-
-            transaction.Lines.Add(transactionLine);
-
             try
             {
-                await db.SaveChangesAsync(cancellationToken);
-                return (transactionLine, reservedRows, allocation);
+                return await uow.ExecuteInTransactionAsync(body, cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < MaxAllocationAttempts)
+            {
+                await Task.Delay(Random.Shared.Next(10, 60) * attempt, cancellationToken);
             }
             catch (DbUpdateConcurrencyException)
             {
-                transaction.Lines.Remove(transactionLine);
-                db.Entry(transactionLine).State = EntityState.Detached;
-                foreach (var (putaway, _, _) in reservedRows)
-                {
-                    db.Entry(putaway).State = EntityState.Detached;
-                }
-
-                foreach (var entry in db.ChangeTracker.Entries<PalletPosition>().Where(e => e.State == EntityState.Modified).ToList())
-                {
-                    await entry.ReloadAsync(cancellationToken);
-                }
+                break;
             }
         }
 
         throw new InvalidOperationException(
-            "Unable to reserve a put-away location because of high concurrent demand on the same location(s). Please retry.");
+            "Unable to place this order because of high concurrent demand on the same location(s). Please retry.");
+    }
+
+    /// <summary>The reference of a non-rejected inward order of the same warehouse with the same upload fingerprint inside the duplicate window, if any.</summary>
+    public static async Task<string?> FindDuplicateAsync(
+        IApplicationDbContext db, int warehouseId, string hash, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var since = now - UploadFingerprint.DuplicateWindow;
+        return await db.InwardTransactions.AsNoTracking()
+            .Where(t => t.WarehouseId == warehouseId && t.UploadHash == hash && !t.IsRejected && t.CreatedAt >= since)
+            .Select(t => t.ReferenceNumber)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 }
