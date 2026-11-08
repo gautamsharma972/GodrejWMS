@@ -644,8 +644,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("WarehouseId", "CreatedAt");
 
-                    b.HasIndex("WarehouseId", "UploadHash")
-                        .IsUnique();
+                    b.HasIndex("WarehouseId", "UploadHash");
 
                     b.ToTable("InwardTransactions", (string)null);
                 });
@@ -1365,6 +1364,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("varchar(450)");
 
+                    b.Property<string>("UploadHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
                     b.Property<string>("VehicleNumber")
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)");
@@ -1388,6 +1391,8 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("WarehouseId", "CreatedAt");
+
+                    b.HasIndex("WarehouseId", "UploadHash");
 
                     b.ToTable("PulloutTransactions", (string)null);
                 });

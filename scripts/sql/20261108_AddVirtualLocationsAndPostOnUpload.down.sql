@@ -14,11 +14,15 @@ DROP TABLE `VirtualLocationLogs`;
 
 DROP TABLE `VirtualLocationSequences`;
 
+ALTER TABLE `PulloutTransactions` DROP INDEX `IX_PulloutTransactions_WarehouseId_UploadHash`;
+
 ALTER TABLE `PalletPositions` DROP INDEX `IX_PalletPositions_IsVirtual_VirtualStatus`;
 
 ALTER TABLE `InwardTransactions` DROP INDEX `IX_InwardTransactions_WarehouseId_UploadHash`;
 
 ALTER TABLE `Racks` DROP COLUMN `IsSystem`;
+
+ALTER TABLE `PulloutTransactions` DROP COLUMN `UploadHash`;
 
 ALTER TABLE `PulloutPicks` DROP COLUMN `PickedAt`;
 
@@ -39,7 +43,7 @@ ALTER TABLE `InwardTransactions` DROP COLUMN `PostedAt`;
 ALTER TABLE `InwardTransactions` DROP COLUMN `UploadHash`;
 
 DELETE FROM `__EFMigrationsHistory`
-WHERE `MigrationId` = '20261108100756_AddVirtualLocationsAndPostOnUpload';
+WHERE `MigrationId` = '20261108101407_AddVirtualLocationsAndPostOnUpload';
 
 COMMIT;
 

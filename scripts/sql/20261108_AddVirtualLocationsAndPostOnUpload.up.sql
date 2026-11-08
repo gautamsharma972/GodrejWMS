@@ -12,6 +12,8 @@
 
 ALTER TABLE `Racks` ADD `IsSystem` tinyint(1) NOT NULL DEFAULT FALSE;
 
+ALTER TABLE `PulloutTransactions` ADD `UploadHash` varchar(64) CHARACTER SET utf8mb4 NULL;
+
 ALTER TABLE `PulloutPicks` ADD `PickedAt` datetime(6) NULL;
 
 ALTER TABLE `PulloutPicks` ADD `PickedByUserId` varchar(450) CHARACTER SET utf8mb4 NULL;
@@ -69,9 +71,11 @@ CREATE TABLE `VirtualLocationSequences` (
     CONSTRAINT `PK_VirtualLocationSequences` PRIMARY KEY (`WarehouseId`)
 ) CHARACTER SET=utf8mb4;
 
+CREATE INDEX `IX_PulloutTransactions_WarehouseId_UploadHash` ON `PulloutTransactions` (`WarehouseId`, `UploadHash`);
+
 CREATE INDEX `IX_PalletPositions_IsVirtual_VirtualStatus` ON `PalletPositions` (`IsVirtual`, `VirtualStatus`);
 
-CREATE UNIQUE INDEX `IX_InwardTransactions_WarehouseId_UploadHash` ON `InwardTransactions` (`WarehouseId`, `UploadHash`);
+CREATE INDEX `IX_InwardTransactions_WarehouseId_UploadHash` ON `InwardTransactions` (`WarehouseId`, `UploadHash`);
 
 CREATE INDEX `IX_StockLedgerEntries_MaterialId_CreatedAt` ON `StockLedgerEntries` (`MaterialId`, `CreatedAt`);
 
@@ -88,7 +92,7 @@ CREATE INDEX `IX_VirtualLocationLogs_InwardTransactionId` ON `VirtualLocationLog
 CREATE INDEX `IX_VirtualLocationLogs_PalletPositionId_ReleasedAt` ON `VirtualLocationLogs` (`PalletPositionId`, `ReleasedAt`);
 
 INSERT INTO `__EFMigrationsHistory` (`MigrationId`, `ProductVersion`)
-VALUES ('20261108100756_AddVirtualLocationsAndPostOnUpload', '9.0.11');
+VALUES ('20261108101407_AddVirtualLocationsAndPostOnUpload', '9.0.11');
 
 COMMIT;
 

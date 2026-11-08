@@ -17,6 +17,9 @@ public class PulloutTransaction : AuditableEntity
     public string ReferenceNumber { get; set; } = string.Empty;
     public bool IsConfirmed { get; set; } = true;
 
+    /// <summary>SHA-256 of the warehouse, header and normalised lines of the upload (see <see cref="InwardTransaction.UploadHash"/>).</summary>
+    public string? UploadHash { get; set; }
+
     /// <summary>The client's own order/indent number, read from the uploaded Loading Sheet's
     /// "Indent" field (when it isn't one of our own <see cref="ReferenceNumber"/>s) - lets a later
     /// upload of the same order (e.g. a growing same-day workbook re-uploaded with more sheets

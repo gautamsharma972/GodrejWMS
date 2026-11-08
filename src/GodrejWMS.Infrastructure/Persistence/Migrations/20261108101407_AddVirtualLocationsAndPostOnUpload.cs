@@ -31,6 +31,14 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 nullable: false,
                 defaultValue: false);
 
+            migrationBuilder.AddColumn<string>(
+                name: "UploadHash",
+                table: "PulloutTransactions",
+                type: "varchar(64)",
+                maxLength: 64,
+                nullable: true)
+                .Annotation("MySql:CharSet", "utf8mb4");
+
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "PickedAt",
                 table: "PulloutPicks",
@@ -181,6 +189,11 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 .Annotation("MySql:CharSet", "utf8mb4");
 
             migrationBuilder.CreateIndex(
+                name: "IX_PulloutTransactions_WarehouseId_UploadHash",
+                table: "PulloutTransactions",
+                columns: new[] { "WarehouseId", "UploadHash" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_PalletPositions_IsVirtual_VirtualStatus",
                 table: "PalletPositions",
                 columns: new[] { "IsVirtual", "VirtualStatus" });
@@ -188,8 +201,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_InwardTransactions_WarehouseId_UploadHash",
                 table: "InwardTransactions",
-                columns: new[] { "WarehouseId", "UploadHash" },
-                unique: true);
+                columns: new[] { "WarehouseId", "UploadHash" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_StockLedgerEntries_MaterialId_CreatedAt",
@@ -249,6 +261,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 name: "VirtualLocationSequences");
 
             migrationBuilder.DropIndex(
+                name: "IX_PulloutTransactions_WarehouseId_UploadHash",
+                table: "PulloutTransactions");
+
+            migrationBuilder.DropIndex(
                 name: "IX_PalletPositions_IsVirtual_VirtualStatus",
                 table: "PalletPositions");
 
@@ -259,6 +275,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
             migrationBuilder.DropColumn(
                 name: "IsSystem",
                 table: "Racks");
+
+            migrationBuilder.DropColumn(
+                name: "UploadHash",
+                table: "PulloutTransactions");
 
             migrationBuilder.DropColumn(
                 name: "PickedAt",
