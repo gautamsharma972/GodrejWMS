@@ -1,0 +1,82 @@
+@page "/reports/unposted-orders"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewReports)]
+@using GodrejWMS.Application.Features.Reports.Queries
+@inject IMediator Mediator
+
+<PageTitle>Unposted Orders - Godrej WMS</PageTitle>
+
+<div class="page-shell report-page">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Reports / Exceptions</div>
+            <h1>Unposted Orders</h1>
+            <p class="page-kicker">Inward and pullout orders whose stock was not posted to inventory on upload - from before posting on upload, or inward waiting for its PKM. Nothing is posted automatically: confirm, complete or reject each one.</p>
+        </div>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_error</div>
+    }
+
+    <div class="panel">
+        @if (_loading)
+        {
+            <div class="loading-panel"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Loading...</div>
+        }
+        else if (_rows.Count == 0)
+        {
+            <div class="empty-state">
+                <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                <strong>Every order is posted</strong>
+                <span>No GRN or pullout is waiting to be posted.</span>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr><th>Type</th><th>Reference</th><th>Created</th><th>Warehouse</th><th class="text-end">Lines</th><th class="text-end">Boxes pending</th><th>What to do</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _rows)
+                        {
+                            <tr>
+                                <td><span class="status-pill neutral">@row.Kind</span></td>
+                                <td><a class="record-code" href="@(row.Kind == "GRN" ? $"/inward/{row.Id}" : $"/pullout/{row.Id}")">@row.ReferenceNumber</a></td>
+                                <td>@row.CreatedAt.ToLocalTime().ToString("dd MMM yyyy")</td>
+                                <td>@row.WarehouseCode</td>
+                                <td class="text-end">@row.Lines</td>
+                                <td class="text-end"><strong>@row.Boxes.ToString("N0")</strong></td>
+                                <td>@row.Reason</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<UnpostedOrderRowDto> _rows = [];
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _rows = await Mediator.Send(new GetUnpostedOrdersReportQuery());
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}
