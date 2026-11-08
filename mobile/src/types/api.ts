@@ -293,6 +293,20 @@ export interface PulloutPickDto {
   pickedQuantityBoxes?: number | null;
 }
 
+/** A posted pullout the picker still has picks to confirm on (GET /api/pullout/picker/queue). */
+export interface PickerPulloutDto {
+  id: number;
+  referenceNumber: string;
+  createdAt: string;
+  destination?: string | null;
+  vehicleNumber?: string | null;
+  lineCount: number;
+  pickCount: number;
+  pickedCount: number;
+  totalBoxes: number;
+  virtualPickCount: number;
+}
+
 /** What is left on the shelf at a pick's location (after the order's own deduction). */
 export interface PickRemainderDto {
   pickId: number;

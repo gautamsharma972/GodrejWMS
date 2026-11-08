@@ -3,7 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { getInwardHistory, getPickerPutawayQueue, getPulloutQueue } from "../../api/endpoints";
+import { getInwardHistory, getPickerPulloutQueue, getPickerPutawayQueue, getPulloutQueue } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { AppIcon } from "../../components/ui/AppIcon";
 import { FadeInUp } from "../../components/ui/FadeInUp";
@@ -57,7 +57,8 @@ export default function HomeScreen() {
   const canPick = permissions.includes("Inward.Create");
   const canAssignPkm = permissions.includes("Inward.AssignPkm");
   const canConfirmInward = permissions.includes("Inward.Confirm");
-  const canConfirmPullout = permissions.includes("Pullout.Confirm");
+  // Supervisors confirm old pending pullouts; pickers work the picks of posted ones - both reach the Pullout queue.
+  const canConfirmPullout = permissions.includes("Pullout.Confirm") || permissions.includes("Pullout.Pick");
 
   const [counts, setCounts] = useState<Record<string, number | null>>({});
 
@@ -88,7 +89,9 @@ export default function HomeScreen() {
       icon: "car-outline",
       label: "Pullout queue",
       route: "/pullout-queue",
-      fetchCount: async (token: string) => (await getPulloutQueue(token, { pageSize: 1 })).totalCount,
+      fetchCount: async (token: string) => (permissions.includes("Pullout.Pick")
+        ? (await getPickerPulloutQueue(token, { pageSize: 1 })).totalCount
+        : (await getPulloutQueue(token, { pageSize: 1 })).totalCount),
     },
   ].filter(Boolean) as StatTile[];
 
@@ -135,7 +138,7 @@ export default function HomeScreen() {
       color: "#0d9488",
       softColor: "#ccfbf1",
       title: "Pullout queue",
-      subtitle: "Edit pick, confirm pullouts",
+      subtitle: "Confirm picks, change locations",
       route: "/pullout-queue",
     },
   ].filter(Boolean) as ActionTile[];

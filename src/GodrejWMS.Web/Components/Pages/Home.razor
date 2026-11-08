@@ -82,6 +82,20 @@
                         <span class="picker-action-arrow" aria-hidden="true"><i class="bi bi-arrow-right"></i></span>
                     </a>
                 </PermissionAuthorize>
+                <PermissionAuthorize Permission="@PermissionKeys.Pullout.Pick">
+                    <a class="picker-action-card" href="pullout-picker">
+                        @if (_pickerCounts.PulloutPicklists > 0)
+                        {
+                            <span class="picker-action-badge" title="@_pickerCounts.PulloutPicklists pick-list(s) to confirm">@(_pickerCounts.PulloutPicklists > 99 ? "99+" : _pickerCounts.PulloutPicklists)</span>
+                        }
+                        <span class="picker-action-icon"><i class="bi bi-list-check" aria-hidden="true"></i></span>
+                        <span class="picker-action-content">
+                            <strong>Pullout (Pick-list)</strong>
+                            <small>Confirm each pick, change a pick location or move the boxes left over.</small>
+                        </span>
+                        <span class="picker-action-arrow" aria-hidden="true"><i class="bi bi-arrow-right"></i></span>
+                    </a>
+                </PermissionAuthorize>
             </div>
         </section>
 
@@ -311,7 +325,8 @@ else
         _hasDashboardAccess = await PermissionService.HasPermissionAsync(PermissionKeys.Menu.ViewDashboard);
         if (!_hasDashboardAccess)
         {
-            if (await PermissionService.HasPermissionAsync(PermissionKeys.Inward.AssignPkm))
+            if (await PermissionService.HasPermissionAsync(PermissionKeys.Inward.AssignPkm)
+                || await PermissionService.HasPermissionAsync(PermissionKeys.Pullout.Pick))
             {
                 _pickerCounts = await Mediator.Send(new GetPickerPendingCountsQuery());
             }

@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Application.Features.Inward.Queries;
 
 /// <summary>Counts shown as badges on the Picker's home cards.</summary>
-public sealed record PickerPendingCountsDto(int PutawayGrns, int PkmGrns);
+public sealed record PickerPendingCountsDto(int PutawayGrns, int PkmGrns, int PulloutPicklists = 0);
 
 public sealed record GetPickerPendingCountsQuery : IRequest<PickerPendingCountsDto>;
 
@@ -25,6 +25,10 @@ public sealed class GetPickerPendingCountsHandler(IApplicationDbContext db)
         var pkm = await open
             .CountAsync(t => t.IsPkmless && t.Lines.Any(l => l.MfgMonth == null && l.Putaways.Any(p => !p.IsConfirmed)), cancellationToken);
 
-        return new PickerPendingCountsDto(putaway, pkm);
+        // Posted pullouts that still have a pick the picker has not confirmed.
+        var picklists = await db.PulloutTransactions.AsNoTracking()
+            .CountAsync(t => t.IsConfirmed && !t.IsRejected && t.Lines.Any(l => l.Picks.Any(p => p.PickedAt == null)), cancellationToken);
+
+        return new PickerPendingCountsDto(putaway, pkm, picklists);
     }
 }

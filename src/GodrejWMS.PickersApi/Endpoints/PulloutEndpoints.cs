@@ -89,6 +89,18 @@ public static class PulloutEndpoints
             .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
             .WithName("ConfirmPulloutPick");
 
+        group.MapGet("/pullout/picker/queue", async (
+                string? search,
+                int pageNumber = 1,
+                int pageSize = 20,
+                IMediator mediator = null!,
+                CancellationToken cancellationToken = default) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                    Results.Ok(await mediator.Send(new GetPickerPendingPulloutsQuery(
+                        search, pageNumber <= 0 ? 1 : pageNumber, pageSize <= 0 ? 20 : pageSize), cancellationToken))))
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .WithName("GetPickerPulloutQueue");
+
         group.MapGet("/pullout/picks/{pickId:int}/remainder", async (
                 int pickId,
                 IMediator mediator,

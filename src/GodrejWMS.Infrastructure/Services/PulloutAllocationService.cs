@@ -38,12 +38,16 @@ public class PulloutAllocationService(IApplicationDbContext db, IOptions<Picking
                 && b.PalletPosition.LocationSubtypeId == LocationSubtypeIds.Good
                 && b.PalletPosition.Rack.WarehouseId == warehouseId)
             .Include(b => b.PalletPosition)
+            // 1. FIFO: oldest PKM first - never broken by anything below.
             .OrderBy(b => b.MfgMonth)
-            // Same PKM: virtual overflow locations first (when configured) so they empty out and get reused.
+            // 2. Partial pallets before full ones (a cell holding less than a full pallet of the material), so they get cleared.
+            .ThenBy(b => b.QuantityBoxes < b.Material.PalletCapacityBoxes * b.PalletPosition.MaxPallets ? 0 : 1)
+            // 3. Same PKM and fullness: virtual overflow locations first (when configured) so they empty out and get reused.
             .ThenBy(b => virtualFirst && b.PalletPosition.IsVirtual ? 0 : 1)
+            // 4. Ground level (level 1) first, then upward; then rack and column.
+            .ThenBy(b => b.PalletPosition.Level)
             .ThenBy(b => b.PalletPosition.Rack.Code)
             .ThenBy(b => b.PalletPosition.Column)
-            .ThenBy(b => b.PalletPosition.Level)
             .ThenBy(b => b.PalletPosition.LocationCode)
             .ToListAsync(cancellationToken);
 

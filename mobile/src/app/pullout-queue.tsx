@@ -1,7 +1,7 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { getPulloutQueue } from "../api/endpoints";
+import { getPickerPulloutQueue, getPulloutQueue } from "../api/endpoints";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -14,11 +14,21 @@ import { colors, spacing, typography } from "../theme";
 import type { PulloutHistoryDto } from "../types/api";
 import { allocationStatusLabel, allocationStatusTone, formatDateTime } from "../utils/status";
 
+interface PulloutQueueItem {
+  id: number;
+  referenceNumber: string;
+  createdAt: string;
+  summary: string;
+  badge: { label: string; tone: ReturnType<typeof allocationStatusTone> | "danger" | "warning" };
+}
+
 export default function PulloutQueueScreen() {
-  const { token } = useAuth();
+  const { token, permissions } = useAuth();
   const router = useRouter();
+  // A picker works the posted pullouts' picks; a supervisor without the pick permission still sees the old pending ones.
+  const isPicker = permissions.includes("Pullout.Pick");
   const [search, setSearch] = useState("");
-  const [items, setItems] = useState<PulloutHistoryDto[]>([]);
+  const [items, setItems] = useState<PulloutQueueItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -27,13 +37,31 @@ export default function PulloutQueueScreen() {
       if (!token) return;
       refreshing ? setIsRefreshing(true) : setIsLoading(true);
       try {
-        const page = await getPulloutQueue(token, { search: search.trim() || undefined, pageSize: 50 });
-        setItems(page.items);
+        const query = { search: search.trim() || undefined, pageSize: 50 };
+        if (isPicker) {
+          const page = await getPickerPulloutQueue(token, query);
+          setItems(page.items.map((p) => ({
+            id: p.id,
+            referenceNumber: p.referenceNumber,
+            createdAt: p.createdAt,
+            summary: `${p.pickedCount} of ${p.pickCount} picked · ${p.totalBoxes} boxes${p.destination ? ` · ${p.destination}` : ""}${p.virtualPickCount > 0 ? ` · ${p.virtualPickCount} virtual` : ""}`,
+            badge: { label: `${p.pickedCount}/${p.pickCount} picked`, tone: p.pickedCount === 0 ? "danger" : "warning" },
+          })));
+        } else {
+          const page = await getPulloutQueue(token, query);
+          setItems(page.items.map((p: PulloutHistoryDto) => ({
+            id: p.id,
+            referenceNumber: p.referenceNumber,
+            createdAt: p.createdAt,
+            summary: `${p.lineCount} line(s) · ${p.totalQuantityBoxes} boxes${p.destination ? ` · ${p.destination}` : ""}${p.vehicleNumber ? ` · ${p.vehicleNumber}` : ""}`,
+            badge: { label: allocationStatusLabel(p.status), tone: allocationStatusTone(p.status) },
+          })));
+        }
       } finally {
         refreshing ? setIsRefreshing(false) : setIsLoading(false);
       }
     },
-    [token, search],
+    [token, search, isPicker],
   );
 
   useEffect(() => {
@@ -73,17 +101,13 @@ export default function PulloutQueueScreen() {
             <Card onPress={() => router.push(`/pullout/${item.id}`)} style={styles.card}>
               <View style={styles.cardHeader}>
                 <Text style={styles.reference}>{item.referenceNumber}</Text>
-                <StatusBadge label={allocationStatusLabel(item.status)} tone={allocationStatusTone(item.status)} />
+                <StatusBadge label={item.badge.label} tone={item.badge.tone} />
               </View>
               <Text style={styles.meta}>{formatDateTime(item.createdAt)}</Text>
-              <Text style={styles.meta}>
-                {item.lineCount} line(s) · {item.totalQuantityBoxes} boxes
-                {item.destination ? ` · ${item.destination}` : ""}
-                {item.vehicleNumber ? ` · ${item.vehicleNumber}` : ""}
-              </Text>
+              <Text style={styles.meta}>{item.summary}</Text>
             </Card>
           )}
-          ListEmptyComponent={<EmptyState icon="car-outline" title="No pending pullouts" subtitle="New outward dispatches will show up here." />}
+          ListEmptyComponent={<EmptyState icon="car-outline" title={isPicker ? "No pick-lists to confirm" : "No pending pullouts"} subtitle="New outward dispatches will show up here." />}
         />
       )}
     </Screen>

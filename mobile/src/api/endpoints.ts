@@ -16,6 +16,7 @@ import type {
   PaginatedList,
   PalletPositionDto,
   PickRemainderDto,
+  PickerPulloutDto,
   PickerPlaceInwardPutawayRequest,
   PickerPlaceInwardPutawayResult,
   PulloutDetailDto,
@@ -141,6 +142,17 @@ export function getPulloutPickOptions(
 
 export function changePulloutPickLocation(token: string, request: ChangePulloutPickLocationRequest): Promise<PulloutResultDto> {
   return apiRequest<PulloutResultDto>("/api/pullout/picker/change-pick-location", { token, method: "POST", body: request });
+}
+
+/** Posted pullouts that still have a pick the picker has not confirmed. */
+export function getPickerPulloutQueue(
+  token: string,
+  options: { search?: string; pageNumber?: number; pageSize?: number } = {},
+): Promise<PaginatedList<PickerPulloutDto>> {
+  return apiRequest<PaginatedList<PickerPulloutDto>>("/api/pullout/picker/queue", {
+    token,
+    query: { search: options.search, pageNumber: options.pageNumber ?? 1, pageSize: options.pageSize ?? 20 },
+  });
 }
 
 /** The boxes left at a pick's location now, so "move the remaining X" can be offered before the pick is confirmed. */

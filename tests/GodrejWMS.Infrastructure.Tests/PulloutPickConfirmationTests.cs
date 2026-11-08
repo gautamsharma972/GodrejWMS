@@ -178,6 +178,23 @@ public class PulloutPickConfirmationTests
     }
 
     [Fact]
+    public async Task PickerPickList_ListsPostedPulloutsWithUnconfirmedPicks_UntilEveryPickIsConfirmed()
+    {
+        var s = await SeedAsync();
+        using var _ = s.Db;
+        var list = new GetPickerPendingPulloutsHandler(s.Db, new PickAllow());
+
+        var pending = Assert.Single((await list.Handle(new GetPickerPendingPulloutsQuery(), default)).Items);
+        Assert.Equal(s.Reference, pending.ReferenceNumber);
+        Assert.Equal(0, pending.PickedCount);
+        Assert.Equal(1, pending.PickCount);
+
+        await Handler(s.Db).Handle(new ConfirmPulloutPickCommand(s.Db.PulloutPicks.AsNoTracking().Single().Id, 45), default);
+
+        Assert.Empty((await list.Handle(new GetPickerPendingPulloutsQuery(), default)).Items);
+    }
+
+    [Fact]
     public async Task ChangingThePickLocation_OfAPostedPullout_HandsBackTheOldSourceAndTakesFromTheNewOne()
     {
         var s = await SeedAsync();

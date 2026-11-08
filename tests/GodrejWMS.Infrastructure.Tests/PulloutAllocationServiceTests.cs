@@ -346,7 +346,7 @@ public class PulloutAllocationServiceTests
     }
 
     [Fact]
-    public async Task AllocateAsync_DrainsColumnBottomToTop_BeforeNextColumn_WithinOnePkm()
+    public async Task AllocateAsync_DrainsGroundLevelFirst_ThenUpward_WithinOnePkm()
     {
         var (db, material, positions) = await SeedRackAsync(columns: 3, levels: 3);
         foreach (var code in new[] { "A-01-01", "A-01-02", "A-01-03", "A-02-01", "A-02-02", "A-03-01" })
@@ -358,12 +358,51 @@ public class PulloutAllocationServiceTests
 
         var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 45, warehouseId: 1, preview: true);
 
-        // Level-major (DistancePriority) would give A-01-01, A-02-01, A-03-01, A-01-02, ...
+        // Same PKM, all partial: level 1 (ground) of every column first, then level 2 upward.
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
         Assert.Equal(
-            ["A-01-01", "A-01-02", "A-01-03", "A-02-01", "A-02-02"],
+            ["A-01-01", "A-02-01", "A-03-01", "A-01-02", "A-02-02"],
             result.Picks.Select(p => p.LocationCode).ToArray());
         Assert.Equal([10m, 10m, 10m, 10m, 5m], result.Picks.Select(p => p.QuantityBoxes).ToArray());
+    }
+
+    [Fact]
+    public async Task AllocateAsync_PicksPartialPalletsBeforeFullOnes_WithinOnePkm()
+    {
+        var (db, material, positions) = await SeedRackAsync(columns: 3, levels: 1);
+        // The material's pallet holds 40: A-01-01 and A-03-01 are full pallets, A-02-01 is a partial one.
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-01-01"].Id, MfgMonth = 202606, QuantityBoxes = 40 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-02-01"].Id, MfgMonth = 202606, QuantityBoxes = 25 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-03-01"].Id, MfgMonth = 202606, QuantityBoxes = 40 });
+        await db.SaveChangesAsync();
+
+        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 30, warehouseId: 1, preview: true);
+
+        Assert.Equal(["A-02-01", "A-01-01"], result.Picks.Select(p => p.LocationCode).ToArray());
+        Assert.Equal([25m, 5m], result.Picks.Select(p => p.QuantityBoxes).ToArray());
+    }
+
+    [Fact]
+    public async Task AllocateAsync_FifoOutranksPartialPallets_AndPartialOutranksVirtualFirst()
+    {
+        var (db, material, positions) = await SeedRackAsync(columns: 3, levels: 1);
+        // Oldest PKM: a full pallet. Newer PKM: a partial pallet. FIFO wins, whatever the fullness.
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-03-01"].Id, MfgMonth = 202606, QuantityBoxes = 40 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-01-01"].Id, MfgMonth = 202609, QuantityBoxes = 10 });
+        await db.SaveChangesAsync();
+        var fifo = await new PulloutAllocationService(db).AllocateAsync(material.Id, 5, warehouseId: 1, preview: true);
+        Assert.Equal("A-03-01", Assert.Single(fifo.Picks).LocationCode);
+
+        // Same PKM: a full virtual pallet and a partial physical one - the partial pallet goes first, then the virtual.
+        var overflow = positions["A-02-01"];
+        overflow.IsVirtual = true;
+        overflow.VirtualStatus = VirtualLocationStatus.InUse;
+        db.StockBatches.RemoveRange(db.StockBatches);
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = overflow.Id, MfgMonth = 202606, QuantityBoxes = 40 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-01-01"].Id, MfgMonth = 202606, QuantityBoxes = 20 });
+        await db.SaveChangesAsync();
+        var mixed = await new PulloutAllocationService(db).AllocateAsync(material.Id, 30, warehouseId: 1, preview: true);
+        Assert.Equal(["A-01-01", "A-02-01"], mixed.Picks.Select(p => p.LocationCode).ToArray());
     }
 
     [Fact]

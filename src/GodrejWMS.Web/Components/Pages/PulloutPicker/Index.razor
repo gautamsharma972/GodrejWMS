@@ -1,0 +1,507 @@
+@page "/pullout-picker"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Pullout.Pick)]
+@using GodrejWMS.Application.Common
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Dtos
+@using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Queries
+@using GodrejWMS.Application.Features.Pullout.Commands
+@using GodrejWMS.Application.Features.Pullout.Dtos
+@using GodrejWMS.Application.Features.Pullout.Queries
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+@inject ILogger<Index> Logger
+
+<PageTitle>Picker Pick-list - Godrej WMS</PageTitle>
+
+<div class="page-shell no-pkm-history-page">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Pullout</div>
+            <h1>Picker Pick-list</h1>
+            <p class="page-kicker">Open a pick-list, confirm each pick as you take it, change a pick location, or move the boxes left over to a better location.</p>
+        </div>
+    </div>
+
+    <div class="panel history-register">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Pending Pick-lists</h2>
+                <p class="panel-subtitle">Pullouts with picks still to be confirmed. Stock was already deducted when the order was uploaded.</p>
+            </div>
+            <div class="toolbar-group inward-history-header-actions">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => LoadPageAsync(_pageNumber)">
+                    <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                    Refresh
+                </button>
+            </div>
+        </div>
+        <div class="toolbar-panel panel-toolbar history-toolbar">
+            <div class="toolbar-group">
+                <div class="input-group search-control">
+                    <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+                    <input class="form-control" placeholder="Search reference, vehicle, plant, material, or description"
+                           @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+                </div>
+            </div>
+            @if (_list is not null)
+            {
+                <span class="sync-chip">@_list.TotalCount.ToString("N0") @(_list.TotalCount == 1 ? "pick-list" : "pick-lists")</span>
+            }
+        </div>
+        @if (_list is null)
+        {
+            <div class="loading-panel"><div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div> Loading...</div>
+        }
+        else if (_list.Items.Count == 0)
+        {
+            <div class="empty-state">No pick-list is waiting for the picker.</div>
+        }
+        else
+        {
+            <div class="no-pkm-mobile-history-list picker-pick-cards">
+                @foreach (var item in _list.Items)
+                {
+                    <article class="no-pkm-mobile-history-card">
+                        <div class="no-pkm-mobile-history-main">
+                            <span class="record-code">@item.ReferenceNumber</span>
+                            <span class="status-pill @(item.PickedCount == 0 ? "danger" : "warning")">@item.PickedCount of @item.PickCount picked</span>
+                        </div>
+                        <div class="no-pkm-mobile-history-meta">
+                            <span><i class="bi bi-clock" aria-hidden="true"></i>@item.CreatedAt.ToLocalTime().ToString("dd MMM, hh:mm tt")</span>
+                            <span><strong>@item.LineCount</strong> line(s)</span>
+                            <span><strong>@item.TotalBoxes.ToString("N0")</strong> boxes</span>
+                            @if (!string.IsNullOrWhiteSpace(item.Destination)) { <span>@item.Destination</span> }
+                            @if (item.VirtualPickCount > 0) { <span class="status-pill info">@item.VirtualPickCount virtual</span> }
+                        </div>
+                        <div class="no-pkm-mobile-history-actions">
+                            <button type="button" class="btn btn-sm btn-primary" @onclick="() => OpenDetailAsync(item.Id)">
+                                <i class="bi bi-list-check" aria-hidden="true"></i> Open pick-list
+                            </button>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </div>
+
+    @if (_list is not null && _list.Items.Count > 0)
+    {
+        <nav class="pagination-bar history-pagination" aria-label="Pick-list pagination">
+            <ul class="pagination mb-0">
+                <li class="page-item @(_list.HasPreviousPage ? "" : "disabled")"><button class="page-link" @onclick="() => LoadPageAsync(_pageNumber - 1)">Previous</button></li>
+                <li class="page-item disabled"><span class="page-link">Page @_list.PageNumber of @Math.Max(1, _list.TotalPages)</span></li>
+                <li class="page-item @(_list.HasNextPage ? "" : "disabled")"><button class="page-link" @onclick="() => LoadPageAsync(_pageNumber + 1)">Next</button></li>
+            </ul>
+        </nav>
+    }
+
+    @if (_isDetailOpen)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseDetail">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="picker-picklist-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Pullout</div>
+                        <h2 id="picker-picklist-title" class="slide-over-title">@(_detail?.ReferenceNumber ?? "Loading...")</h2>
+                        <p class="slide-over-subtitle">Confirm each pick as you take it from the shelf.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close" @onclick="CloseDetail"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+                </div>
+                <div class="slide-over-body">
+                    @if (!string.IsNullOrWhiteSpace(_detailError))
+                    {
+                        <div class="alert alert-danger mb-0">@_detailError</div>
+                    }
+                    else if (_detail is null)
+                    {
+                        <div class="loading-panel"><div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div> Loading pick-list...</div>
+                    }
+                    else if (_selected is null)
+                    {
+                        var rows = Rows();
+                        <p class="text-muted mb-2">Tap a pick to confirm or change it. <strong>@rows.Count(r => r.Done) of @rows.Count</strong> confirmed.</p>
+                        <div class="picker-location-list d-grid gap-2">
+                            @foreach (var row in rows)
+                            {
+                                <button type="button" class="btn text-start border rounded-3 p-3 d-flex justify-content-between align-items-center @(row.Done ? "picker-location-done" : "btn-outline-primary")"
+                                        disabled="@row.Done" @onclick="() => SelectPickAsync(row)">
+                                    <span>
+                                        <strong class="fs-5 @(row.Done ? "picker-location-code-done" : null)">@row.Pick.LocationCode</strong>
+                                        @if (row.Pick.IsVirtual) { <span class="status-pill info ms-1" title="Virtual overflow location">Virtual</span> }
+                                        <br />
+                                        <span class="small text-muted">@row.Line.MaterialNumber &middot; @row.Pick.MfgMonthLabel &middot; @row.Pick.QuantityBoxes.ToString("0.###") boxes</span><br />
+                                        <span class="small text-muted">@row.Line.MaterialDescription</span>
+                                    </span>
+                                    <span class="status-pill @(row.Done ? "success" : "warning")">@(row.Done ? $"Picked {(row.Pick.PickedQuantityBoxes ?? row.Pick.QuantityBoxes):0.###}" : "To pick")</span>
+                                </button>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        var pick = _selected.Pick;
+                        <button type="button" class="btn btn-link px-0 mb-2" @onclick="BackToList"><i class="bi bi-arrow-left" aria-hidden="true"></i> All picks</button>
+                        <div class="border rounded-3 p-3">
+                            <div class="text-muted small">Pick from</div>
+                            <div class="fs-3 fw-bold mb-1">@pick.LocationCode @if (pick.IsVirtual) { <span class="status-pill info ms-1">Virtual</span> }</div>
+                            <div class="fw-semibold">@_selected.Line.MaterialNumber &middot; @_selected.Line.MaterialDescription</div>
+                            <div class="text-muted small mb-3">PKM @pick.MfgMonthLabel &middot; @pick.QuantityBoxes.ToString("0.###") boxes allocated</div>
+
+                            @if (_formError is not null)
+                            {
+                                <div class="alert alert-danger" role="alert"><i class="bi bi-x-octagon" aria-hidden="true"></i> @_formError</div>
+                            }
+
+                            <div class="btn-group w-100 mb-3" role="group" aria-label="What to do with this pick">
+                                <button type="button" class="btn @(_changing ? "btn-outline-primary" : "btn-primary")" @onclick="() => _changing = false">Confirm pick</button>
+                                <button type="button" class="btn @(_changing ? "btn-primary" : "btn-outline-primary")" @onclick="StartChangeAsync">Change location</button>
+                            </div>
+
+                            @if (!_changing)
+                            {
+                                <label class="text-muted small mb-1" for="picklist-qty">Quantity picked (boxes)</label>
+                                <input id="picklist-qty" type="number" inputmode="decimal" min="1" max="@pick.QuantityBoxes" step="1" class="form-control form-control-lg mb-1"
+                                       @bind="_qty" @bind:event="oninput" @bind:after="OnQtyChangedAsync" />
+                                @if (_qty > 0 && _qty < pick.QuantityBoxes)
+                                {
+                                    <div class="small text-muted mb-2">@((pick.QuantityBoxes - _qty).ToString("0.###")) box(es) not found go back to stock at @pick.LocationCode.</div>
+                                }
+
+                                @if (RemainingAfter > 0)
+                                {
+                                    <div class="mt-3">
+                                        <div class="fw-semibold mb-1">Move the remaining @RemainingAfter.ToString("0.###") box(es)?</div>
+                                        <div class="small text-muted mb-2">They stay at @pick.LocationCode unless you move them. A lower location saves effort later.</div>
+                                        <div class="d-grid gap-2 mb-2">
+                                            <button type="button" class="btn text-start border rounded-3 p-3 @(!_moveEnabled ? "btn-primary" : "btn-outline-secondary")" @onclick="() => _moveEnabled = false">
+                                                Leave them at @pick.LocationCode
+                                            </button>
+                                            @foreach (var suggestion in _suggestions)
+                                            {
+                                                <button type="button" class="btn text-start border rounded-3 p-3 @(_moveEnabled && _destinationId == suggestion.PalletPositionId ? "btn-primary" : "btn-outline-secondary")"
+                                                        @onclick="() => ChooseDestination(suggestion.PalletPositionId)">
+                                                    <strong>@suggestion.LocationCode</strong>@(suggestion.IsVirtual ? " (virtual)" : "")<br />
+                                                    <span class="small">@suggestion.Reason</span>
+                                                </button>
+                                            }
+                                        </div>
+                                        <label class="text-muted small mb-1">Or search another location</label>
+                                        <div class="mb-2">
+                                            <SearchableLocationSelect Options="_locationOptions" @bind-Value="_otherDestinationId" @bind-Value:after="OnOtherDestinationChanged"
+                                                                      Placeholder="Search location" AriaLabel="Search destination location" />
+                                        </div>
+                                        @if (_moveEnabled && _destinationId > 0)
+                                        {
+                                            <label class="text-muted small mb-1" for="picklist-move">Boxes to move to @DestinationCode</label>
+                                            <input id="picklist-move" type="number" inputmode="decimal" min="1" max="@RemainingAfter" step="1" class="form-control form-control-lg mb-2" @bind="_moveQty" />
+                                        }
+                                    </div>
+                                }
+
+                                <button type="button" class="btn btn-primary btn-lg w-100 mt-3" disabled="@(_submitting || _qty <= 0)" @onclick="ConfirmPickAsync">
+                                    <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                                    @(_submitting ? "Confirming..." : _moveEnabled && _destinationId > 0 ? $"Confirm pick & move {_moveQty:0.###} to {DestinationCode}" : $"Confirm pick of {_qty:0.###}")
+                                </button>
+                            }
+                            else
+                            {
+                                <div class="text-muted small mb-2">Take this pick from another location that holds the material.</div>
+                                @if (_changeOptions is null)
+                                {
+                                    <div class="loading-panel"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Loading locations...</div>
+                                }
+                                else if (_changeOptions.Count == 0)
+                                {
+                                    <div class="alert alert-warning mb-0">No other location holds this material.</div>
+                                }
+                                else
+                                {
+                                    <div class="d-grid gap-2 mb-3">
+                                        @foreach (var option in _changeOptions)
+                                        {
+                                            <button type="button" class="btn text-start border rounded-3 p-3 @(_changeTo == option ? "btn-primary" : "btn-outline-secondary")" disabled="@option.IsCurrent" @onclick="() => _changeTo = option">
+                                                <strong>@option.LocationCode</strong> &middot; PKM @option.MfgMonthLabel<br />
+                                                <span class="small">@option.AvailableBoxes.ToString("0.###") box(es) available@(option.IsCurrent ? " - current location" : "")</span>
+                                            </button>
+                                        }
+                                    </div>
+                                    <button type="button" class="btn btn-primary btn-lg w-100" disabled="@(_submitting || _changeTo is null)" @onclick="ChangeLocationAsync">
+                                        <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+                                        @(_submitting ? "Saving..." : _changeTo is null ? "Select a location" : $"Take from {_changeTo.LocationCode}")
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseDetail">Close</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private PaginatedList<PickerPulloutDto>? _list;
+    private int _pageNumber = 1;
+    private string _search = string.Empty;
+    private bool _loading;
+    private bool _reloadQueued;
+
+    private bool _isDetailOpen;
+    private PulloutDetailDto? _detail;
+    private string? _detailError;
+    private PickRow? _selected;
+    private string? _formError;
+    private bool _submitting;
+    private bool _changing;
+
+    // Confirm form
+    private decimal _qty;
+    private PickRemainderDto? _remainder;
+    private IReadOnlyList<RelocationSuggestionDto> _suggestions = [];
+    private bool _moveEnabled;
+    private int _destinationId;
+    private int _otherDestinationId;
+    private decimal _moveQty;
+    private IReadOnlyList<AopLocationOptionDto> _locationOptions = [];
+    private readonly Dictionary<int, string> _destinationCodes = new();
+
+    // Change-location form
+    private IReadOnlyList<PulloutPickChangeOptionDto>? _changeOptions;
+    private PulloutPickChangeOptionDto? _changeTo;
+
+    private sealed record PickRow(PulloutDetailLineDto Line, PulloutPickDto Pick)
+    {
+        public bool Done => Pick.PickedAt is not null;
+    }
+
+    private decimal RemainingAfter => _remainder is null || _selected is null ? 0 : _remainder.RemainingBoxes + (_selected.Pick.QuantityBoxes - _qty);
+
+    private string DestinationCode => _destinationCodes.GetValueOrDefault(_destinationId, "the chosen location");
+
+    private List<PickRow> Rows() => _detail is null ? [] :
+        _detail.Lines.SelectMany(l => l.Picks.Where(p => p.PickId > 0).Select(p => new PickRow(l, p)))
+            .OrderBy(r => r.Done)
+            .ThenBy(r => r.Pick.LocationCode, StringComparer.Ordinal)
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locationOptions = await Mediator.Send(new GetAopLocationOptionsQuery());
+        await LoadPageAsync(1);
+    }
+
+    // Blazor Server shares one DbContext per circuit: never run two queries at once.
+    private async Task LoadPageAsync(int page)
+    {
+        if (page < 1) return;
+        _pageNumber = page;
+        if (_loading)
+        {
+            _reloadQueued = true;
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            do
+            {
+                _reloadQueued = false;
+                _list = await Mediator.Send(new GetPickerPendingPulloutsQuery(_search, _pageNumber, 10));
+            }
+            while (_reloadQueued);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadPageAsync(1);
+
+    private async Task OpenDetailAsync(int id)
+    {
+        _detail = null;
+        _detailError = null;
+        _selected = null;
+        _isDetailOpen = true;
+        try
+        {
+            _detail = await Mediator.Send(new GetPulloutDetailQuery(id));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load pullout {Id} for the picker", id);
+            _detailError = ex.Message;
+        }
+    }
+
+    private void CloseDetail()
+    {
+        _isDetailOpen = false;
+        _detail = null;
+        _detailError = null;
+        _selected = null;
+    }
+
+    private void BackToList()
+    {
+        _selected = null;
+        _formError = null;
+    }
+
+    private async Task SelectPickAsync(PickRow row)
+    {
+        _selected = row;
+        _formError = null;
+        _changing = false;
+        _qty = row.Pick.QuantityBoxes;
+        _moveEnabled = false;
+        _destinationId = 0;
+        _otherDestinationId = 0;
+        _suggestions = [];
+        _remainder = null;
+        try
+        {
+            _remainder = await Mediator.Send(new GetPickRemainderQuery(row.Pick.PickId));
+            _moveQty = RemainingAfter;
+            await LoadSuggestionsAsync();
+        }
+        catch (Exception ex)
+        {
+            _formError = ex.Message;
+        }
+    }
+
+    private async Task LoadSuggestionsAsync()
+    {
+        if (_selected is null || RemainingAfter <= 0)
+        {
+            _suggestions = [];
+            return;
+        }
+
+        _suggestions = await Mediator.Send(new GetRelocationSuggestionsQuery(_selected.Pick.PickId, RemainingAfter));
+        foreach (var suggestion in _suggestions)
+        {
+            _destinationCodes[suggestion.PalletPositionId] = suggestion.LocationCode;
+        }
+    }
+
+    private async Task OnQtyChangedAsync()
+    {
+        if (_qty < 0) _qty = 0;
+        if (_selected is not null && _qty > _selected.Pick.QuantityBoxes) _qty = _selected.Pick.QuantityBoxes;
+        _moveQty = RemainingAfter;
+        try
+        {
+            await LoadSuggestionsAsync();
+        }
+        catch (Exception ex)
+        {
+            _formError = ex.Message;
+        }
+    }
+
+    private void ChooseDestination(int positionId)
+    {
+        _destinationId = positionId;
+        _moveEnabled = true;
+        _formError = null;
+    }
+
+    private void OnOtherDestinationChanged()
+    {
+        if (_otherDestinationId <= 0) return;
+        var option = _locationOptions.FirstOrDefault(o => o.Id == _otherDestinationId);
+        if (option is not null) _destinationCodes[option.Id] = option.LocationCode;
+        ChooseDestination(_otherDestinationId);
+    }
+
+    private async Task ConfirmPickAsync()
+    {
+        if (_selected is null || _detail is null) return;
+
+        _submitting = true;
+        _formError = null;
+        try
+        {
+            var move = _moveEnabled && _destinationId > 0 && _moveQty > 0 ? new PulloutRemainderMove(_destinationId, _moveQty) : null;
+            var result = await Mediator.Send(new ConfirmPulloutPickCommand(_selected.Pick.PickId, _qty, move));
+            var message = result.MovedBoxes > 0
+                ? $"Pick confirmed. Moved {result.MovedBoxes:0.###} box(es) to {result.DestinationLocationCode}."
+                : result.ReturnedToStockBoxes > 0 ? $"Pick confirmed. {result.ReturnedToStockBoxes:0.###} box(es) not found went back to stock."
+                : "Pick confirmed.";
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", message, "success");
+            await AfterChangeAsync(_detail.Id);
+        }
+        catch (Exception ex)
+        {
+            _formError = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private async Task StartChangeAsync()
+    {
+        if (_selected is null || _detail is null) return;
+
+        _changing = true;
+        _formError = null;
+        _changeTo = null;
+        _changeOptions = null;
+        try
+        {
+            _changeOptions = await Mediator.Send(new GetPulloutPickChangeOptionsQuery(
+                _detail.ReferenceNumber, _selected.Line.MaterialNumber, _selected.Pick.LocationCode, _selected.Pick.MfgMonthLabel));
+        }
+        catch (Exception ex)
+        {
+            _formError = ex.Message;
+            _changeOptions = [];
+        }
+    }
+
+    private async Task ChangeLocationAsync()
+    {
+        if (_selected is null || _detail is null || _changeTo is null) return;
+
+        _submitting = true;
+        _formError = null;
+        try
+        {
+            var quantity = Math.Min(_selected.Pick.QuantityBoxes, _changeTo.AvailableBoxes);
+            await Mediator.Send(new ChangePulloutPickLocationCommand(
+                _detail.ReferenceNumber, _selected.Line.MaterialNumber, _selected.Pick.LocationCode, _selected.Pick.MfgMonthLabel,
+                [new PulloutPickSource(_changeTo.PalletPositionId, _changeTo.MfgMonthLabel, quantity)], "Changed by picker"));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Pick moved to {_changeTo.LocationCode}.", "success");
+            await AfterChangeAsync(_detail.Id);
+        }
+        catch (Exception ex)
+        {
+            _formError = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private async Task AfterChangeAsync(int pulloutId)
+    {
+        _selected = null;
+        _changing = false;
+        _detail = await Mediator.Send(new GetPulloutDetailQuery(pulloutId));
+        if (Rows().All(r => r.Done))
+        {
+            CloseDetail();
+            await LoadPageAsync(_pageNumber);
+        }
+    }
+}
