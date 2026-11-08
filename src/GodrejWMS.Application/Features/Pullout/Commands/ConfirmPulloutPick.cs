@@ -13,22 +13,25 @@ namespace GodrejWMS.Application.Features.Pullout.Commands;
 /// whole pick-list, and it is optional.</summary>
 public sealed record PulloutRemainderMove(int DestinationPalletPositionId, decimal QuantityBoxes);
 
-/// <summary>The Picker's confirmation of one pick of a posted pullout: the quantity really picked (never more than allocated) and,
-/// optionally, where the boxes left at that location should go. It can be changed again until the pick-list is confirmed. Stock only
-/// changes when the pick-list is confirmed (<see cref="ConfirmPulloutPicklistCommand"/>): a shortfall goes back to stock and the chosen
+/// <summary>The Picker's confirmation of one pick of a posted pullout: the quantity really picked - fewer or more than the system
+/// allocated (more is taken from what is still on the shelf at that location, never beyond it) - and, optionally, where the boxes left
+/// at that location should go. It can be changed again until the pick-list is confirmed. Stock only changes when the pick-list is
+/// confirmed (<see cref="ConfirmPulloutPicklistCommand"/>): a shortfall goes back to stock, extra boxes are deducted and the chosen
 /// remainder move is carried out then.</summary>
 public sealed record ConfirmPulloutPickCommand(int PickId, decimal PickedQuantityBoxes, PulloutRemainderMove? MoveRemaining = null)
     : IRequest<ConfirmPulloutPickResult>;
 
 /// <param name="ReturnedToStockBoxes">Boxes not found, which go back to stock when the pick-list is confirmed.</param>
 /// <param name="MovedBoxes">Boxes that will move to <paramref name="DestinationLocationCode"/> when the pick-list is confirmed.</param>
+/// <param name="AdditionalBoxes">Boxes picked beyond the allocation, which are deducted from the location's stock when the pick-list is confirmed.</param>
 public sealed record ConfirmPulloutPickResult(
     string ReferenceNumber,
     decimal PickedBoxes,
     decimal ReturnedToStockBoxes,
     decimal MovedBoxes,
     decimal RemainingAtSourceBoxes,
-    string? DestinationLocationCode);
+    string? DestinationLocationCode,
+    decimal AdditionalBoxes = 0);
 
 public sealed class ConfirmPulloutPickValidator : AbstractValidator<ConfirmPulloutPickCommand>
 {
@@ -83,20 +86,25 @@ public sealed class ConfirmPulloutPickHandler(
         }
 
         var planned = pick.QuantityBoxes;
-        if (request.PickedQuantityBoxes > planned)
-        {
-            throw new InvalidOperationException(
-                $"Only {planned:0.###} box(es) are allocated for this pick; {request.PickedQuantityBoxes:0.###} cannot be picked.");
-        }
-
         var source = pick.PalletPosition;
-        var shortfall = planned - request.PickedQuantityBoxes;
 
-        // What will be left on the shelf at the pick location for this material + PKM once the pick-list is confirmed.
+        // What is on the shelf at the pick location for this material + PKM beyond what this pick already took out.
         var onHand = await db.StockBatches.AsNoTracking()
             .Where(b => b.PalletPositionId == source.Id && b.MaterialId == line.MaterialId && b.MfgMonth == pick.MfgMonth)
             .SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;
-        var remaining = onHand + shortfall;
+
+        // Fewer boxes than allocated go back to stock; more are taken from what is still on the shelf here (never beyond it).
+        var extra = Math.Max(0m, request.PickedQuantityBoxes - planned);
+        if (extra > onHand)
+        {
+            throw new InvalidOperationException(
+                $"Only {onHand:0.###} more box(es) of this material are in stock at {source.LocationCode}, so at most {planned + onHand:0.###} can be picked here. " +
+                "Use Change location to take the rest from another location.");
+        }
+
+        var shortfall = Math.Max(0m, planned - request.PickedQuantityBoxes);
+        // What will be left on the shelf at the pick location once the pick-list is confirmed.
+        var remaining = onHand + shortfall - extra;
 
         var moved = 0m;
         string? destinationCode = null;
@@ -134,6 +142,6 @@ public sealed class ConfirmPulloutPickHandler(
         transaction.RowVersion++;
         await db.SaveChangesAsync(cancellationToken);
         return new ConfirmPulloutPickResult(
-            transaction.ReferenceNumber, request.PickedQuantityBoxes, shortfall, moved, remaining - moved, destinationCode);
+            transaction.ReferenceNumber, request.PickedQuantityBoxes, shortfall, moved, remaining - moved, destinationCode, extra);
     }
 }

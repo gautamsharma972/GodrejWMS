@@ -122,6 +122,7 @@ export default function PulloutDetailScreen() {
   const handlePickConfirmed = async (result: ConfirmPickResult) => {
     setConfirmPick(null);
     const parts = [`Picked ${result.pickedBoxes} box(es).`];
+    if ((result.additionalBoxes ?? 0) > 0) parts.push(`${result.additionalBoxes} extra box(es) are taken from the stock here when you confirm the pick-list.`);
     if (result.returnedToStockBoxes > 0) parts.push(`${result.returnedToStockBoxes} not found - they go back to stock when you confirm the pick-list.`);
     if (result.movedBoxes > 0) parts.push(`${result.movedBoxes} remaining box(es) will move to ${result.destinationLocationCode} when you confirm the pick-list.`);
     else if (result.remainingAtSourceBoxes > 0) parts.push(`${result.remainingAtSourceBoxes} box(es) stay at the pick location.`);

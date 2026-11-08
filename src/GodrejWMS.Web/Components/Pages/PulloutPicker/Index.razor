@@ -200,7 +200,7 @@
                             <div class="text-muted small">Pick from</div>
                             <div class="fs-3 fw-bold mb-1">@pick.LocationCode @if (pick.IsVirtual) { <span class="status-pill info ms-1">Virtual</span> }</div>
                             <div class="fw-semibold">@_selected.Line.MaterialNumber &middot; @_selected.Line.MaterialDescription</div>
-                            <div class="text-muted small mb-3">PKM @pick.MfgMonthLabel &middot; @pick.QuantityBoxes.ToString("0.###") boxes allocated</div>
+                            <div class="text-muted small mb-3">PKM @pick.MfgMonthLabel &middot; @pick.QuantityBoxes.ToString("0.###") boxes allocated &middot; the order line asks for @_selected.Line.RequestedQuantityBoxes.ToString("0.###")</div>
 
                             @if (_formError is not null)
                             {
@@ -215,9 +215,13 @@
                             @if (!_changing)
                             {
                                 <label class="text-muted small mb-1" for="picklist-qty">Quantity picked (boxes)</label>
-                                <input id="picklist-qty" type="number" inputmode="decimal" min="1" max="@pick.QuantityBoxes" step="1" class="form-control form-control-lg mb-1"
+                                <input id="picklist-qty" type="number" inputmode="decimal" min="1" max="@MaxPickable" step="1" class="form-control form-control-lg mb-1"
                                        @bind="_qty" @bind:event="oninput" @bind:after="OnQtyChangedAsync" />
-                                @if (_qty > 0 && _qty < pick.QuantityBoxes)
+                                @if (_qty > pick.QuantityBoxes)
+                                {
+                                    <div class="small text-muted mb-2">@((_qty - pick.QuantityBoxes).ToString("0.###")) extra box(es) are taken from the stock still at @pick.LocationCode when you confirm the pick-list (up to @MaxPickable.ToString("0.###") here). Use Change location to take more from another location.</div>
+                                }
+                                else if (_qty > 0 && _qty < pick.QuantityBoxes)
                                 {
                                     <div class="small text-muted mb-2">@((pick.QuantityBoxes - _qty).ToString("0.###")) box(es) not found go back to stock at @pick.LocationCode when you confirm the pick-list.</div>
                                 }
@@ -345,6 +349,9 @@
         public bool Done => Pick.PickedAt is not null;
     }
 
+    /// <summary>The most that can be picked at this location: what was allocated plus what is still on the shelf there.</summary>
+    private decimal MaxPickable => _selected is null ? 0 : _selected.Pick.QuantityBoxes + (_remainder?.RemainingBoxes ?? 0);
+
     private decimal RemainingAfter => _remainder is null || _selected is null ? 0 : _remainder.RemainingBoxes + (_selected.Pick.QuantityBoxes - _qty);
 
     private string DestinationCode => _destinationCodes.GetValueOrDefault(_destinationId, "the chosen location");
@@ -469,7 +476,7 @@
     private async Task OnQtyChangedAsync()
     {
         if (_qty < 0) _qty = 0;
-        if (_selected is not null && _qty > _selected.Pick.QuantityBoxes) _qty = _selected.Pick.QuantityBoxes;
+        if (_selected is not null && _qty > MaxPickable) _qty = MaxPickable;
         _moveQty = RemainingAfter;
         try
         {
@@ -509,6 +516,7 @@
             var message = result.MovedBoxes > 0
                 ? $"Pick confirmed. {result.MovedBoxes:0.###} box(es) will move to {result.DestinationLocationCode} when you confirm the pick-list."
                 : result.ReturnedToStockBoxes > 0 ? $"Pick confirmed. The {result.ReturnedToStockBoxes:0.###} box(es) not found go back to stock when you confirm the pick-list."
+                : result.AdditionalBoxes > 0 ? $"Pick confirmed. {result.AdditionalBoxes:0.###} extra box(es) are taken from the stock at this location when you confirm the pick-list."
                 : "Pick confirmed.";
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast", message, "success");
             await AfterChangeAsync(_detail.Id);

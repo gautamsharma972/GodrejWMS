@@ -205,7 +205,12 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
         )}
 
         <Text style={styles.step}>2 · Quantity picked</Text>
-        <Stepper value={qty} min={1} max={planned} onChange={setQty} />
+        <Stepper value={qty} min={1} max={planned + (remainder?.remainingBoxes ?? 0)} onChange={setQty} />
+        {qty > planned && (
+          <Text style={styles.hint}>
+            {qty - planned} extra box(es) are taken from the stock still at {pick.locationCode} when you confirm the pick-list. Use Change location to take more from another location.
+          </Text>
+        )}
         {qty < planned && (
           <Text style={styles.hint}>{planned - qty} box(es) not found go back to stock at {pick.locationCode} when you confirm the pick-list.</Text>
         )}

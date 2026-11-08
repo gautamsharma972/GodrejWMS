@@ -192,8 +192,31 @@ public class PulloutPickConfirmationTests
         (await s.Db.PalletPositions.FirstAsync(p => p.Id == s.Ground.Id)).IsActive = false;
         await s.Db.SaveChangesAsync();
         Assert.Contains("not active", await Fail(new(pickId, 45, new PulloutRemainderMove(s.Ground.Id, 5))));
-        Assert.Contains("Only 45", await Fail(new(pickId, 46)));
+        Assert.Contains("Only 5 more box(es)", await Fail(new(pickId, 51))); // 45 allocated + the 5 still on the shelf is the limit
         Assert.Null(s.Db.PulloutPicks.AsNoTracking().Single().PickedAt);
+    }
+
+    [Fact]
+    public async Task PickingMoreThanAllocated_TakesTheExtraFromTheShelf_WhenThePickListIsConfirmed()
+    {
+        var s = await SeedAsync();
+        using var _ = s.Db;
+
+        // 45 allocated, 5 more still on the shelf: the picker took all 50 for an order line that asked for more.
+        var result = await Handler(s.Db).Handle(new ConfirmPulloutPickCommand(s.Db.PulloutPicks.Single().Id, 50), default);
+
+        Assert.Equal(5, result.AdditionalBoxes);
+        Assert.Equal(0, result.RemainingAtSourceBoxes);
+        Assert.Equal(5, OnHand(s.Db, s.TopLevel)); // nothing changes until the pick-list is confirmed
+
+        await ConfirmPicklistAsync(s.Db);
+
+        Assert.Equal(0, OnHand(s.Db, s.TopLevel));
+        var line = s.Db.PulloutTransactionLines.AsNoTracking().Single();
+        Assert.Equal(50, line.PickedQuantityBoxes);
+        Assert.Equal(50, s.Db.PulloutPicks.AsNoTracking().Single().QuantityBoxes);
+        var deduction = s.Db.StockLedgerEntries.AsNoTracking().Where(e => e.EntryType == StockLedgerEntryTypes.PickChange).Single();
+        Assert.Equal(-5, deduction.QuantityBoxes);
     }
 
     [Fact]

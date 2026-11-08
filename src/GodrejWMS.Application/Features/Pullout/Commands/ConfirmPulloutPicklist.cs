@@ -77,20 +77,21 @@ public sealed class ConfirmPulloutPicklistHandler(
             throw new InvalidOperationException($"Confirm every pick first - {open} pick(s) of this pick-list have not been confirmed yet.");
         }
 
-        // 1. Boxes the picker did not find were already taken out of stock at upload: they go back where they were.
-        var returns = new List<StockChange>();
+        // 1. The picker may have picked fewer or more boxes than allocated. Boxes not found were already taken out of stock at upload:
+        //    they go back where they were. Boxes picked beyond the allocation are taken from what is still on the shelf there.
+        var adjustments = new List<StockChange>();
         foreach (var (line, pick) in picks)
         {
             var picked = pick.PickedQuantityBoxes ?? pick.QuantityBoxes;
-            var shortfall = pick.QuantityBoxes - picked;
-            if (shortfall <= 0)
+            var difference = pick.QuantityBoxes - picked; // positive: shortfall to hand back, negative: extra boxes to take
+            if (difference == 0)
             {
                 continue;
             }
 
-            returns.Add(new StockChange(line.MaterialId, pick.MfgMonth, LocationSubtypeIds.Good, pick.PalletPosition, shortfall));
+            adjustments.Add(new StockChange(line.MaterialId, pick.MfgMonth, LocationSubtypeIds.Good, pick.PalletPosition, difference));
             pick.QuantityBoxes = picked;
-            line.PickedQuantityBoxes -= shortfall;
+            line.PickedQuantityBoxes -= difference;
             line.Status = line.PickedQuantityBoxes >= line.RequestedQuantityBoxes
                 ? AllocationStatus.Fulfilled
                 : line.PickedQuantityBoxes > 0 ? AllocationStatus.Partial : AllocationStatus.Failed;
@@ -99,11 +100,11 @@ public sealed class ConfirmPulloutPicklistHandler(
                 : $"Picker picked {line.PickedQuantityBoxes:0.###} of {line.RequestedQuantityBoxes:0.###} box(es).";
         }
 
-        if (returns.Count > 0)
+        if (adjustments.Count > 0)
         {
             await posting.ApplyAsync(
-                new StockPostingContext(StockLedgerEntryTypes.PickChange, "PICK", transaction.ReferenceNumber, "Short pick - returned to stock"),
-                returns, cancellationToken);
+                new StockPostingContext(StockLedgerEntryTypes.PickChange, "PICK", transaction.ReferenceNumber, "Picked quantity differs from the allocation"),
+                adjustments, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
         }
 

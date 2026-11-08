@@ -341,6 +341,8 @@ export interface ConfirmPickResult {
   movedBoxes: number;
   remainingAtSourceBoxes: number;
   destinationLocationCode?: string | null;
+  /** Boxes picked beyond the allocation; deducted from the location's stock when the pick-list is confirmed. */
+  additionalBoxes?: number;
 }
 
 export interface PulloutHistoryDto {
