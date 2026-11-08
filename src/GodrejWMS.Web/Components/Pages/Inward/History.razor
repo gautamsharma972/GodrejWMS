@@ -98,7 +98,7 @@
                         @foreach (var item in _history.Items)
                         {
                             <tr>
-                                <td class="history-col-reference"><a class="record-code history-reference" href="@(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{item.Id}", "/inward/history"))">@item.ReferenceNumber</a></td>
+                                <td class="history-col-reference"><a class="record-code history-reference" href="@(global::GodrejWMS.Application.Common.LocalReturnUrl.Append($"/inward/{item.Id}", "/inward/history"))">@item.ReferenceNumber</a>@if (item.VirtualLocationCount > 0) { <span class="status-pill info ms-1" title="@item.VirtualLocationCount pallet(s) were placed in virtual overflow locations">Virtual @item.VirtualLocationCount</span> }</td>
                                 <td class="history-created history-col-created">@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
                                 <td class="history-col-vehicle" title="@item.VehicleNumber">@(string.IsNullOrWhiteSpace(item.VehicleNumber) ? "-" : item.VehicleNumber)</td>
                                 <td class="history-col-lr" title="@item.LrNumber">@(string.IsNullOrWhiteSpace(item.LrNumber) ? "-" : item.LrNumber)</td>

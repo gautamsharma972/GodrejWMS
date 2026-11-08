@@ -33,7 +33,9 @@ public sealed class EfUnitOfWork(AppDbContext db) : IUnitOfWork
         var strategy = db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {
-            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            // READ COMMITTED: takes record locks only (no gap / next-key locks), so concurrent uploads taking free virtual
+            // locations with SKIP LOCKED do not deadlock on index gaps. Lost updates are still caught by the row-version tokens.
+            await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
             try
             {
                 var result = await action(cancellationToken);

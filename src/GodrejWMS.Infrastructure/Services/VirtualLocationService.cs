@@ -109,7 +109,7 @@ public sealed class VirtualLocationService(AppDbContext db, IDateTimeProvider cl
                 WHERE p.IsVirtual = 1 AND p.VirtualStatus = 'FREE' AND p.IsActive = 1 AND r.WarehouseId = {warehouseId}
                 ORDER BY p.`Column`
                 LIMIT 1
-                FOR UPDATE SKIP LOCKED").ToListAsync(cancellationToken);
+                FOR UPDATE OF p SKIP LOCKED").ToListAsync(cancellationToken);
             return ids.Count == 0 ? null : ids[0];
         }
 
@@ -171,13 +171,30 @@ public sealed class VirtualLocationService(AppDbContext db, IDateTimeProvider cl
     {
         if (db.Database.IsRelational())
         {
-            await db.Database.ExecuteSqlInterpolatedAsync(
-                $"INSERT IGNORE INTO VirtualLocationSequences (WarehouseId, LastValue) VALUES ({warehouseId}, 0)", cancellationToken);
-            await db.Database.ExecuteSqlInterpolatedAsync(
-                $"UPDATE VirtualLocationSequences SET LastValue = LastValue + 1 WHERE WarehouseId = {warehouseId}", cancellationToken);
-            var values = await db.Database.SqlQuery<int>(
-                $"SELECT LastValue AS Value FROM VirtualLocationSequences WHERE WarehouseId = {warehouseId}").ToListAsync(cancellationToken);
-            return values.Single();
+            // Take the row lock with the UPDATE itself (an INSERT IGNORE first would take a shared lock that two
+            // transactions then both try to upgrade - a deadlock). The row is only created the very first time.
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                var updated = await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"UPDATE VirtualLocationSequences SET LastValue = LastValue + 1 WHERE WarehouseId = {warehouseId}", cancellationToken);
+                if (updated == 0)
+                {
+                    var created = await db.Database.ExecuteSqlInterpolatedAsync(
+                        $"INSERT IGNORE INTO VirtualLocationSequences (WarehouseId, LastValue) VALUES ({warehouseId}, 1)", cancellationToken);
+                    if (created == 1)
+                    {
+                        return 1;
+                    }
+
+                    continue; // another transaction created it first: increment its row
+                }
+
+                var values = await db.Database.SqlQuery<int>(
+                    $"SELECT LastValue AS Value FROM VirtualLocationSequences WHERE WarehouseId = {warehouseId}").ToListAsync(cancellationToken);
+                return values.Single();
+            }
+
+            throw new InvalidOperationException("Could not allocate a virtual location number. Please retry.");
         }
 
         var sequence = await db.VirtualLocationSequences.FirstOrDefaultAsync(s => s.WarehouseId == warehouseId, cancellationToken);

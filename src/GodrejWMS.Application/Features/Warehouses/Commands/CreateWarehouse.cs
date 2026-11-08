@@ -56,6 +56,21 @@ public sealed class CreateWarehouseHandler(IApplicationDbContext db)
         };
         db.Warehouses.Add(warehouse);
         await db.SaveChangesAsync(cancellationToken);
+
+        // The hidden overflow rack and number counter for virtual locations, created up front so the first overflow placements
+        // of two concurrent uploads have nothing to create.
+        db.Racks.Add(new Rack
+        {
+            WarehouseId = warehouse.Id,
+            Code = $"OV{warehouse.Id}",
+            Name = "Overflow (virtual locations)",
+            Columns = 0,
+            Levels = 1,
+            IsActive = true,
+            IsSystem = true
+        });
+        db.VirtualLocationSequences.Add(new VirtualLocationSequence { WarehouseId = warehouse.Id });
+        await db.SaveChangesAsync(cancellationToken);
         return warehouse.Id;
     }
 }

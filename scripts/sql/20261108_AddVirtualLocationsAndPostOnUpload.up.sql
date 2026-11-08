@@ -91,6 +91,20 @@ CREATE INDEX `IX_VirtualLocationLogs_InwardTransactionId` ON `VirtualLocationLog
 
 CREATE INDEX `IX_VirtualLocationLogs_PalletPositionId_ReleasedAt` ON `VirtualLocationLogs` (`PalletPositionId`, `ReleasedAt`);
 
+
+                -- Every warehouse gets its hidden overflow rack and number counter up front, so two first-ever
+                -- overflow placements racing each other have nothing to create (and cannot collide on it).
+                INSERT INTO Racks (Code, Name, Columns, FromColumn, Levels, ShelfLengthMm, ShelfWidthMm, ShelfHeightMm,
+                                   StartingDistancePriority, IsActive, IsSystem, WarehouseId, CreatedAt)
+                SELECT CONCAT('OV', w.Id), 'Overflow (virtual locations)', 0, 1, 1, 0, 0, 0, 1, 1, 1, w.Id, UTC_TIMESTAMP(6)
+                FROM Warehouses w
+                WHERE NOT EXISTS (SELECT 1 FROM Racks r WHERE r.WarehouseId = w.Id AND r.IsSystem = 1);
+
+                INSERT INTO VirtualLocationSequences (WarehouseId, LastValue)
+                SELECT w.Id, 0 FROM Warehouses w
+                WHERE NOT EXISTS (SELECT 1 FROM VirtualLocationSequences s WHERE s.WarehouseId = w.Id);
+            
+
 INSERT INTO `__EFMigrationsHistory` (`MigrationId`, `ProductVersion`)
 VALUES ('20261108101407_AddVirtualLocationsAndPostOnUpload', '9.0.11');
 
