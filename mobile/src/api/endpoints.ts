@@ -181,6 +181,11 @@ export function getPickerLocationOptions(token: string): Promise<AopLocationOpti
   return apiRequest<AopLocationOptionDto[]>("/api/picker-putaway/location-options", { token });
 }
 
+/** The picker's final Confirm of a GRN posted on upload; locks its locations against further picker changes. */
+export function confirmPickerPutaway(token: string, transactionId: number): Promise<{ referenceNumber: string; locationCount: number }> {
+  return apiRequest<{ referenceNumber: string; locationCount: number }>(`/api/picker-putaway/${transactionId}/confirm`, { token, method: "POST" });
+}
+
 export function placePickerPutaway(
   token: string,
   putawayId: number,

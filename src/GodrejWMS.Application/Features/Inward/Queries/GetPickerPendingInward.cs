@@ -24,7 +24,7 @@ public sealed class GetPickerPendingInwardHandler(IApplicationDbContext db)
             // for correction until the supervisor confirms it.)
             .Where(t => !t.IsRejected
                 && t.Lines.Any(l => l.Putaways.Any(p => !p.IsConfirmed
-                    || (t.PostedAt != null && !p.IsPickerPlaced && p.ExcludedLocation == null)
+                    || (t.PostedAt != null && !p.IsExcludedLocked)
                     || (t.PostedAt == null && p.ExcludedLocation != null && !p.IsExcludedLocked))));
 
         if (!string.IsNullOrWhiteSpace(request.Search))

@@ -65,6 +65,15 @@ public static class PickerPutawayEndpoints
             .RequireAuthorization("Permission:" + PermissionKeys.Inward.AssignPkm)
             .WithName("PlacePickerPutaway");
 
+        group.MapPost("/picker-putaway/{transactionId:int}/confirm", async (
+                int transactionId,
+                IMediator mediator,
+                CancellationToken cancellationToken) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                    Results.Ok(await mediator.Send(new ConfirmPickerPutawayCommand(transactionId), cancellationToken))))
+            .RequireAuthorization("Permission:" + PermissionKeys.Inward.AssignPkm)
+            .WithName("ConfirmPickerPutaway");
+
         return group;
     }
 }

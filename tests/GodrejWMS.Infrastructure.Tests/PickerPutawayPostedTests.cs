@@ -45,6 +45,39 @@ public class PickerPutawayPostedTests
         db.StockBatches.AsNoTracking().Where(b => b.PalletPositionId == positionId).Sum(b => (decimal?)b.QuantityBoxes) ?? 0;
 
     [Fact]
+    public async Task Confirm_NeedsEveryLocationSubmitted_ThenLocksTheGrnAndTakesItOffThePendingList()
+    {
+        var (db, _, positions, putaway) = await SeedAsync();
+        using var _ = db;
+        var confirm = new ConfirmPickerPutawayHandler(db, new PPAllow());
+        var pending = new GetPickerPendingInwardHandler(db);
+        var transactionId = db.InwardTransactions.AsNoTracking().Single().Id;
+
+        // Not submitted yet: nothing to confirm.
+        var early = await Assert.ThrowsAsync<InvalidOperationException>(() => confirm.Handle(new ConfirmPickerPutawayCommand(transactionId), default));
+        Assert.Contains("Submit every location first", early.Message);
+
+        // Submitted, but the picker can still edit location and PKM (and the GRN stays on their list) until they confirm.
+        var first = putaway.PalletPositionId;
+        var second = positions.First(p => p.Id != first).Id;
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", first, null), default);
+        Assert.Single((await pending.Handle(new GetPickerPendingInwardQuery(), default)).Items);
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "NOV|2026", second, null), default);
+        Assert.Equal(30, OnHand(db, second));
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "GIT"), default);
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "NOV|2026", second, null), default);
+
+        var result = await confirm.Handle(new ConfirmPickerPutawayCommand(transactionId), default);
+
+        Assert.Equal(1, result.LocationCount);
+        Assert.Empty((await pending.Handle(new GetPickerPendingInwardQuery(), default)).Items);
+        var locked = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "NOV|2026", first, null), default));
+        Assert.Contains("already been confirmed", locked.Message);
+        Assert.Equal(30, OnHand(db, second)); // untouched by the refused change
+    }
+
+    [Fact]
     public async Task PostedGrn_NeedsThePicker_UntilTheyConfirmTheLocation()
     {
         var (db, _, _, putaway) = await SeedAsync();
@@ -57,7 +90,7 @@ public class PickerPutawayPostedTests
         var positionId = putaway.PalletPositionId;
         await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", positionId, null), default);
 
-        Assert.Empty((await query.Handle(new GetPickerPendingInwardQuery(), default)).Items);
+        Assert.Single((await query.Handle(new GetPickerPendingInwardQuery(), default)).Items); // still listed until the picker confirms the GRN
         Assert.Equal(30, OnHand(db, positionId)); // confirming changes no stock
         Assert.True(db.InwardPutaways.AsNoTracking().Single().IsPickerPlaced);
     }

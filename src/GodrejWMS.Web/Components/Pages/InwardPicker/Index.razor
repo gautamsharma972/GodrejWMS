@@ -191,7 +191,7 @@
                                 @foreach (var row in rows)
                                 {
                                     <button type="button" class="btn text-start border rounded-3 p-3 d-flex justify-content-between align-items-center @(row.Done ? "picker-location-done" : "btn-outline-primary")"
-                                            disabled="@(!row.Posted && row.Putaway.IsConfirmed && !(row.Putaway.ExcludedLocation is not null && !row.Putaway.IsExcludedLocked))" @onclick="() => SelectRow(row)">
+                                            disabled="@(row.Posted ? row.Putaway.IsExcludedLocked : row.Putaway.IsConfirmed && !(row.Putaway.ExcludedLocation is not null && !row.Putaway.IsExcludedLocked))" @onclick="() => SelectRow(row)">
                                         <span>
                                             <strong class="fs-5 @(row.Done ? "picker-location-code-done" : null)">@row.Putaway.LocationCode</strong><br />
                                             <span class="small text-muted">@row.Line.MaterialNumber &middot; @row.Putaway.QuantityBoxes.ToString("0.###") boxes &middot; @row.Line.MfgMonthLabel</span>
@@ -201,6 +201,25 @@
                                     </button>
                                 }
                             </div>
+                            @if (_detail.PostedAt.HasValue)
+                            {
+                                // A GRN posted on upload ends with the picker's own Confirm; until then every location stays editable.
+                                <div class="mt-3">
+                                    @if (_confirmError is not null)
+                                    {
+                                        <div class="alert alert-danger" role="alert"><i class="bi bi-x-octagon" aria-hidden="true"></i> @_confirmError</div>
+                                    }
+                                    <button type="button" class="btn btn-primary btn-lg w-100" disabled="@(_confirming || done < rows.Count)" @onclick="ConfirmGrnAsync">
+                                        <i class="bi bi-check2-all" aria-hidden="true"></i>
+                                        @(_confirming ? "Confirming..." : "Confirm put-away")
+                                    </button>
+                                    <p class="small text-muted mt-2 mb-0">
+                                        @(done < rows.Count
+                                            ? "Submit every location first, then confirm. Until you confirm you can still change a location, its PKM or GIT / NO RACK."
+                                            : "Until you confirm you can still change any location, its PKM or GIT / NO RACK.")
+                                    </p>
+                                </div>
+                            }
                         }
                         else
                         {
@@ -282,6 +301,8 @@
     private InwardDetailDto? _detail;
     private string? _detailError;
     private string? _submitError;
+    private string? _confirmError;
+    private bool _confirming;
     private int? _selectedPutawayId;
 
     private IReadOnlyList<AopLocationOptionDto> _locationOptions = [];
@@ -385,6 +406,7 @@
     private void CloseDetail()
     {
         _isDetailOpen = false;
+        _confirmError = null;
         _detail = null;
         _detailError = null;
         _selectedPutawayId = null;
@@ -419,6 +441,29 @@
     // Picking another location invalidates a warning that was raised for the previous one.
     private void OnLocationChanged() => _warning = null;
 
+    private async Task ConfirmGrnAsync()
+    {
+        if (_detail is null || _confirming) return;
+
+        _confirming = true;
+        _confirmError = null;
+        try
+        {
+            var result = await Mediator.Send(new ConfirmPickerPutawayCommand(_detail.Id));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"{result.ReferenceNumber} put-away confirmed.", "success");
+            CloseDetail();
+            await LoadPageAsync(_pageNumber);
+        }
+        catch (Exception ex)
+        {
+            _confirmError = ex.Message;
+        }
+        finally
+        {
+            _confirming = false;
+        }
+    }
+
     private async Task SubmitAsync()
     {
         if (_detail is null || _selectedPutawayId is not { } id || !CanSubmit) return;
@@ -441,7 +486,7 @@
             _selectedPutawayId = null;
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast", excluded is null ? "Put-away location saved." : $"Set aside as {excluded}.", "success");
             _detail = await Mediator.Send(new GetInwardDetailQuery(_detail.Id));
-            if (Rows().All(r => r.Done))
+            if (!_detail.PostedAt.HasValue && Rows().All(r => r.Done))
             {
                 await LoadPageAsync(_pageNumber);
             }

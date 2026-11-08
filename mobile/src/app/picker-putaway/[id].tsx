@@ -2,7 +2,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ApiError } from "../../api/client";
-import { getInwardDetail, getPickerLocationOptions, placePickerPutaway } from "../../api/endpoints";
+import { confirmPickerPutaway, getInwardDetail, getPickerLocationOptions, placePickerPutaway } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { BarcodeScannerModal } from "../../components/BarcodeScannerModal";
 import {
@@ -74,6 +74,8 @@ export default function PickerPutawayDetailScreen() {
   const [warning, setWarning] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isConfirmingGrn, setIsConfirmingGrn] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [showYearPicker, setShowYearPicker] = useState(false);
@@ -169,7 +171,8 @@ export default function PickerPutawayDetailScreen() {
       setSelectedPutawayId(null);
       const refreshed = await getInwardDetail(token, Number(id));
       setDetail(refreshed);
-      if (buildRows(refreshed).every((r) => r.done)) {
+      // A GRN posted on upload ends with the picker's own Confirm, so the list stays open; an older one closes once everything is done.
+      if (!refreshed.postedAt && buildRows(refreshed).every((r) => r.done)) {
         router.back();
       }
     } catch (err) {
@@ -207,10 +210,43 @@ export default function PickerPutawayDetailScreen() {
             data={rows}
             keyExtractor={(row) => String(row.putaway.id)}
             contentContainerStyle={{ paddingBottom: 24 }}
+            ListFooterComponent={
+              detail.postedAt ? (
+                <View style={styles.confirmFooter}>
+                  {confirmError && <Text style={styles.confirmError}>{confirmError}</Text>}
+                  <Button
+                    title="Confirm put-away"
+                    size="lg"
+                    loading={isConfirmingGrn}
+                    disabled={rows.some((r) => !r.done)}
+                    icon={<AppIcon name="checkmark-done-outline" size={22} color={colors.textOnPrimary} />}
+                    onPress={async () => {
+                      setIsConfirmingGrn(true);
+                      setConfirmError(null);
+                      try {
+                        await confirmPickerPutaway(token, Number(id));
+                        successPulse();
+                        router.back();
+                      } catch (err) {
+                        errorPulse();
+                        setConfirmError(err instanceof ApiError ? err.message : "Could not confirm this GRN.");
+                      } finally {
+                        setIsConfirmingGrn(false);
+                      }
+                    }}
+                  />
+                  <Text style={styles.confirmHint}>
+                    {rows.some((r) => !r.done)
+                      ? "Submit every location first, then confirm. Until you confirm you can still change a location, its PKM or GIT / NO RACK."
+                      : "Until you confirm you can still change any location, its PKM or GIT / NO RACK."}
+                  </Text>
+                </View>
+              ) : null
+            }
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={[styles.row, item.done && styles.rowDone]}
-                disabled={!detail?.postedAt && item.putaway.isConfirmed && !(item.putaway.excludedLocation && !item.putaway.isExcludedLocked)}
+                disabled={detail?.postedAt ? item.putaway.isExcludedLocked : item.putaway.isConfirmed && !(item.putaway.excludedLocation && !item.putaway.isExcludedLocked)}
                 onPress={() => selectRow(item)}
               >
                 <View style={[styles.locationIcon, item.done && styles.locationIconDone]}>
@@ -401,6 +437,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     gap: spacing.sm,
   },
+  confirmFooter: { marginTop: spacing.lg },
+  confirmError: { backgroundColor: colors.dangerSoft, color: colors.dangerText, borderRadius: radius.md, padding: spacing.md, fontWeight: "700", marginBottom: spacing.md },
+  confirmHint: { ...typography.caption, color: colors.textSecondary, textAlign: "center", marginTop: spacing.sm },
   rowDone: { backgroundColor: colors.successSoft, borderColor: "#bbf7d0" },
   locationIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center" },
   locationIconDone: { backgroundColor: colors.surface },

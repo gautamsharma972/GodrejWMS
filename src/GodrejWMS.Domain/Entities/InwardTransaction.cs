@@ -168,8 +168,9 @@ public class InwardPutaway
     /// location the system had suggested.</summary>
     public string? ExcludedLocation { get; set; }
 
-    /// <summary>Set when a supervisor confirms the GRN: a GIT / NO RACK entry can no longer be corrected by the Picker.
-    /// Until then a GRN that holds such entries is not "confirmed", even when every location is closed.</summary>
+    /// <summary>Set when the GRN is confirmed - by a supervisor, or for a GRN posted on upload by the picker's own Confirm (which
+    /// locks every row of the GRN): the Picker can no longer change the location, PKM or GIT / NO RACK entry. Until then a GRN that
+    /// holds such entries is not "confirmed", even when every location is closed.</summary>
     public bool IsExcludedLocked { get; set; }
 
     /// <summary>The quantity the system suggested for this location, remembered the first time the Picker changes it. The Picker's
