@@ -87,6 +87,12 @@ public class AppDbContext(
 
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
 
+    public DbSet<StockLedgerEntry> StockLedgerEntries => Set<StockLedgerEntry>();
+
+    public DbSet<VirtualLocationSequence> VirtualLocationSequences => Set<VirtualLocationSequence>();
+
+    public DbSet<VirtualLocationLog> VirtualLocationLogs => Set<VirtualLocationLog>();
+
     public DbSet<InventoryAdjustment> InventoryAdjustments => Set<InventoryAdjustment>();
 
     public DbSet<InventoryAdjustmentLine> InventoryAdjustmentLines => Set<InventoryAdjustmentLine>();
@@ -134,6 +140,9 @@ public class AppDbContext(
         builder.Entity<PulloutPick>().HasQueryFilter(p => HasAllWarehouses
             || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == p.PulloutTransactionLine.PulloutTransaction.WarehouseId)
             || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == p.PulloutTransactionLine.PulloutTransaction.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<StockLedgerEntry>().HasQueryFilter(e => HasAllWarehouses
+            || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == e.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == e.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
         builder.Entity<StockMovement>().HasQueryFilter(m =>
             (HasAllWarehouses
                 || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == m.SourcePalletPosition.Rack.WarehouseId)

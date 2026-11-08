@@ -44,6 +44,16 @@ public class PalletPosition : AuditableEntity
 
     public bool IsActive { get; set; } = true;
 
+    /// <summary>An auto-generated overflow location (code VL-&lt;WH&gt;-nnnnnn) that behaves like a one-pallet physical bin
+    /// but has no rack coordinates or AOP range. Created on demand when no physical location can take a pallet and reused
+    /// once empty (<see cref="VirtualStatus"/> FREE).</summary>
+    public bool IsVirtual { get; set; }
+
+    /// <summary><see cref="VirtualLocationStatus.Free"/> or <see cref="VirtualLocationStatus.InUse"/> for a virtual location; null for physical ones.</summary>
+    public string? VirtualStatus { get; set; }
+
+    public DateTimeOffset? LastReleasedAt { get; set; }
+
     // MySQL has no native rowversion column, so this is a plain counter that put-away reservation
     // explicitly increments whenever it reserves capacity against this position - purely to give
     // EF Core something to guard with. Two concurrent inward submissions racing for the same

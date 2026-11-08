@@ -589,6 +589,9 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)");
 
+                    b.Property<DateTimeOffset?>("PostedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<string>("ReceivedFrom")
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)");
@@ -620,6 +623,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("varchar(450)");
 
+                    b.Property<string>("UploadHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
                     b.Property<string>("UploadHeaderJson")
                         .HasColumnType("longtext");
 
@@ -636,6 +643,9 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("WarehouseId", "CreatedAt");
+
+                    b.HasIndex("WarehouseId", "UploadHash")
+                        .IsUnique();
 
                     b.ToTable("InwardTransactions", (string)null);
                 });
@@ -1044,6 +1054,12 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<bool>("IsVirtual")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTimeOffset?>("LastReleasedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<int>("Level")
                         .HasColumnType("int");
 
@@ -1079,6 +1095,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("varchar(450)");
 
+                    b.Property<string>("VirtualStatus")
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
                     b.Property<int>("ZoneTypeId")
                         .HasColumnType("int")
                         .HasColumnName("ZoneType");
@@ -1093,6 +1113,8 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.HasIndex("LocationTypeId");
 
                     b.HasIndex("ZoneTypeId");
+
+                    b.HasIndex("IsVirtual", "VirtualStatus");
 
                     b.HasIndex("RackId", "Column", "Level")
                         .IsUnique();
@@ -1215,6 +1237,21 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("PalletPositionId")
                         .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("PickedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("PickedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("PickedByUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<decimal?>("PickedQuantityBoxes")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
 
                     b.Property<int>("PulloutTransactionLineId")
                         .HasColumnType("int");
@@ -1429,6 +1466,9 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasDefaultValue(1);
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("IsSystem")
                         .HasColumnType("tinyint(1)");
 
                     b.Property<int>("Levels")
@@ -1782,6 +1822,85 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.ToTable("StockBatches", (string)null);
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.StockLedgerEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("BalanceAfterBoxes")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("CreatedByUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<string>("EntryType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)");
+
+                    b.Property<int>("MaterialId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MfgMonth")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<int>("PalletPositionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PostingNumber")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("varchar(60)");
+
+                    b.Property<decimal>("QuantityBoxes")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
+                    b.Property<string>("ReferenceNumber")
+                        .HasMaxLength(60)
+                        .HasColumnType("varchar(60)");
+
+                    b.Property<string>("ReferenceType")
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)");
+
+                    b.Property<int>("StockSubtypeId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PostingNumber");
+
+                    b.HasIndex("MaterialId", "CreatedAt");
+
+                    b.HasIndex("PalletPositionId", "CreatedAt");
+
+                    b.HasIndex("ReferenceType", "ReferenceNumber");
+
+                    b.HasIndex("WarehouseId", "CreatedAt");
+
+                    b.ToTable("StockLedgerEntries", (string)null);
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.StockMovement", b =>
                 {
                     b.Property<int>("Id")
@@ -1897,6 +2016,51 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.HasIndex("WarehouseId");
 
                     b.ToTable("UserWarehouses", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.VirtualLocationLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("AssignedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int?>("InwardPutawayId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("InwardTransactionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PalletPositionId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InwardTransactionId");
+
+                    b.HasIndex("PalletPositionId", "ReleasedAt");
+
+                    b.ToTable("VirtualLocationLogs", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.VirtualLocationSequence", b =>
+                {
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("LastValue")
+                        .HasColumnType("int");
+
+                    b.HasKey("WarehouseId");
+
+                    b.ToTable("VirtualLocationSequences", (string)null);
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.Warehouse", b =>
@@ -2618,6 +2782,25 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Navigation("StockSubtype");
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.StockLedgerEntry", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.Material", "Material")
+                        .WithMany()
+                        .HasForeignKey("MaterialId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GodrejWMS.Domain.Entities.PalletPosition", "PalletPosition")
+                        .WithMany()
+                        .HasForeignKey("PalletPositionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Material");
+
+                    b.Navigation("PalletPosition");
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.StockMovement", b =>
                 {
                     b.HasOne("GodrejWMS.Domain.Entities.PalletPosition", "DestinationPalletPosition")
@@ -2687,6 +2870,17 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.VirtualLocationLog", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.PalletPosition", "PalletPosition")
+                        .WithMany()
+                        .HasForeignKey("PalletPositionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("PalletPosition");
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.Warehouse", b =>

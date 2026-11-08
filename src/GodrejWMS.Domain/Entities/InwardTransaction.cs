@@ -13,6 +13,12 @@ public class InwardTransaction : AuditableEntity
     public Warehouse Warehouse { get; set; } = null!;
     public string ReferenceNumber { get; set; } = string.Empty;
 
+    /// <summary>SHA-256 of the warehouse, header and normalised lines of the upload, so re-uploading the same file cannot post it twice.</summary>
+    public string? UploadHash { get; set; }
+
+    /// <summary>When the order's stock was posted to inventory (upload time for orders with a PKM).</summary>
+    public DateTimeOffset? PostedAt { get; set; }
+
     public bool IsRejected { get; set; }
 
     public DateTimeOffset? RejectedAt { get; set; }

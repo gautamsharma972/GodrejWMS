@@ -39,6 +39,8 @@ public class PalletPositionConfiguration : IEntityTypeConfiguration<PalletPositi
         builder.ToTable("PalletPositions");
 
         builder.HasIndex(p => p.LocationCode).IsUnique();
+        builder.HasIndex(p => new { p.IsVirtual, p.VirtualStatus });
+        builder.Property(p => p.VirtualStatus).HasMaxLength(10);
         builder.HasIndex(p => new { p.RackId, p.Column, p.Level }).IsUnique();
 
         builder.Property(p => p.LocationCode).HasMaxLength(20).IsRequired();

@@ -12,6 +12,9 @@ public class InwardTransactionConfiguration : IEntityTypeConfiguration<InwardTra
 
         builder.HasIndex(t => t.ReferenceNumber).IsUnique();
         builder.HasIndex(t => new { t.WarehouseId, t.CreatedAt });
+        // Cleared on rejection, so a rejected upload can be uploaded again (MySQL allows many NULLs in a unique index).
+        builder.HasIndex(t => new { t.WarehouseId, t.UploadHash }).IsUnique();
+        builder.Property(t => t.UploadHash).HasMaxLength(64);
         builder.HasOne(t => t.Warehouse).WithMany().HasForeignKey(t => t.WarehouseId).OnDelete(DeleteBehavior.Restrict);
         builder.Property(t => t.ReferenceNumber).HasMaxLength(40).IsRequired();
         builder.Property(t => t.CreatedByUserId).HasMaxLength(450);

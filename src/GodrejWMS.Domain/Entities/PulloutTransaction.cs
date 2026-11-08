@@ -113,4 +113,13 @@ public class PulloutPick
 
     /// <summary>Operator justification when the FIFO-suggested source location is manually changed.</summary>
     public string? OverrideReason { get; set; }
+
+    /// <summary>The Picker's physical confirmation of this pick. Stock itself is already deducted when the order is uploaded.</summary>
+    public DateTimeOffset? PickedAt { get; set; }
+
+    public string? PickedByUserId { get; set; }
+
+    public string? PickedByUserName { get; set; }
+
+    public decimal? PickedQuantityBoxes { get; set; }
 }

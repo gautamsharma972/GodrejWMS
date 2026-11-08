@@ -62,6 +62,12 @@ public interface IApplicationDbContext : IAsyncDisposable
 
     DbSet<StockMovement> StockMovements { get; }
 
+    DbSet<StockLedgerEntry> StockLedgerEntries { get; }
+
+    DbSet<VirtualLocationSequence> VirtualLocationSequences { get; }
+
+    DbSet<VirtualLocationLog> VirtualLocationLogs { get; }
+
     DbSet<InventoryAdjustment> InventoryAdjustments { get; }
 
     DbSet<InventoryAdjustmentLine> InventoryAdjustmentLines { get; }

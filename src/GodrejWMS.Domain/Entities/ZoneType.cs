@@ -17,6 +17,7 @@ public static class ZoneTypeIds
     public const int Reserve = 2;
     public const int Seasonal = 3;
     public const int DispatchNear = 4;
+    public const int Overflow = 5;
 }
 
 public static class ZoneTypeCodes
@@ -25,4 +26,5 @@ public static class ZoneTypeCodes
     public const string Reserve = "Reserve";
     public const string Seasonal = "Seasonal";
     public const string DispatchNear = "DispatchNear";
+    public const string Overflow = "Overflow";
 }

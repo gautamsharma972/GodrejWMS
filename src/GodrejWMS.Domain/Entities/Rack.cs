@@ -47,5 +47,9 @@ public class Rack : AuditableEntity
 
     public bool IsActive { get; set; } = true;
 
+    /// <summary>The hidden per-warehouse "OVERFLOW" rack that owns the virtual locations (a position needs a rack).
+    /// It never appears in rack layouts, rack lists or physical capacity totals.</summary>
+    public bool IsSystem { get; set; }
+
     public ICollection<PalletPosition> PalletPositions { get; set; } = new List<PalletPosition>();
 }
