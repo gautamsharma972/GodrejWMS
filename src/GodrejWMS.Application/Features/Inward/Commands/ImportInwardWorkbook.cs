@@ -103,7 +103,8 @@ public sealed class ImportInwardWorkbookHandler(IExcelService excel, IMediator m
                     new SubmitInwardCommand(lines, request.WarehouseId,
                         VehicleNumber: sheet.VehicleNumber, LrNumber: sheet.LrNumber, ReceivedFrom: sheet.ReceivedFrom,
                         UploadHeaderJson: sheet.HeaderBlockJson,
-                        UnreadableRows: sheet.UnreadableRows),
+                        UnreadableRows: sheet.UnreadableRows,
+                        CheckDuplicateUpload: true),
                     cancellationToken);
 
                 var skipped = InwardSkippedLineMapper.From(result.Lines);

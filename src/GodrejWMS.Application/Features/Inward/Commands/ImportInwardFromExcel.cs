@@ -27,6 +27,6 @@ public sealed class ImportInwardFromExcelHandler(IExcelService excel, IMediator 
             .Select(r => new SubmitInwardLine(r.MaterialCode, r.QuantityBoxes, r.MfgMonthText))
             .ToList();
 
-        return mediator.Send(new SubmitInwardCommand(lines, request.WarehouseId), cancellationToken);
+        return mediator.Send(new SubmitInwardCommand(lines, request.WarehouseId, CheckDuplicateUpload: true), cancellationToken);
     }
 }

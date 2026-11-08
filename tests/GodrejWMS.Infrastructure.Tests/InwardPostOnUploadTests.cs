@@ -38,8 +38,8 @@ public class InwardPostOnUploadTests
         new(db, TestServices.Placement(db, new PalletAllocationService(db, new SvcClock())), TestServices.Uow(db), new SvcClock(), new SvcUser());
 
     private static Task<GodrejWMS.Application.Features.Inward.Dtos.InwardResultDto> SubmitAsync(
-        AppDbContext db, long material, int quantity, string pkm = "OCT|2026", string? vehicle = null) =>
-        Handler(db).Handle(new SubmitInwardCommand([new SubmitInwardLine(material, quantity, pkm)], WarehouseId: 1, VehicleNumber: vehicle), default);
+        AppDbContext db, long material, int quantity, string pkm = "OCT|2026", string? vehicle = null, bool fromFile = false) =>
+        Handler(db).Handle(new SubmitInwardCommand([new SubmitInwardLine(material, quantity, pkm)], WarehouseId: 1, VehicleNumber: vehicle, CheckDuplicateUpload: fromFile), default);
 
     /// <summary>Fills every given physical bin with stock of the other material so the allocator cannot use it.</summary>
     private static async Task FillWithOtherMaterialAsync(AppDbContext db, IEnumerable<PalletPosition> positions)
@@ -136,13 +136,26 @@ public class InwardPostOnUploadTests
     {
         var (db, material, _) = await SeedAsync(physicalPositions: 3);
         using var _ = db;
-        var first = await SubmitAsync(db, material.MaterialNumber, 60);
+        var first = await SubmitAsync(db, material.MaterialNumber, 60, fromFile: true);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => SubmitAsync(db, material.MaterialNumber, 60));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => SubmitAsync(db, material.MaterialNumber, 60, fromFile: true));
 
         Assert.Contains(first.ReferenceNumber, ex.Message);
         Assert.Equal(60, db.StockBatches.Sum(b => b.QuantityBoxes));
         Assert.Single(db.InwardTransactions);
+    }
+
+    [Fact]
+    public async Task ManualEntry_OfTheSameMaterialAndQuantity_IsNotTreatedAsAReUpload()
+    {
+        var (db, material, _) = await SeedAsync(physicalPositions: 3);
+        using var _ = db;
+        await SubmitAsync(db, material.MaterialNumber, 20);
+
+        await SubmitAsync(db, material.MaterialNumber, 20);
+
+        Assert.Equal(2, db.InwardTransactions.Count());
+        Assert.Equal(40, db.StockBatches.Sum(b => b.QuantityBoxes));
     }
 
     [Fact]

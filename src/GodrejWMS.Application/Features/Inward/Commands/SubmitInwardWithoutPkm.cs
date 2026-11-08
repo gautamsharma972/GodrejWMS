@@ -22,7 +22,8 @@ public sealed record SubmitInwardWithoutPkmCommand(
     IReadOnlyList<SubmitInwardWithoutPkmLine> Lines, int WarehouseId,
     string? VehicleNumber = null, string? LrNumber = null, string? ReceivedFrom = null,
     string? UploadHeaderJson = null,
-    IReadOnlyList<InwardUnsavedLineInput>? UnreadableRows = null) : IRequest<InwardResultDto>;
+    IReadOnlyList<InwardUnsavedLineInput>? UnreadableRows = null,
+    bool CheckDuplicateUpload = false) : IRequest<InwardResultDto>;
 
 public sealed record SubmitInwardWithoutPkmLine(long MaterialCode, decimal QuantityBoxes, string? Description = null);
 
@@ -77,7 +78,10 @@ public sealed class SubmitInwardWithoutPkmHandler(
             request.WarehouseId,
             [request.VehicleNumber, request.LrNumber, request.ReceivedFrom, "NOPKM"],
             requestLines.Select(l => $"{l.MaterialCode}|{l.QuantityBoxes}"));
-        var duplicate = await InwardSubmissionLogic.FindDuplicateAsync(db, request.WarehouseId, uploadHash, clock.UtcNow, cancellationToken);
+        // Only file uploads are guarded: two manual entries of the same material/quantity are legitimate separate receipts.
+        var duplicate = request.CheckDuplicateUpload
+            ? await InwardSubmissionLogic.FindDuplicateAsync(db, request.WarehouseId, uploadHash, clock.UtcNow, cancellationToken)
+            : null;
         if (duplicate is not null)
         {
             throw new InvalidOperationException(

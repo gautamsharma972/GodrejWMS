@@ -16,7 +16,8 @@ public sealed record SubmitInwardCommand(
     IReadOnlyList<SubmitInwardLine> Lines, int WarehouseId,
     string? VehicleNumber = null, string? LrNumber = null, string? ReceivedFrom = null,
     string? UploadHeaderJson = null,
-    IReadOnlyList<InwardUnsavedLineInput>? UnreadableRows = null) : IRequest<InwardResultDto>;
+    IReadOnlyList<InwardUnsavedLineInput>? UnreadableRows = null,
+    bool CheckDuplicateUpload = false) : IRequest<InwardResultDto>;
 
 public sealed record SubmitInwardLine(long MaterialCode, decimal QuantityBoxes, string MfgMonthText, string? Description = null);
 
@@ -76,7 +77,10 @@ public sealed class SubmitInwardHandler(
             request.WarehouseId,
             [request.VehicleNumber, request.LrNumber, request.ReceivedFrom],
             requestLines.Select(l => $"{l.MaterialCode}|{(MfgMonthParser.TryParse(l.MfgMonthText, out var key) ? key.ToString() : l.MfgMonthText.Trim().ToUpperInvariant())}|{l.QuantityBoxes}"));
-        var duplicate = await InwardSubmissionLogic.FindDuplicateAsync(db, request.WarehouseId, uploadHash, clock.UtcNow, cancellationToken);
+        // Only file uploads are guarded: two manual entries of the same material/quantity are legitimate separate receipts.
+        var duplicate = request.CheckDuplicateUpload
+            ? await InwardSubmissionLogic.FindDuplicateAsync(db, request.WarehouseId, uploadHash, clock.UtcNow, cancellationToken)
+            : null;
         if (duplicate is not null)
         {
             throw new InvalidOperationException(
