@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Infrastructure.Services;
 
 /// <inheritdoc cref="IInventoryMovementService"/>
-public class InventoryMovementService(IApplicationDbContext db, IDateTimeProvider clock, ICurrentUserService currentUser) : IInventoryMovementService
+public class InventoryMovementService(IApplicationDbContext db, IDateTimeProvider clock, ICurrentUserService currentUser, IStockPostingService posting) : IInventoryMovementService
 {
     public async Task<string?> ValidateAsync(InventoryMovementLineRequest request, CancellationToken cancellationToken = default)
     {
@@ -30,36 +30,33 @@ public class InventoryMovementService(IApplicationDbContext db, IDateTimeProvide
 
         // sourceBatch is guaranteed non-null here - ValidateInternalAsync only returns a null
         // error alongside a non-null batch.
-        sourceBatch!.QuantityBoxes -= request.QuantityBoxes;
-        sourceBatch.RowVersion++;
-
-        var destinationBatch = await db.StockBatches.FirstOrDefaultAsync(b =>
-            b.MaterialId == request.MaterialId &&
-            b.MfgMonth == request.MfgMonth &&
-            b.PalletPositionId == request.DestinationPalletPositionId,
-            cancellationToken);
-
-        if (destinationBatch is null)
+        // The stock itself moves through the shared posting service: it updates both cells, writes the ledger and
+        // frees a virtual source location that this move empties.
+        var sourcePosition = await db.PalletPositions.Include(p => p.Rack)
+            .FirstAsync(p => p.Id == request.SourcePalletPositionId, cancellationToken);
+        var destinationPosition = await db.PalletPositions.Include(p => p.Rack)
+            .FirstAsync(p => p.Id == request.DestinationPalletPositionId, cancellationToken);
+        var stockSubtypeId = sourceBatch!.StockSubtypeId;
+        var movementNumber = $"IMV-{clock.UtcNow:yyyyMMdd-HHmmssfff}-{Guid.NewGuid().ToString("N")[..8]}";
+        try
         {
-            db.StockBatches.Add(new StockBatch
-            {
-                MaterialId = request.MaterialId,
-                MfgMonth = request.MfgMonth,
-                PalletPositionId = request.DestinationPalletPositionId,
-                StockSubtypeId = sourceBatch.StockSubtypeId,
-                QuantityBoxes = request.QuantityBoxes,
-                RowVersion = 1
-            });
+            await posting.ApplyAsync(
+                new StockPostingContext(StockLedgerEntryTypes.InventoryMovement, "InventoryMovement", movementNumber),
+                [
+                    new StockChange(request.MaterialId, request.MfgMonth, stockSubtypeId, sourcePosition, -request.QuantityBoxes),
+                    new StockChange(request.MaterialId, request.MfgMonth, stockSubtypeId, destinationPosition, request.QuantityBoxes)
+                ],
+                cancellationToken);
         }
-        else
+        catch (InvalidOperationException ex)
         {
-            destinationBatch.QuantityBoxes += request.QuantityBoxes;
-            destinationBatch.RowVersion++;
+            db.ChangeTracker.Clear();
+            return new InventoryMovementLineResult(false, ex.Message, null);
         }
 
         var movement = new StockMovement
         {
-            MovementNumber = $"IMV-{clock.UtcNow:yyyyMMdd-HHmmssfff}-{Guid.NewGuid().ToString("N")[..8]}",
+            MovementNumber = movementNumber,
             MaterialId = request.MaterialId,
             MfgMonth = request.MfgMonth,
             StockSubtypeId = sourceBatch.StockSubtypeId,

@@ -48,7 +48,7 @@ public class InventoryMovementServiceTests
         return (db, material, source, destination, reason);
     }
 
-    private static InventoryMovementService CreateService(AppDbContext db) => new(db, new TestClock(), new TestCurrentUser());
+    private static InventoryMovementService CreateService(AppDbContext db) => TestServices.MovementService(db);
 
     [Fact]
     public async Task Test1_MovesFullQuantity()

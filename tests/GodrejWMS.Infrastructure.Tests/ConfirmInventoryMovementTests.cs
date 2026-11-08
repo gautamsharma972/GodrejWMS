@@ -45,7 +45,7 @@ public class ConfirmInventoryMovementTests
     public async Task ConfirmInventoryMovement_ProcessesMultipleLinesIndependently()
     {
         var (db, material, source, destination, reason) = SeedScenario();
-        var handler = new ConfirmInventoryMovementHandler(db, new InventoryMovementService(db, new TestClock(), new TestCurrentUser()));
+        var handler = new ConfirmInventoryMovementHandler(db, TestServices.MovementService(db));
 
         var lines = new[]
         {
@@ -64,7 +64,7 @@ public class ConfirmInventoryMovementTests
     public async Task ValidateInventoryMovementLines_ReturnsPerLineResults_WithoutPersisting()
     {
         var (db, material, source, destination, reason) = SeedScenario();
-        var handler = new ValidateInventoryMovementLinesHandler(new InventoryMovementService(db, new TestClock(), new TestCurrentUser()));
+        var handler = new ValidateInventoryMovementLinesHandler(TestServices.MovementService(db));
 
         var lines = new[]
         {
