@@ -30,7 +30,8 @@ public sealed record StockMasterRowDto(
     int MaterialId = 0,
     int PalletPositionId = 0,
     int MfgMonth = 0,
-    string StockSubtypeName = "Good");
+    string StockSubtypeName = "Good",
+    bool IsVirtualLocation = false);
 
 public sealed record StockSummaryDto(
     int TotalRacks,
@@ -57,7 +58,9 @@ public sealed record StockSummaryDto(
     IReadOnlyList<SeasonBreakdownDto> BySeason,
     int EmptyLocationCount = 0,
     int EmptyCapacityBoxes = 0,
-    int DefaultPalletCapacityBoxes = 0);
+    int DefaultPalletCapacityBoxes = 0,
+    int VirtualLocationsInUse = 0,
+    decimal VirtualStockBoxes = 0);
 
 public sealed record LowStockLocationDto(
     int MaterialId,

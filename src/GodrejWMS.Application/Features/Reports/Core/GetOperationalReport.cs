@@ -108,7 +108,7 @@ public sealed class GetOperationalReportHandler(
     // ever holds one material at a time): MaxPallets x that material's Pallet Size. An empty
     // location has no material context, so it reports 0 capacity/available rather than a
     // location-level default.
-    private IQueryable<ReportRow> Positions() => db.PalletPositions.AsNoTracking().Where(p => p.IsActive).Select(p => new ReportRow
+    private IQueryable<ReportRow> Positions() => db.PalletPositions.AsNoTracking().Where(p => p.IsActive && !p.IsVirtual).Select(p => new ReportRow
     {
         Id = p.Id, WarehouseId = p.Rack.WarehouseId, Warehouse = p.Rack.Warehouse.Code, Location = p.LocationCode,
         Zone = p.ZoneType.Code, Rack = p.Rack.Code, Column = p.Column, Level = p.Level,
@@ -127,7 +127,7 @@ public sealed class GetOperationalReportHandler(
     // after Positions() projects several correlated aggregates produces a nested SQL expression
     // that Pomelo/MySQL cannot translate once warehouse-access query filters are applied.
     private IQueryable<ReportRow> AvailablePositions() => db.PalletPositions.AsNoTracking()
-        .Where(p => p.IsActive
+        .Where(p => p.IsActive && !p.IsVirtual
             && !p.StockBatches.Any(b => b.QuantityBoxes > 0)
             && !db.InwardPutaways.Any(a => a.PalletPositionId == p.Id
                 && !a.IsConfirmed

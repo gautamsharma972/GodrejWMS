@@ -74,7 +74,8 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
             UploadHeaderJson: transaction.UploadHeaderJson,
             ReceivedFrom: transaction.ReceivedFrom,
             UnsavedLines: unsavedLines,
-            IsPkmless: transaction.IsPkmless);
+            IsPkmless: transaction.IsPkmless,
+            PostedAt: transaction.PostedAt);
     }
 }
 

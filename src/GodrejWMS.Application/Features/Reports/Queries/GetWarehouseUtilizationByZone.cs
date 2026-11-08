@@ -18,7 +18,7 @@ public sealed class GetWarehouseUtilizationByZoneHandler(IApplicationDbContext d
     {
         var perPosition = await db.PalletPositions
             .AsNoTracking()
-            .Where(p => p.IsActive)
+            .Where(p => p.IsActive && !p.IsVirtual)
             .Select(p => new
             {
                 ZoneCode = p.ZoneType.Code,

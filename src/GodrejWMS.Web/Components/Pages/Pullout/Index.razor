@@ -274,7 +274,7 @@
             </div>
             <div class="info-bar-content">
                 <h2>Pick result generated</h2>
-                <p>Reference @_result.ReferenceNumber — @(_rejected ? "Rejected. Inventory was not changed." : _confirmed ? "Confirmed. Inventory updated." : "Awaiting confirmation. Inventory has not been updated.")</p>
+                <p>Reference @_result.ReferenceNumber — @(_rejected ? "Rejected. Inventory was not changed." : _confirmed ? "Posted. Stock was deducted from inventory." : "Awaiting confirmation. Inventory has not been updated.")</p>
             </div>
             <button type="button" class="btn btn-primary" @onclick="OpenResultModal">
                 <i class="bi bi-eye" aria-hidden="true"></i>
@@ -319,8 +319,8 @@
                                 <i class="bi @(_confirmed ? "bi-check2-circle" : "bi-clock-history")" aria-hidden="true"></i>
                             </div>
                             <div class="info-bar-content">
-                                <h2>@(_confirmed ? "Pullout confirmed" : "Pick result saved")</h2>
-                                <p>@(_confirmed ? "Inventory has been updated." : "Review the proposed picks, then confirm the pullout when ready. Inventory has not been changed.")</p>
+                                <h2>@(_confirmed ? "Pullout posted" : "Pick result saved")</h2>
+                                <p>@(_confirmed ? "Stock was deducted from inventory when the order was uploaded; the picker confirms each pick on the floor." : "Review the proposed picks, then confirm the pullout when ready. Inventory has not been changed.")</p>
                             </div>
                             <span class="status-pill @(_confirmed ? "success" : "warning")">@(_confirmed ? "Inventory updated" : "Awaiting confirmation")</span>
                         </div>
@@ -656,6 +656,7 @@
                 WarehouseId: _warehouseId);
 
             _result = await Mediator.Send(command);
+            _confirmed = true; // posted on upload: the picks are already deducted from inventory
             _isResultModalOpen = true;
             _lines = new List<LineModel> { new() };
         }
@@ -727,6 +728,7 @@
         try
         {
             _result = await Mediator.Send(new ImportPulloutFromPasteCommand(_pasteText, _warehouseId.Value));
+            _confirmed = true; // posted on upload
             _isResultModalOpen = true;
             _pasteText = string.Empty;
         }

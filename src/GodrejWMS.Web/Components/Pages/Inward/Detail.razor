@@ -38,7 +38,7 @@
                 <div class="inward-detail-title-row">
                     <h1>@_detail.ReferenceNumber</h1>
                     <span class="status-pill @(_detail.IsRejected ? "danger" : _detail.IsConfirmed ? "success" : "warning")">
-                        @(_detail.IsRejected ? "Rejected" : _detail.IsConfirmed ? "Stock confirmed" : "Locations reserved")
+                        @(_detail.IsRejected ? "Rejected" : _detail.PostedAt.HasValue ? "Posted to inventory" : _detail.IsConfirmed ? "Stock confirmed" : "Locations reserved")
                     </span>
                 </div>
                 <p class="page-kicker">Created @_detail.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</p>
@@ -99,7 +99,7 @@
                 {
                     <button type="button" class="btn btn-outline-danger inward-reject-action" @onclick="ToggleRejectPanel">
                         <i class="bi bi-x-circle" aria-hidden="true"></i>
-                        Reject GRN
+                        @(_detail.PostedAt.HasValue ? "Cancel / Reverse GRN" : "Reject GRN")
                     </button>
                 }
                 <a class="btn btn-outline-secondary" href="@BackUrl">
@@ -165,8 +165,10 @@
             <div class="panel mb-4">
                 <div class="panel-header">
                     <div>
-                        <h2 class="panel-title">Reject this GRN</h2>
-                        <p class="panel-subtitle">Releases every unconfirmed reserved location back to the pool. This can't be undone.</p>
+                        <h2 class="panel-title">@(_detail.PostedAt.HasValue ? "Cancel and reverse this GRN" : "Reject this GRN")</h2>
+                        <p class="panel-subtitle">@(_detail.PostedAt.HasValue
+                            ? "Takes the stock this GRN posted back out of inventory (only possible while it is still where it was placed) and frees any virtual locations it used. This can't be undone."
+                            : "Releases every unconfirmed reserved location back to the pool. This can't be undone.")</p>
                     </div>
                 </div>
                 <div class="panel-body">
@@ -212,8 +214,8 @@
             <div class="putaway-step @(_detail.IsRejected ? "rejected" : StepClass(_detail.IsConfirmed))">
                 <span class="putaway-step-icon"><i class="bi @(_detail.IsRejected ? "bi-x-circle" : "bi-check2-circle")" aria-hidden="true"></i></span>
                 <div>
-                    <strong>@(_detail.IsRejected ? "Rejected" : "Stock confirmed")</strong>
-                    <span>@(_detail.IsRejected ? "No stock was put away" : _detail.IsConfirmed ? "Dashboard and inventory updated" : "Waiting for operator confirmation")</span>
+                    <strong>@(_detail.IsRejected ? "Rejected" : _detail.PostedAt.HasValue ? "Posted to inventory" : "Stock confirmed")</strong>
+                    <span>@(_detail.IsRejected ? "No stock was put away" : _detail.PostedAt.HasValue ? "Posted when the GRN was uploaded - visible in Inventory Master and available for picking" : _detail.IsConfirmed ? "Dashboard and inventory updated" : "Waiting for operator confirmation")</span>
                 </div>
             </div>
         </div>
@@ -434,6 +436,7 @@
                                                     title="@PutawayTitle(row.Putaway)"
                                                     @onclick="() => OpenPalletDetailsAsync(row.Putaway.LocationCode)">
                                                 <span>@row.Putaway.LocationCode</span>
+                                                @if (row.Putaway.IsVirtual) { <span class="status-pill info ms-1" title="Virtual overflow location - no physical location was free">Virtual</span> }
                                                 <strong>+@row.Putaway.QuantityBoxes.ToString("N0")</strong>
                                             </button>
                                             @if (!row.Putaway.IsConfirmed && row.Putaway.Id > 0)
@@ -1298,7 +1301,7 @@
     /// </summary>
     private bool CanReject =>
         _detail is not null && !_detail.IsRejected &&
-        !_detail.Lines.SelectMany(l => l.Putaways).Any(p => p.IsConfirmed);
+        (_detail.PostedAt.HasValue || !_detail.Lines.SelectMany(l => l.Putaways).Any(p => p.IsConfirmed));
 
     /// <summary>
     /// Offered whenever any line still has an allocation gap (Partial or Failed) and the GRN

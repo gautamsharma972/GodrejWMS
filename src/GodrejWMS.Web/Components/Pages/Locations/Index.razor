@@ -103,6 +103,13 @@
                 <option value="true">Active</option>
                 <option value="false">Inactive</option>
             </select>
+            <select class="form-select filter-control" value="@_virtualFilter" @onchange="OnVirtualChanged" title="Physical or virtual (overflow) locations">
+                <option value="">Physical and virtual</option>
+                <option value="physical">Physical only</option>
+                <option value="virtual">Virtual only</option>
+                <option value="free">Virtual - free</option>
+                <option value="inuse">Virtual - in use</option>
+            </select>
             <WarehouseSelect WarehouseId="_warehouseFilter" WarehouseIdChanged="OnWarehouseFilterChangedAsync"
                               AllowClear="true" Placeholder="Filter by warehouse..." />
         </div>
@@ -146,7 +153,13 @@
                     @foreach (var location in _page.Items)
                     {
                         <tr>
-                            <td><span class="record-code">@location.LocationCode</span></td>
+                            <td>
+                                <span class="record-code">@location.LocationCode</span>
+                                @if (location.IsVirtual)
+                                {
+                                    <span class="status-pill info ms-1" title="Auto-generated overflow location (@(location.VirtualStatus == "FREE" ? "free - will be reused" : "in use"))">Virtual</span>
+                                }
+                            </td>
                             <td>@(location.FlatLabel ?? "-")</td>
                             <td class="text-end">@FormatLevel(location.Level)</td>
                             <td class="text-end">@location.Column</td>
@@ -284,6 +297,7 @@
     private int? _locationSubtypeFilter;
     private int? _zoneTypeFilter;
     private string _activeFilterText = string.Empty;
+    private string _virtualFilter = string.Empty;
     private string _sortBy = "location";
     private bool _sortDescending;
     private bool _showForm;
@@ -345,7 +359,9 @@
                 SortBy: _sortBy,
                 SortDescending: _sortDescending,
                 PageNumber: page,
-                PageSize: 50));
+                PageSize: 50,
+                IsVirtual: VirtualFilterFlag(),
+                VirtualStatus: VirtualFilterStatus()));
 
             if (sequence != _loadSequence) return;
             _pageNumber = page;
@@ -380,6 +396,26 @@
     private async Task OnZoneTypeChanged(ChangeEventArgs e)
     {
         _zoneTypeFilter = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await LoadPage(1);
+    }
+
+    private bool? VirtualFilterFlag() => _virtualFilter switch
+    {
+        "physical" => false,
+        "virtual" or "free" or "inuse" => true,
+        _ => null
+    };
+
+    private string? VirtualFilterStatus() => _virtualFilter switch
+    {
+        "free" => "FREE",
+        "inuse" => "IN_USE",
+        _ => null
+    };
+
+    private async Task OnVirtualChanged(ChangeEventArgs e)
+    {
+        _virtualFilter = e.Value?.ToString() ?? string.Empty;
         await LoadPage(1);
     }
 

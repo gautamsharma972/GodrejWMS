@@ -74,6 +74,59 @@ public static class PulloutEndpoints
             .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Confirm)
             .WithName("ConfirmPullout");
 
+        // ----- Picker: confirm picks, change the pick location, relocate what is left (Pullout.Pick) -----
+
+        group.MapPost("/pullout/picks/{pickId:int}/confirm", async (
+                int pickId,
+                ConfirmPickRequest request,
+                IMediator mediator,
+                CancellationToken cancellationToken) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                {
+                    var move = request.MoveRemaining is { } m ? new PulloutRemainderMove(m.DestinationPalletPositionId, m.QuantityBoxes) : null;
+                    return Results.Ok(await mediator.Send(new ConfirmPulloutPickCommand(pickId, request.PickedQuantityBoxes, move), cancellationToken));
+                }))
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .WithName("ConfirmPulloutPick");
+
+        group.MapGet("/pullout/picks/{pickId:int}/relocation-suggestions", async (
+                int pickId,
+                decimal quantity,
+                IMediator mediator,
+                CancellationToken cancellationToken) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                    Results.Ok(await mediator.Send(new GetRelocationSuggestionsQuery(pickId, quantity), cancellationToken))))
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .WithName("GetPulloutRelocationSuggestions");
+
+        group.MapGet("/pullout/picker/pick-options", async (
+                string referenceNumber,
+                long materialNumber,
+                string currentLocationCode,
+                string mfgMonthLabel,
+                IMediator mediator,
+                CancellationToken cancellationToken) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                {
+                    var query = new GetPulloutPickChangeOptionsQuery(referenceNumber, materialNumber, currentLocationCode, mfgMonthLabel);
+                    return Results.Ok(await mediator.Send(query, cancellationToken));
+                }))
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .WithName("GetPulloutPickerPickOptions");
+
+        group.MapPost("/pullout/picker/change-pick-location", async (
+                ChangePulloutPickLocationCommand command,
+                IMediator mediator,
+                CancellationToken cancellationToken) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                    Results.Ok(await mediator.Send(command, cancellationToken))))
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .WithName("PickerChangePulloutPickLocation");
+
         return group;
     }
 }
+
+public sealed record RemainderMoveRequest(int DestinationPalletPositionId, decimal QuantityBoxes);
+
+public sealed record ConfirmPickRequest(decimal PickedQuantityBoxes, RemainderMoveRequest? MoveRemaining = null);

@@ -123,6 +123,11 @@
                     <option value="@season.Id">@season.DisplayName</option>
                 }
             </select>
+            <select class="form-select filter-control" value="@_virtualFilter" @onchange="OnVirtualFilterChanged" title="Stock in physical or virtual (overflow) locations">
+                <option value="">All locations</option>
+                <option value="physical">Physical locations</option>
+                <option value="virtual">Virtual locations</option>
+            </select>
             <select class="form-select filter-control" value="@_activeFilterText" @onchange="OnActiveFilterChanged">
                 <option value="">All statuses</option>
                 <option value="true">Active</option>
@@ -178,7 +183,10 @@
                             <td><span class="status-pill @(row.IsActive ? "success" : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span></td>
                             <td class="text-end fw-semibold">@row.QuantityBoxes</td>
                             <td>@row.MfgMonthLabel</td>
-                            <td><span class="status-pill">@row.PalletPositionCode</span></td>
+                            <td>
+                                <span class="status-pill">@row.PalletPositionCode</span>
+                                @if (row.IsVirtualLocation) { <span class="status-pill info ms-1" title="Auto-generated overflow location">Virtual</span> }
+                            </td>
                             <td class="table-actions">
                                 <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => OpenAdjustment(row)">
                                     <i class="bi bi-sliders" aria-hidden="true"></i>
@@ -360,6 +368,7 @@
     private int? _movementFilter;
     private int? _seasonFilter;
     private string _activeFilterText = string.Empty;
+    private string _virtualFilter = string.Empty;
     private string _sortBy = "material";
     private bool _sortDescending;
     private bool _importing;
@@ -462,7 +471,8 @@
                 SortBy: _sortBy,
                 SortDescending: _sortDescending,
                 PageNumber: page,
-                PageSize: 50));
+                PageSize: 50,
+                IsVirtual: _virtualFilter switch { "virtual" => true, "physical" => false, _ => null }));
 
             if (sequence != _loadSequence) return;
             _pageNumber = page;
@@ -497,6 +507,12 @@
     private async Task OnSeasonFilterChanged(ChangeEventArgs e)
     {
         _seasonFilter = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await LoadPage(1);
+    }
+
+    private async Task OnVirtualFilterChanged(ChangeEventArgs e)
+    {
+        _virtualFilter = e.Value?.ToString() ?? string.Empty;
         await LoadPage(1);
     }
 

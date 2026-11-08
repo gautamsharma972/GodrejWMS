@@ -20,7 +20,8 @@ public sealed class GetRacksHandler(IApplicationDbContext db) : IRequestHandler<
         // use such an index) gives the same per-position occupancy/capacity data in one pass.
         var racks = await db.Racks
             .AsNoTracking()
-            .Where(r => request.WarehouseId == null || r.WarehouseId == request.WarehouseId)
+            // The hidden per-warehouse overflow rack that owns the virtual locations is not a real rack.
+            .Where(r => !r.IsSystem && (request.WarehouseId == null || r.WarehouseId == request.WarehouseId))
             .OrderBy(r => r.Code)
             .Select(r => new
             {

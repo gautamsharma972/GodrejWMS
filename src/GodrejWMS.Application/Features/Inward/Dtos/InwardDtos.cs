@@ -146,7 +146,8 @@ public sealed record InwardDetailDto(
     string? UploadHeaderJson = null,
     string? ReceivedFrom = null,
     IReadOnlyList<InwardUnsavedLineDto>? UnsavedLines = null,
-    bool IsPkmless = false);
+    bool IsPkmless = false,
+    DateTimeOffset? PostedAt = null);
 /// <summary>
 /// One row of the inward Excel download: one put-away location of one GRN line, or a single row with
 /// no location for a line that received none.

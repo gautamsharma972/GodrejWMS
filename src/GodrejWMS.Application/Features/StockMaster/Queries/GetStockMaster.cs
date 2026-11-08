@@ -19,7 +19,8 @@ public sealed record GetStockMasterQuery(
     string SortBy = "material",
     bool SortDescending = false,
     int PageNumber = 1,
-    int PageSize = 50) : IRequest<PaginatedList<StockMasterRowDto>>;
+    int PageSize = 50,
+    bool? IsVirtual = null) : IRequest<PaginatedList<StockMasterRowDto>>;
 
 public sealed class GetStockMasterHandler(IApplicationDbContext db)
     : IRequestHandler<GetStockMasterQuery, PaginatedList<StockMasterRowDto>>
@@ -49,8 +50,14 @@ public sealed class GetStockMasterHandler(IApplicationDbContext db)
                 StockSubtypeName = b.StockSubtype.DisplayName,
                 b.PalletPosition.LocationCode,
                 RackCode = b.PalletPosition.Rack.Code,
-                b.PalletPosition.Rack.WarehouseId
+                b.PalletPosition.Rack.WarehouseId,
+                IsVirtualLocation = b.PalletPosition.IsVirtual
             });
+
+        if (request.IsVirtual.HasValue)
+        {
+            query = query.Where(b => b.IsVirtualLocation == request.IsVirtual.Value);
+        }
 
         if (request.WarehouseId.HasValue)
         {
@@ -124,7 +131,7 @@ public sealed class GetStockMasterHandler(IApplicationDbContext db)
             .Select(b => new StockMasterRowDto(
                 b.MaterialNumber, b.Description, b.DesignType, b.QuantityBoxes,
                 MfgMonthParser.Format(b.MfgMonth), b.LocationCode, b.MovementTypeCode, b.MovementTypeName, b.SeasonCode, b.SeasonName, b.IsActive,
-                b.StockBatchId, b.MaterialId, b.PalletPositionId, b.MfgMonth, b.StockSubtypeName))
+                b.StockBatchId, b.MaterialId, b.PalletPositionId, b.MfgMonth, b.StockSubtypeName, b.IsVirtualLocation))
             .ToList();
 
         return new PaginatedList<StockMasterRowDto>(items, totalCount, request.PageNumber, request.PageSize);

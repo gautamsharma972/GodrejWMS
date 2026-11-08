@@ -1,3 +1,4 @@
+using GodrejWMS.Domain.Entities;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.StockMaster.Dtos;
 using GodrejWMS.Domain.Enums;
@@ -26,15 +27,16 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db, IOptions<St
         var today = new DateTimeOffset(DateTime.Today);
         var tomorrow = today.AddDays(1);
 
-        var totalRacks = await db.Racks.CountAsync(r => r.IsActive, cancellationToken);
-        var totalPositions = await db.PalletPositions.CountAsync(p => p.IsActive, cancellationToken);
+        // Physical figures: the hidden overflow rack and the virtual locations are reported separately below.
+        var totalRacks = await db.Racks.CountAsync(r => r.IsActive && !r.IsSystem, cancellationToken);
+        var totalPositions = await db.PalletPositions.CountAsync(p => p.IsActive && !p.IsVirtual, cancellationToken);
 
         // Capacity of a position is driven by whichever material occupies (or is reserved against, via
         // a pending put-away) it - a position only ever holds one material at a time. A position with
         // neither has no material context, so it is counted at the default pallet size instead
         // (MaxPallets x DefaultPalletCapacityBoxes) - otherwise empty racks would look like zero room.
         var positionCapacities = await db.PalletPositions
-            .Where(p => p.IsActive)
+            .Where(p => p.IsActive && !p.IsVirtual)
             .Select(p => new
             {
                 p.MaxPallets,
@@ -54,10 +56,14 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db, IOptions<St
             p.PalletCapacityBoxes is { } cap && p.Occupied + p.Reserved >= p.MaxPallets * cap);
 
         var occupiedPositions = await db.PalletPositions
-            .Where(p => p.IsActive && p.StockBatches.Where(b => b.Material.IsActive).Sum(b => b.QuantityBoxes) > 0)
+            .Where(p => p.IsActive && !p.IsVirtual && p.StockBatches.Where(b => b.Material.IsActive).Sum(b => b.QuantityBoxes) > 0)
             .CountAsync(cancellationToken);
 
         var totalStockBoxes = await db.StockBatches.SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;
+        var virtualStockBoxes = await db.StockBatches.Where(b => b.PalletPosition.IsVirtual)
+            .SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;
+        var virtualLocationsInUse = await db.PalletPositions
+            .CountAsync(p => p.IsVirtual && p.VirtualStatus == VirtualLocationStatus.InUse, cancellationToken);
         var pendingPutawayBoxes = await db.InwardPutaways
             .Where(p => !p.IsConfirmed)
             .SumAsync(p => (decimal?)p.QuantityBoxes, cancellationToken) ?? 0m;
@@ -109,7 +115,8 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db, IOptions<St
             .Where(l => l.PulloutTransaction.CreatedAt >= today && l.PulloutTransaction.CreatedAt < tomorrow)
             .SumAsync(l => (decimal?)l.PickedQuantityBoxes, cancellationToken) ?? 0m;
 
-        var freeCapacityBoxes = Math.Max(0, totalCapacityBoxes - totalStockBoxes - pendingPutawayBoxes);
+        // Overflow stock sits outside the physical capacity, so it must not eat into the physical free capacity either.
+        var freeCapacityBoxes = Math.Max(0, totalCapacityBoxes - (totalStockBoxes - virtualStockBoxes) - pendingPutawayBoxes);
 
         var lowStockLocationCount = await db.StockBatches
             .Where(b => b.QuantityBoxes > 0
@@ -155,6 +162,8 @@ public sealed class GetStockSummaryHandler(IApplicationDbContext db, IOptions<St
             bySeason,
             emptyLocations.Count,
             emptyCapacityBoxes,
-            defaultPalletCapacity);
+            defaultPalletCapacity,
+            virtualLocationsInUse,
+            virtualStockBoxes);
     }
 }

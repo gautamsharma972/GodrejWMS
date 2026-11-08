@@ -191,12 +191,13 @@
                                 @foreach (var row in rows)
                                 {
                                     <button type="button" class="btn text-start border rounded-3 p-3 d-flex justify-content-between align-items-center @(row.Done ? "picker-location-done" : "btn-outline-primary")"
-                                            disabled="@(row.Putaway.IsConfirmed && !(row.Putaway.ExcludedLocation is not null && !row.Putaway.IsExcludedLocked))" @onclick="() => SelectRow(row)">
+                                            disabled="@(!row.Posted && row.Putaway.IsConfirmed && !(row.Putaway.ExcludedLocation is not null && !row.Putaway.IsExcludedLocked))" @onclick="() => SelectRow(row)">
                                         <span>
                                             <strong class="fs-5 @(row.Done ? "picker-location-code-done" : null)">@row.Putaway.LocationCode</strong><br />
                                             <span class="small text-muted">@row.Line.MaterialNumber &middot; @row.Putaway.QuantityBoxes.ToString("0.###") boxes &middot; @row.Line.MfgMonthLabel</span>
                                         </span>
-                                        <span class="status-pill @(row.Done ? "success" : "warning")">@(row.Putaway.ExcludedLocation is not null ? row.Putaway.ExcludedLocation : row.Putaway.IsConfirmed ? "Confirmed" : row.Putaway.IsPickerPlaced ? "Submitted" : "To do")</span>
+                                        <span class="status-pill @(row.Done ? "success" : "warning")">@(row.Putaway.ExcludedLocation is not null ? row.Putaway.ExcludedLocation : row.Putaway.IsPickerPlaced ? "Submitted" : row.Putaway.IsConfirmed && !row.Posted ? "Confirmed" : "To do")</span>
+                                        @if (row.Putaway.IsVirtual) { <span class="status-pill info ms-1" title="Virtual overflow location">Virtual</span> }
                                     </button>
                                 }
                             </div>
@@ -291,9 +292,11 @@
     private string? _warning;
     private bool _submitting;
 
-    private sealed record PutawayRow(InwardDetailLineDto Line, InwardPutawayDto Putaway)
+    /// <param name="Posted">The GRN was posted to inventory on upload: stock is already at the suggested location and
+    /// the picker only has to confirm or change it, so a row is done once the picker has submitted it.</param>
+    private sealed record PutawayRow(InwardDetailLineDto Line, InwardPutawayDto Putaway, bool Posted)
     {
-        public bool Done => Putaway.IsConfirmed || Putaway.IsPickerPlaced;
+        public bool Done => Putaway.IsPickerPlaced || (!Posted && Putaway.IsConfirmed);
     }
 
     private static readonly (int Value, string Label)[] MonthLabels =
@@ -304,7 +307,7 @@
     private bool CanSubmit => _qty > 0 && _newLocationId != 0 && (_newLocationId < 0 || (_pkmYear > 0 && _pkmMonth > 0));
 
     private List<PutawayRow> Rows() => _detail is null ? [] :
-        _detail.Lines.SelectMany(l => l.Putaways.Select(p => new PutawayRow(l, p)))
+        _detail.Lines.SelectMany(l => l.Putaways.Select(p => new PutawayRow(l, p, _detail.PostedAt.HasValue)))
             .OrderBy(r => r.Done)
             .ThenBy(r => r.Putaway.LocationCode, StringComparer.Ordinal)
             .ToList();
@@ -438,7 +441,7 @@
             _selectedPutawayId = null;
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast", excluded is null ? "Put-away location saved." : $"Set aside as {excluded}.", "success");
             _detail = await Mediator.Send(new GetInwardDetailQuery(_detail.Id));
-            if (!Rows().Any(r => !r.Putaway.IsConfirmed))
+            if (Rows().All(r => r.Done))
             {
                 await LoadPageAsync(_pageNumber);
             }

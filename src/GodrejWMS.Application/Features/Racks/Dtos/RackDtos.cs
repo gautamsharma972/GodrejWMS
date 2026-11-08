@@ -44,7 +44,9 @@ public sealed record PalletPositionDto(
     bool IsFull,
     bool IsActive,
     IReadOnlyList<PalletPositionStockDto> Stock,
-    IReadOnlyList<PalletPositionReservationDto>? PendingReservations = null);
+    IReadOnlyList<PalletPositionReservationDto>? PendingReservations = null,
+    bool IsVirtual = false,
+    string? VirtualStatus = null);
 
 public sealed record PalletPositionReservationDto(
     string ReferenceNumber,

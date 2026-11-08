@@ -17,7 +17,9 @@ public sealed record GetLocationsQuery(
     string SortBy = "location",
     bool SortDescending = false,
     int PageNumber = 1,
-    int PageSize = 50) : IRequest<PaginatedList<PalletPositionDto>>;
+    int PageSize = 50,
+    bool? IsVirtual = null,
+    string? VirtualStatus = null) : IRequest<PaginatedList<PalletPositionDto>>;
 
 public sealed class GetLocationsHandler(IApplicationDbContext db)
     : IRequestHandler<GetLocationsQuery, PaginatedList<PalletPositionDto>>
@@ -47,6 +49,8 @@ public sealed class GetLocationsHandler(IApplicationDbContext db)
                 p.DistancePriority,
                 p.MaxPallets,
                 p.IsActive,
+                p.IsVirtual,
+                p.VirtualStatus,
                 RackCode = p.Rack.Code,
                 OccupiedBoxes = p.StockBatches.Where(b => b.Material.IsActive).Sum(b => (decimal?)b.QuantityBoxes) ?? 0m,
                 OccupyingPalletCapacityBoxes = p.StockBatches.Where(b => b.Material.IsActive)
@@ -61,6 +65,16 @@ public sealed class GetLocationsHandler(IApplicationDbContext db)
                 p.LocationCode.Contains(term) ||
                 (p.FlatLabel != null && p.FlatLabel.Contains(term)) ||
                 p.RackCode.Contains(term));
+        }
+
+        if (request.IsVirtual.HasValue)
+        {
+            query = query.Where(p => p.IsVirtual == request.IsVirtual.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.VirtualStatus))
+        {
+            query = query.Where(p => p.VirtualStatus == request.VirtualStatus);
         }
 
         if (request.LocationTypeId.HasValue)
@@ -143,7 +157,10 @@ public sealed class GetLocationsHandler(IApplicationDbContext db)
                     capacityBoxes is { } cap ? cap - p.OccupiedBoxes : null,
                     capacityBoxes is { } capForFull && p.OccupiedBoxes >= capForFull,
                     p.IsActive,
-                    Array.Empty<PalletPositionStockDto>());
+                    Array.Empty<PalletPositionStockDto>(),
+                    null,
+                    p.IsVirtual,
+                    p.VirtualStatus);
             })
             .ToList();
 

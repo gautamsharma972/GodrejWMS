@@ -1,3 +1,4 @@
+using GodrejWMS.Domain.Entities;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.Reports.Dtos;
@@ -34,7 +35,8 @@ public sealed class GetLocationStockReportHandler(
             throw new UnauthorizedAccessException("Warehouse is not assigned to you.");
         }
 
-        var positions = db.PalletPositions.AsNoTracking().Where(p => p.IsActive);
+        // A free virtual location is not a warehouse location worth listing; one in use (holding overflow stock) is.
+        var positions = db.PalletPositions.AsNoTracking().Where(p => p.IsActive && (!p.IsVirtual || p.VirtualStatus == VirtualLocationStatus.InUse));
         if (filter.WarehouseId.HasValue)
             positions = positions.Where(p => p.Rack.WarehouseId == filter.WarehouseId.Value);
 

@@ -48,7 +48,7 @@
                 <i class="bi @(_detail.IsRejected ? "bi-x-circle" : _detail.IsConfirmed ? "bi-check2-circle" : "bi-clock-history")" aria-hidden="true"></i>
             </div>
             <div class="info-bar-content">
-                <h2>@(_detail.IsRejected ? "Pullout rejected" : _detail.IsConfirmed ? "Pullout confirmed" : "Confirmation pending")</h2>
+                <h2>@(_detail.IsRejected ? "Pullout rejected" : _detail.IsConfirmed ? "Pullout posted" : "Confirmation pending")</h2>
                 @if (_detail.IsRejected)
                 {
                     <p>
@@ -61,7 +61,7 @@
                 }
                 else
                 {
-                    <p>@(_detail.IsConfirmed ? "Inventory has been updated with the confirmed pick quantities." : "This pullout is saved for later. Inventory will update only after confirmation.")</p>
+                    <p>@(_detail.IsConfirmed ? PostedMessage() : "This pullout is saved for later. Inventory will update only after confirmation.")</p>
                 }
             </div>
             <span class="status-pill @(_detail.IsRejected ? "danger" : _detail.IsConfirmed ? "success" : "warning")">@(_detail.IsRejected ? "Rejected" : _detail.IsConfirmed ? "Inventory updated" : "Not confirmed")</span>
@@ -82,6 +82,14 @@
                         Reject Pullout
                     </button>
                 }
+                @if (_detail.IsConfirmed && !PickingStarted)
+                {
+                    <button type="button" class="btn btn-outline-danger" @onclick="ToggleRejectPanel" disabled="@(_saving || _rejecting)"
+                            title="Puts the picked-out stock back into inventory (only possible while nothing is picked yet)">
+                        <i class="bi bi-x-circle" aria-hidden="true"></i>
+                        Cancel / Reverse Pullout
+                    </button>
+                }
                 <button type="button" class="btn btn-outline-secondary" @onclick="DownloadExcelAsync" disabled="@(!_detail.Lines.Any(l => l.Picks.Count > 0))"
                         title="Download the pick list as Excel@(_detail.IsConfirmed ? string.Empty : " (before confirming)")">
                     <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
@@ -95,8 +103,10 @@
             <div class="panel mb-4">
                 <div class="panel-header">
                     <div>
-                        <h2 class="panel-title">Reject this pullout</h2>
-                        <p class="panel-subtitle">The request is closed and can't be refreshed or confirmed. Inventory is not affected. This can't be undone.</p>
+                        <h2 class="panel-title">@(_detail.IsConfirmed ? "Cancel and reverse this pullout" : "Reject this pullout")</h2>
+                        <p class="panel-subtitle">@(_detail.IsConfirmed
+                            ? "The request is closed and the stock it took out of inventory is put back where it came from. This can't be undone."
+                            : "The request is closed and can't be refreshed or confirmed. Inventory is not affected. This can't be undone.")</p>
                     </div>
                 </div>
                 <div class="panel-body">
@@ -195,9 +205,11 @@
                                             {
                                                 <span class="allocation-location-pill">
                                                     <span>@pick.LocationCode [@pick.MfgMonthLabel]</span>
+                                                    @if (pick.IsVirtual) { <span class="status-pill info ms-1" title="Virtual overflow location">Virtual</span> }
+                                                    @if (pick.PickedAt is not null) { <span class="status-pill success ms-1" title="Picked by the picker"><i class="bi bi-check2" aria-hidden="true"></i> Picked</span> }
                                                     <strong>-@pick.QuantityBoxes.ToString("N0")</strong>
                                                 </span>
-                                                @if (!_detail.IsConfirmed && !_detail.IsRejected)
+                                                @if (!_detail.IsRejected && pick.PickedAt is null)
                                                 {
                                                     <button type="button"
                                                             class="btn btn-sm btn-outline-secondary allocation-change-button"
@@ -298,6 +310,15 @@
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
 
+    private bool PickingStarted => _detail is not null && _detail.Lines.SelectMany(l => l.Picks).Any(p => p.PickedAt is not null);
+
+    private string PostedMessage()
+    {
+        var picks = _detail!.Lines.SelectMany(l => l.Picks).ToList();
+        var done = picks.Count(p => p.PickedAt is not null);
+        return $"Stock was deducted from inventory when the order was uploaded. The picker has confirmed {done} of {picks.Count} pick(s) on the floor.";
+    }
+
     private void ToggleRejectPanel()
     {
         _showRejectPanel = !_showRejectPanel;
@@ -307,10 +328,12 @@
 
     private async Task RejectPulloutAsync()
     {
-        if (_detail is null || _detail.IsConfirmed || _detail.IsRejected || string.IsNullOrWhiteSpace(_rejectReason))
+        if (_detail is null || _detail.IsRejected || (_detail.IsConfirmed && PickingStarted) || string.IsNullOrWhiteSpace(_rejectReason))
         {
             return;
         }
+
+        var posted = _detail.IsConfirmed;
 
         _rejecting = true;
         _rejectError = null;
@@ -319,7 +342,8 @@
             await Mediator.Send(new RejectPulloutCommand(_detail.ReferenceNumber, _rejectReason));
             _detail = await Mediator.Send(new GetPulloutDetailQuery(TransactionId));
             _showRejectPanel = false;
-            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Pullout rejected. Inventory was not changed.");
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast",
+                posted ? "Pullout cancelled. The stock was put back into inventory." : "Pullout rejected. Inventory was not changed.");
         }
         catch (Exception ex)
         {

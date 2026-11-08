@@ -91,7 +91,7 @@ public sealed class GetInwardPalletChangeOptionsHandler(IApplicationDbContext db
 
         var positions = await db.PalletPositions
             .AsNoTracking()
-            .Where(p => p.IsActive)
+            .Where(p => p.IsActive && !p.IsVirtual)
             .Select(p => new
             {
                 p.Id,

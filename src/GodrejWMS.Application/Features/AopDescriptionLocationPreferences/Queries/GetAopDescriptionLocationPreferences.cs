@@ -43,7 +43,7 @@ public sealed class GetAopLocationOptionsHandler(IApplicationDbContext db)
     public async Task<IReadOnlyList<AopLocationOptionDto>> Handle(
         GetAopLocationOptionsQuery request, CancellationToken cancellationToken) =>
         await db.PalletPositions.AsNoTracking()
-            .Where(x => x.IsActive && x.Rack.IsActive && x.Rack.Warehouse.IsActive)
+            .Where(x => x.IsActive && !x.IsVirtual && x.Rack.IsActive && x.Rack.Warehouse.IsActive)
             .OrderBy(x => x.Rack.Warehouse.Code)
             .ThenBy(x => x.Rack.Code)
             .ThenBy(x => x.Column)
