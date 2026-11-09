@@ -117,6 +117,8 @@ app.UseForwardedHeaders(forwardedOptions);
 // Browser hardening headers on every response.
 app.Use(async (context, next) =>
 {
+    var nonce = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16));
+    context.Items["csp-nonce"] = nonce;
     context.Response.OnStarting(() =>
     {
         var headers = context.Response.Headers;
@@ -126,7 +128,7 @@ app.Use(async (context, next) =>
         headers["Permissions-Policy"] = "geolocation=(self), camera=(self), microphone=(), payment=()";
         headers["Cross-Origin-Opener-Policy"] = "same-origin";
         headers["Content-Security-Policy"] =
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+            $"default-src 'self'; script-src 'self' 'nonce-{nonce}'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
             "font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' ws: wss:; " +
             "worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
         return Task.CompletedTask;
