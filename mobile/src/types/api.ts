@@ -42,6 +42,8 @@ export const AllocationStatus = {
   Partial: 1,
   Failed: 2,
 } as const;
+// The const object and the union type deliberately share a name (enum-like pattern).
+// eslint-disable-next-line @typescript-eslint/no-redeclare
 export type AllocationStatus = (typeof AllocationStatus)[keyof typeof AllocationStatus];
 
 export interface InwardAllocationLineDto {
@@ -160,6 +162,7 @@ export const InwardSheetImportStatus = {
   SkippedDuplicateLrVehicleSource: 5,
   Error: 6,
 } as const;
+// eslint-disable-next-line @typescript-eslint/no-redeclare
 export type InwardSheetImportStatus = (typeof InwardSheetImportStatus)[keyof typeof InwardSheetImportStatus];
 
 export interface InwardSkippedLine {

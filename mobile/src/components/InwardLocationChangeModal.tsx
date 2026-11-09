@@ -28,6 +28,7 @@ export function InwardLocationChangeModal({ putawayId, token, onClose, onSubmit 
 
   useEffect(() => {
     if (!putawayId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset each time the modal opens/closes
       setOptions([]);
       setSelected(null);
       setReason("");

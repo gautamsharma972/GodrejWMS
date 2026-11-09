@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { setUnauthorizedHandler } from "../api/client";
 import { getWarehouses, login as loginRequest } from "../api/endpoints";
 import type { WarehouseOption } from "../types/api";
 
@@ -83,6 +84,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setWarehouses([]);
   }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      void logout();
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [logout]);
 
   const value = useMemo<AuthContextValue>(
     () => ({ isLoading, token, user, permissions: user?.permissions ?? [], warehouses, login, logout }),

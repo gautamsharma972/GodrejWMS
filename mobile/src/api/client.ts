@@ -4,6 +4,28 @@ import type { ApiFieldErrors } from "../types/api";
 // localhost works too. Override at build time if pointing at a deployed API instead.
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://10.0.2.2:5130";
 
+/** Release builds must talk to the API over HTTPS only (the token and credentials travel in these requests). Cleartext is
+ * allowed in development builds for the emulator / local API. */
+function assertSecureTransport(): void {
+  if (!__DEV__ && !API_BASE_URL.toLowerCase().startsWith("https://")) {
+    throw new ApiError(0, "This build is not configured with a secure (https) server address. Contact your administrator.");
+  }
+}
+
+let unauthorizedHandler: (() => void) | null = null;
+
+/** The auth provider registers a callback so a rejected token (user disabled, password/role changed, token expired) signs the
+ * user out instead of leaving them on screens that fail one request after another. */
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
+}
+
+function notifyIfUnauthorized(response: Response, hadToken: boolean): void {
+  if (response.status === 401 && hadToken) {
+    unauthorizedHandler?.();
+  }
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -47,6 +69,7 @@ async function parseErrorBody(response: Response): Promise<{ message: string; fi
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  assertSecureTransport();
   const headers: Record<string, string> = { Accept: "application/json" };
   if (options.token) {
     headers.Authorization = `Bearer ${options.token}`;
@@ -65,6 +88,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   });
 
   if (!response.ok) {
+    notifyIfUnauthorized(response, Boolean(options.token));
     const { message, fieldErrors } = await parseErrorBody(response);
     throw new ApiError(response.status, message, fieldErrors);
   }
@@ -80,11 +104,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
  * than a Blob so callers can hand them straight to expo-file-system's `File.write()` (SDK 58's
  * File/Directory API), which takes a Uint8Array/string, not a Blob. */
 export async function apiDownload(path: string, token: string | null): Promise<{ bytes: Uint8Array; fileName: string }> {
+  assertSecureTransport();
   const response = await fetch(buildUrl(path), {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 
   if (!response.ok) {
+    notifyIfUnauthorized(response, Boolean(token));
     const { message } = await parseErrorBody(response);
     throw new ApiError(response.status, message);
   }
@@ -98,6 +124,7 @@ export async function apiDownload(path: string, token: string | null): Promise<{
 }
 
 export async function apiUpload<T>(path: string, form: FormData, token: string | null): Promise<T> {
+  assertSecureTransport();
   const response = await fetch(buildUrl(path), {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -105,6 +132,7 @@ export async function apiUpload<T>(path: string, form: FormData, token: string |
   });
 
   if (!response.ok) {
+    notifyIfUnauthorized(response, Boolean(token));
     const { message, fieldErrors } = await parseErrorBody(response);
     throw new ApiError(response.status, message, fieldErrors);
   }
