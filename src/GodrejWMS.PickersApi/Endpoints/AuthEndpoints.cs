@@ -101,6 +101,7 @@ public static class AuthEndpoints
             return Results.Ok(new LoginResponse(token.AccessToken, token.ExpiresAt, user.Id, user.FullName, roleList, permissions));
         })
         .AllowAnonymous()
+        .RequireRateLimiting("login")
         .WithName("Login");
 
         return group;

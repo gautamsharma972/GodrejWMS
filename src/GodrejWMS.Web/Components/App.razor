@@ -29,15 +29,7 @@
     <script src="@Versioned(Assets["Components/Account/Shared/PasskeySubmit.razor.js"])" type="module"></script>
     <script src="@Versioned(Assets["js/app.js"])"></script>
     <script src="@Versioned(Assets["js/tour.js"])"></script>
-    <script>
-        if ("serviceWorker" in navigator) {
-            window.addEventListener("load", () => {
-                navigator.serviceWorker.register("/service-worker.js").catch((error) => {
-                    console.warn("Service worker registration failed:", error);
-                });
-            });
-        }
-    </script>
+    <script src="@Versioned("js/print-and-sw.js")"></script>
 </body>
 
 </html>

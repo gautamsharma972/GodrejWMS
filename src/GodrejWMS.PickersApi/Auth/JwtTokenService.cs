@@ -12,6 +12,8 @@ public sealed record TokenResult(string AccessToken, DateTimeOffset ExpiresAt);
 
 public sealed class JwtTokenService(IOptions<JwtOptions> options, UserManager<ApplicationUser> userManager)
 {
+    public const string SecurityStampClaim = "sstamp";
+
     private readonly JwtOptions _options = options.Value;
 
     public async Task<TokenResult> IssueTokenAsync(ApplicationUser user, CancellationToken cancellationToken = default)
@@ -24,6 +26,7 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options, UserManager<Ap
             new(ClaimTypes.NameIdentifier, user.Id),
             new(ClaimTypes.Name, user.UserName ?? user.Email ?? user.Id),
             new(ClaimTypes.Email, user.Email ?? string.Empty),
+            new(SecurityStampClaim, user.SecurityStamp ?? string.Empty),
             .. roles.Select(role => new Claim(ClaimTypes.Role, role)),
         ];
 

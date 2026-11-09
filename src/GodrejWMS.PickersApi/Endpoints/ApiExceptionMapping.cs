@@ -1,4 +1,5 @@
 using GodrejWMS.Application.Common.Exceptions;
+using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.PickersApi.Endpoints;
 
@@ -21,6 +22,11 @@ public static class ApiExceptionMapping
         catch (NotFoundException ex)
         {
             return Results.NotFound(new { message = ex.Message });
+        }
+        catch (DbUpdateException)
+        {
+            // Another user changed the same stock or location at the same moment (concurrency token / unique key).
+            return Results.Conflict(new { message = "This was just changed by another user. Please refresh and try again." });
         }
         catch (InvalidOperationException ex)
         {

@@ -17,6 +17,8 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
+
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .ReadFrom.Services(services)
@@ -55,6 +57,11 @@ builder.Services.ConfigureApplicationCookie(options =>
 {
     options.ExpireTimeSpan = idleTimeout;
     options.SlidingExpiration = true;
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    // Behind the TLS-terminating proxy the forwarded-proto header makes requests HTTPS, so Always is safe there;
+    // plain-HTTP local development keeps working.
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
 });
 
 builder.Services.AddAuthorization();
@@ -73,11 +80,58 @@ var app = builder.Build();
 // "https://...", which throws when redirecting after login. KnownNetworks/KnownProxies are
 // cleared because the proxy's address isn't a fixed, known value (e.g. a load balancer) - the
 // standard pattern for this deployment shape, per the ASP.NET Core docs on forwarded headers.
-app.UseForwardedHeaders(new ForwardedHeadersOptions
+var forwardedOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
-    KnownIPNetworks = { },
-    KnownProxies = { }
+    ForwardLimit = 1
+};
+// Trust forwarded headers only from the reverse proxy: loopback (same host) plus private networks by default, or exactly what
+// ForwardedHeaders:KnownProxies / KnownNetworks name. A client on a public address can no longer fake its IP or "HTTPS".
+forwardedOptions.KnownIPNetworks.Clear();
+forwardedOptions.KnownProxies.Clear();
+var configuredProxies = app.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [];
+var configuredNetworks = app.Configuration.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>() ?? [];
+foreach (var proxy in configuredProxies)
+{
+    forwardedOptions.KnownProxies.Add(System.Net.IPAddress.Parse(proxy));
+}
+
+foreach (var network in configuredNetworks)
+{
+    var parts = network.Split('/');
+    forwardedOptions.KnownIPNetworks.Add(new System.Net.IPNetwork(System.Net.IPAddress.Parse(parts[0]), int.Parse(parts[1])));
+}
+
+if (configuredProxies.Length == 0 && configuredNetworks.Length == 0)
+{
+    forwardedOptions.KnownProxies.Add(System.Net.IPAddress.Loopback);
+    forwardedOptions.KnownProxies.Add(System.Net.IPAddress.IPv6Loopback);
+    foreach (var (prefix, length) in new[] { ("10.0.0.0", 8), ("172.16.0.0", 12), ("192.168.0.0", 16), ("fc00::", 7) })
+    {
+        forwardedOptions.KnownIPNetworks.Add(new System.Net.IPNetwork(System.Net.IPAddress.Parse(prefix), length));
+    }
+}
+
+app.UseForwardedHeaders(forwardedOptions);
+
+// Browser hardening headers on every response.
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        var headers = context.Response.Headers;
+        headers["X-Content-Type-Options"] = "nosniff";
+        headers["X-Frame-Options"] = "DENY";
+        headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+        headers["Permissions-Policy"] = "geolocation=(self), camera=(self), microphone=(), payment=()";
+        headers["Cross-Origin-Opener-Policy"] = "same-origin";
+        headers["Content-Security-Policy"] =
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+            "font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' ws: wss:; " +
+            "worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+        return Task.CompletedTask;
+    });
+    await next();
 });
 
 // Configure the HTTP request pipeline.

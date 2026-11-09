@@ -12,6 +12,8 @@ public sealed record ChangeInwardPutawayLocationRequest(int NewPalletPositionId,
 
 public static class InwardNoPkmEndpoints
 {
+    private const long MaxImportBytes = 10 * 1024 * 1024;
+
     private const string XlsxContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
     public static RouteGroupBuilder MapInwardNoPkmEndpoints(this RouteGroupBuilder group)
@@ -32,6 +34,11 @@ public static class InwardNoPkmEndpoints
                 CancellationToken cancellationToken) =>
                 await ApiExceptionMapping.RunAsync(async () =>
                 {
+                    if (file.Length is 0 or > MaxImportBytes || !file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return Results.BadRequest(new { message = "Upload an .xlsx file of up to 10 MB." });
+                    }
+
                     await using var stream = new MemoryStream();
                     await file.CopyToAsync(stream, cancellationToken);
                     stream.Position = 0;
