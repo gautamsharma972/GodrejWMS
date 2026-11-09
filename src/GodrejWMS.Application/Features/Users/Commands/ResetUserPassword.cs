@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
@@ -11,6 +12,7 @@ namespace GodrejWMS.Application.Features.Users.Commands;
 /// warehouse, and never a Superadmin or Logistic Manager target (section 14.2) - validated here,
 /// server-side, on every call, independent of what the UI shows (section 14.3: "validate the
 /// target user's warehouse assignment on the backend every time a reset is requested").</summary>
+[RequiresPermission(PermissionKeys.Users.ResetPassword)]
 public sealed record ResetUserPasswordCommand(string UserId) : IRequest<string>;
 
 public sealed class ResetUserPasswordValidator : AbstractValidator<ResetUserPasswordCommand>

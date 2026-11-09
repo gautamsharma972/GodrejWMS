@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
@@ -8,6 +9,7 @@ namespace GodrejWMS.Application.Features.Plants.Commands;
 /// <summary>Deletes a plant. Pullout lines reference a plant only by free-text name (not a
 /// foreign key - see <see cref="GodrejWMS.Domain.Entities.PulloutTransaction.PlantName"/>), so
 /// there is nothing else to check before removing it.</summary>
+[RequiresPermission(PermissionKeys.Masters.Delete, PermissionKeys.Masters.Deactivate)]
 public sealed record DeletePlantCommand(int Id) : IRequest;
 
 public sealed class DeletePlantHandler(IApplicationDbContext db)

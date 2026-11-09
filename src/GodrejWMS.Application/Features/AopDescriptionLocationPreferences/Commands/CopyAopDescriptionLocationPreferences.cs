@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
@@ -10,6 +11,7 @@ namespace GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Comma
 /// similar product family doesn't have to be mapped range by range. Each copied range goes through the
 /// same validation as a hand-entered one; a range the target can't take (it already exists, or overlaps
 /// one of the target's own active ranges) is skipped and reported, never silently dropped.</summary>
+[RequiresPermission(PermissionKeys.Masters.Create, PermissionKeys.Masters.Edit, PermissionKeys.Masters.Delete)]
 public sealed record CopyAopDescriptionLocationPreferencesCommand(int SourceAopDescriptionId, int TargetAopDescriptionId)
     : IRequest<CopyAopDescriptionLocationPreferencesResult>;
 

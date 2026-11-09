@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Application.Features.LocationTypes.Commands;
 
 /// <summary>Deletes a location type, unless any location still references it.</summary>
+[RequiresPermission(PermissionKeys.Masters.Delete, PermissionKeys.Masters.Deactivate)]
 public sealed record DeleteLocationTypeCommand(int Id) : IRequest;
 
 public sealed class DeleteLocationTypeHandler(IApplicationDbContext db)

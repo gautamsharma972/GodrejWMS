@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using MediatR;
@@ -11,6 +12,7 @@ public sealed record ZoneTypeAssignment(int Id, string DisplayName, string? Desc
 /// Updates the editable fields (name/description/sort/active) of the fixed set of zone types in
 /// one save. The Id/Code pairing is fixed - zone types can't be added or removed here.
 /// </summary>
+[RequiresPermission(PermissionKeys.Masters.Edit, PermissionKeys.Masters.Deactivate)]
 public sealed record UpdateZoneTypesCommand(IReadOnlyList<ZoneTypeAssignment> Assignments) : IRequest;
 
 public sealed class UpdateZoneTypesValidator : AbstractValidator<UpdateZoneTypesCommand>

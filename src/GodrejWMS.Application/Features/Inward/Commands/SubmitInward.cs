@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
@@ -12,6 +13,7 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// Submits one or more inward (goods-receipt) lines and reserves suggested put-away
 /// locations. Physical stock is written only after operator confirmation.
 /// </summary>
+[RequiresPermission(PermissionKeys.Inward.Create)]
 public sealed record SubmitInwardCommand(
     IReadOnlyList<SubmitInwardLine> Lines, int WarehouseId,
     string? VehicleNumber = null, string? LrNumber = null, string? ReceivedFrom = null,

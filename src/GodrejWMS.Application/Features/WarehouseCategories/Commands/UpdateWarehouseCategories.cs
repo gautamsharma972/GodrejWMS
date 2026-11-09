@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using MediatR;
@@ -7,6 +8,7 @@ namespace GodrejWMS.Application.Features.WarehouseCategories.Commands;
 
 public sealed record WarehouseCategoryAssignment(int Id, string Code, string Name, string? Description, bool IsActive);
 
+[RequiresPermission(PermissionKeys.Masters.Edit, PermissionKeys.Masters.Deactivate)]
 public sealed record UpdateWarehouseCategoriesCommand(IReadOnlyList<WarehouseCategoryAssignment> Assignments) : IRequest;
 
 public sealed class UpdateWarehouseCategoriesValidator : AbstractValidator<UpdateWarehouseCategoriesCommand>

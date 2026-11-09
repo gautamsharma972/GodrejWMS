@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
@@ -8,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Application.Features.Racks.Commands;
 
 /// <summary>Updates location master fields for a pallet position/location.</summary>
+[RequiresPermission(PermissionKeys.Inventory.ManageLocations, PermissionKeys.Inventory.ManageRacks)]
 public sealed record UpdatePalletPositionLabelCommand(
     int PalletPositionId,
     string? FlatLabel,

@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
@@ -6,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.Plants.Commands;
 
+[RequiresPermission(PermissionKeys.Masters.Create)]
 public sealed record CreatePlantCommand(string Code, string Name, int? PlantTypeId, string? Description) : IRequest<int>;
 
 public sealed class CreatePlantValidator : AbstractValidator<CreatePlantCommand>

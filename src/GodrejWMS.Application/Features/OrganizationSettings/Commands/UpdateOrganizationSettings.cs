@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
@@ -6,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.OrganizationSettings.Commands;
 
+[RequiresRole(KnownRoles.PlatformAdmin)]
 public sealed record UpdateOrganizationSettingsCommand(int? MaxUsers, int? MaxWarehouses) : IRequest;
 
 public sealed class UpdateOrganizationSettingsValidator : AbstractValidator<UpdateOrganizationSettingsCommand>

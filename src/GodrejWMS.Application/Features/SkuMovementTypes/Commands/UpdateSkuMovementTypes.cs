@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using MediatR;
@@ -11,6 +12,7 @@ public sealed record SkuMovementTypeAssignment(int Id, string DisplayName, strin
 /// Updates the editable fields (name/description/sort/active) of the fixed set of SKU movement
 /// types in one save. The Id/Code pairing is fixed - types can't be added or removed here.
 /// </summary>
+[RequiresPermission(PermissionKeys.Masters.Edit, PermissionKeys.Masters.Deactivate)]
 public sealed record UpdateSkuMovementTypesCommand(IReadOnlyList<SkuMovementTypeAssignment> Assignments) : IRequest;
 
 public sealed class UpdateSkuMovementTypesValidator : AbstractValidator<UpdateSkuMovementTypesCommand>

@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.Inward.Dtos;
@@ -12,6 +13,7 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// sheet here - every row's PKM is ignored entirely and routed through
 /// <see cref="SubmitInwardWithoutPkmCommand"/> instead, landing on empty pallet positions only.
 /// Everything else (one GRN per order sheet, both duplicate-safety rules) is identical.</summary>
+[RequiresPermission(PermissionKeys.Inward.Create)]
 public sealed record ImportInwardWorkbookWithoutPkmCommand(Stream FileStream, int WarehouseId) : IRequest<IReadOnlyList<InwardSheetImportOutcome>>;
 
 public sealed class ImportInwardWorkbookWithoutPkmValidator : AbstractValidator<ImportInwardWorkbookWithoutPkmCommand>

@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
@@ -14,6 +15,7 @@ namespace GodrejWMS.Application.Features.InventoryMovement.Commands;
 /// independently validated and processed") via <see cref="IInventoryMovementService"/>, so one
 /// line failing (e.g. a concurrent capacity change) never blocks the others in the same batch.
 /// </summary>
+[RequiresPermission(PermissionKeys.Inventory.Move)]
 public sealed record ConfirmInventoryMovementCommand(
     IReadOnlyList<InventoryMovementLineInput> Lines,
     int ReasonId) : IRequest<IReadOnlyList<InventoryMovementLineResultDto>>;

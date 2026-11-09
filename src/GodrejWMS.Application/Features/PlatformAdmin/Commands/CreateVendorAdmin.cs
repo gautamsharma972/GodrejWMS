@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
@@ -8,6 +9,7 @@ namespace GodrejWMS.Application.Features.PlatformAdmin.Commands;
 /// <summary>Creates another Platform Admin (vendor-only) account - a break-glass capability only
 /// an existing Platform Admin can use, entirely separate from the client-facing
 /// CreateUserCommand/role-assignment flow, which rejects "Platform Admin" as a target role.</summary>
+[RequiresRole(KnownRoles.PlatformAdmin)]
 public sealed record CreateVendorAdminCommand(string Email, string FullName) : IRequest<CreateVendorAdminResult>;
 
 public sealed record CreateVendorAdminResult(string UserId, string TemporaryPassword);

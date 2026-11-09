@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using System.Text.Json;
 using FluentValidation;
 using GodrejWMS.Application.Common;
@@ -14,6 +15,7 @@ namespace GodrejWMS.Application.Features.Pullout.Commands;
 
 public sealed record PulloutPickSource(int PalletPositionId, string MfgMonthLabel, decimal QuantityBoxes);
 
+[RequiresPermission(PermissionKeys.Pullout.Edit, PermissionKeys.Pullout.Pick)]
 public sealed record ChangePulloutPickLocationCommand(
     string ReferenceNumber,
     long MaterialNumber,

@@ -16,6 +16,7 @@ public static class DependencyInjection
         services.AddMediatR(cfg =>
         {
             cfg.RegisterServicesFromAssembly(assembly);
+            cfg.AddOpenBehavior(typeof(AuthorizationBehaviour<,>));
             cfg.AddOpenBehavior(typeof(ValidationBehaviour<,>));
         });
 

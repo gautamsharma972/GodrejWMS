@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.Inward.Dtos;
@@ -6,6 +7,7 @@ using MediatR;
 namespace GodrejWMS.Application.Features.Inward.Commands;
 
 /// <summary>Bulk inward upload: parses an "inward" sheet-shaped Excel file, then delegates to <see cref="SubmitInwardCommand"/>.</summary>
+[RequiresPermission(PermissionKeys.Inward.Create)]
 public sealed record ImportInwardFromExcelCommand(Stream FileStream, int WarehouseId) : IRequest<InwardResultDto>;
 
 public sealed class ImportInwardFromExcelValidator : AbstractValidator<ImportInwardFromExcelCommand>

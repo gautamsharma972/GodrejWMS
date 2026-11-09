@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Application.Features.States.Commands;
 
 /// <summary>Deletes a state, unless it has dependent cities.</summary>
+[RequiresPermission(PermissionKeys.Masters.Delete, PermissionKeys.Masters.Deactivate)]
 public sealed record DeleteStateCommand(int Id) : IRequest;
 
 public sealed class DeleteStateHandler(IApplicationDbContext db)

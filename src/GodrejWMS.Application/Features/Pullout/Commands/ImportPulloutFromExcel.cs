@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.Pullout.Dtos;
@@ -6,6 +7,7 @@ using MediatR;
 namespace GodrejWMS.Application.Features.Pullout.Commands;
 
 /// <summary>Bulk pullout upload: parses a "Format inventory pullout-upload" shaped Excel file, then delegates to <see cref="SubmitPulloutCommand"/>.</summary>
+[RequiresPermission(PermissionKeys.Pullout.Create)]
 public sealed record ImportPulloutFromExcelCommand(Stream FileStream, int WarehouseId) : IRequest<PulloutResultDto>;
 
 public sealed class ImportPulloutFromExcelValidator : AbstractValidator<ImportPulloutFromExcelCommand>

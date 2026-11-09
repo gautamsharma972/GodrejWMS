@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
@@ -9,6 +10,7 @@ namespace GodrejWMS.Application.Features.Warehouses.Commands;
 /// <summary>Deletes a warehouse, unless it has racks (and therefore locations/pallets/inventory
 /// transitively) or inward/pullout/adjustment transaction history - per spec 2.5, deactivate
 /// instead in that case.</summary>
+[RequiresPermission(PermissionKeys.Masters.Delete, PermissionKeys.Masters.Deactivate)]
 public sealed record DeleteWarehouseCommand(int Id) : IRequest;
 
 public sealed class DeleteWarehouseHandler(IApplicationDbContext db)

@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
@@ -6,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.DesignTypes.Commands;
 
+[RequiresPermission(PermissionKeys.Masters.Create)]
 public sealed record CreateDesignTypeCommand(string Code, string? Description, bool RequiresGroundFloor = false) : IRequest<int>;
 
 public sealed class CreateDesignTypeValidator : AbstractValidator<CreateDesignTypeCommand>

@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
@@ -18,6 +19,7 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// flagged <see cref="InwardTransaction.IsPkmless"/> so it's recognizable wherever a non-Picker
 /// reviews pending GRNs, and cannot be confirmed into real stock until a real PKM is assigned (see
 /// <see cref="InwardPutawayConfirmationLogic"/>) - that assignment flow is a later piece of work.</summary>
+[RequiresPermission(PermissionKeys.Inward.Create)]
 public sealed record SubmitInwardWithoutPkmCommand(
     IReadOnlyList<SubmitInwardWithoutPkmLine> Lines, int WarehouseId,
     string? VehicleNumber = null, string? LrNumber = null, string? ReceivedFrom = null,

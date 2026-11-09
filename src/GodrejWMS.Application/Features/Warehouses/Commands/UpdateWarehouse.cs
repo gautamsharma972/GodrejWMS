@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.Warehouses.Commands;
 
+[RequiresPermission(PermissionKeys.Masters.Edit, PermissionKeys.Masters.Deactivate)]
 public sealed record UpdateWarehouseCommand(
     int Id, string Code, string Name, int WarehouseCategoryId, int CityId, string? Address,
     bool AllowPkmMixing, bool IsActive) : IRequest;
@@ -52,6 +54,7 @@ public sealed class UpdateWarehouseHandler(IApplicationDbContext db)
 }
 
 /// <summary>Updates only the inward PKM-mixing policy from Warehouse Master's quick switch.</summary>
+[RequiresPermission(PermissionKeys.Masters.Edit)]
 public sealed record UpdateWarehousePkmMixingCommand(int Id, bool AllowPkmMixing) : IRequest;
 
 public sealed class UpdateWarehousePkmMixingHandler(IApplicationDbContext db)

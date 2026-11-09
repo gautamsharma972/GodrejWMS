@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using MediatR;
@@ -8,6 +9,7 @@ namespace GodrejWMS.Application.Features.Plants.Commands;
 public sealed record PlantAssignment(int Id, string Code, string Name, int? PlantTypeId, string? Description, bool IsActive);
 
 /// <summary>Updates the editable fields of existing plants in one save.</summary>
+[RequiresPermission(PermissionKeys.Masters.Edit, PermissionKeys.Masters.Deactivate)]
 public sealed record UpdatePlantsCommand(IReadOnlyList<PlantAssignment> Assignments) : IRequest;
 
 public sealed class UpdatePlantsValidator : AbstractValidator<UpdatePlantsCommand>

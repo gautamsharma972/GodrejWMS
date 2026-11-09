@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Exceptions;
@@ -10,6 +11,7 @@ namespace GodrejWMS.Application.Features.PlatformAdmin.Commands;
 /// <summary>Sets one warehouse's Picker-login geofence - only reachable from the hidden Platform
 /// Admin screen. The client-facing Warehouses CRUD (UpdateWarehouseCommand) never touches these
 /// fields, so a client admin can never see or change them.</summary>
+[RequiresRole(KnownRoles.PlatformAdmin)]
 public sealed record UpdateWarehouseGeofenceCommand(
     int WarehouseId, bool GeofenceEnabled, double? GeofenceLatitude, double? GeofenceLongitude, int? GeofenceRadiusMeters) : IRequest;
 

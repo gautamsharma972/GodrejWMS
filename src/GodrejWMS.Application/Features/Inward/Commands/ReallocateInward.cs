@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
@@ -18,6 +19,7 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// whole GRN from scratch. Already-allocated lines and already-confirmed put-aways are untouched;
 /// this only ever adds new reservations to cover the remaining gap.
 /// </summary>
+[RequiresPermission(PermissionKeys.Inward.Reallocate)]
 public sealed record ReallocateInwardCommand(int TransactionId) : IRequest<InwardResultDto>;
 
 public sealed class ReallocateInwardValidator : AbstractValidator<ReallocateInwardCommand>

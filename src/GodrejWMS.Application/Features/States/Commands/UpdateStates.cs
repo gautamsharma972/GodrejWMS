@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using MediatR;
@@ -7,6 +8,7 @@ namespace GodrejWMS.Application.Features.States.Commands;
 
 public sealed record StateAssignment(int Id, string Code, string Name, int RegionId, bool IsActive);
 
+[RequiresPermission(PermissionKeys.Masters.Edit, PermissionKeys.Masters.Deactivate)]
 public sealed record UpdateStatesCommand(IReadOnlyList<StateAssignment> Assignments) : IRequest;
 
 public sealed class UpdateStatesValidator : AbstractValidator<UpdateStatesCommand>

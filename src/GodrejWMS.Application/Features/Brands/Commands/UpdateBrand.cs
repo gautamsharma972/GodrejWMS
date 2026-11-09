@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.Brands.Commands;
 
+[RequiresPermission(PermissionKeys.Masters.Edit, PermissionKeys.Masters.Deactivate)]
 public sealed record UpdateBrandCommand(int Id, string Code, string? Description, bool IsActive) : IRequest;
 
 public sealed class UpdateBrandValidator : AbstractValidator<UpdateBrandCommand>

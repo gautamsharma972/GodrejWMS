@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
@@ -13,6 +14,7 @@ namespace GodrejWMS.Application.Features.Pullout.Commands;
 /// reduced real <see cref="StockBatch"/> inventory, and undoing that is a different problem (a
 /// return/reversal), not a rejection of the request.
 /// </summary>
+[RequiresPermission(PermissionKeys.Pullout.Reject)]
 public sealed record RejectPulloutCommand(string ReferenceNumber, string Reason) : IRequest<Unit>;
 
 public sealed class RejectPulloutValidator : AbstractValidator<RejectPulloutCommand>

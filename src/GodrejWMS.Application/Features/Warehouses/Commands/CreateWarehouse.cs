@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
@@ -6,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.Warehouses.Commands;
 
+[RequiresPermission(PermissionKeys.Masters.Create)]
 public sealed record CreateWarehouseCommand(
     string Code, string Name, int WarehouseCategoryId, int CityId, string? Address, bool AllowPkmMixing = true) : IRequest<int>;
 

@@ -17,6 +17,7 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// the operator confirms it. Confirmed put-aways already have stock booked and can no longer be
 /// moved this way. A reason is mandatory since this always overrides the engine's own recommendation.
 /// </summary>
+[RequiresPermission(PermissionKeys.Inward.Edit, PermissionKeys.Inward.Putaway)]
 public sealed record ChangeInwardPutawayLocationCommand(
     int PutawayId,
     int NewPalletPositionId,

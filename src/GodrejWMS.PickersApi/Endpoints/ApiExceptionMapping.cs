@@ -23,6 +23,10 @@ public static class ApiExceptionMapping
         {
             return Results.NotFound(new { message = ex.Message });
         }
+        catch (ForbiddenAccessException ex)
+        {
+            return Results.Json(new { message = ex.Message }, statusCode: StatusCodes.Status403Forbidden);
+        }
         catch (DbUpdateException)
         {
             // Another user changed the same stock or location at the same moment (concurrency token / unique key).

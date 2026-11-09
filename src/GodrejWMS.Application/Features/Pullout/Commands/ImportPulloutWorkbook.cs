@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.Pullout.Dtos;
@@ -13,6 +14,7 @@ namespace GodrejWMS.Application.Features.Pullout.Commands;
 /// See <see cref="IExcelService.ReadPulloutWorkbook"/> for the exact per-sheet layout this expects.
 /// One bad sheet (e.g. a material code not in Material Master) is reported as an error for that
 /// sheet only - every other sheet in the same upload is still processed.</summary>
+[RequiresPermission(PermissionKeys.Pullout.Create)]
 public sealed record ImportPulloutWorkbookCommand(Stream FileStream, int WarehouseId) : IRequest<IReadOnlyList<PulloutSheetImportOutcome>>;
 
 public sealed class ImportPulloutWorkbookValidator : AbstractValidator<ImportPulloutWorkbookCommand>

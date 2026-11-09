@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
@@ -12,6 +13,7 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// reserved, and leaves the GRN's "could not be allocated" list. Lines whose code is still unknown stay listed.
 /// <see cref="FallbackMfgMonth"/> (yyyymm) stands in for the Mfg Month of lines saved before it was recorded; it is
 /// ignored for a no-PKM GRN.</summary>
+[RequiresPermission(PermissionKeys.Inward.Create, PermissionKeys.Inward.Edit)]
 public sealed record RetryInwardUnsavedLinesCommand(int TransactionId, int? FallbackMfgMonth = null) : IRequest<RetryInwardUnsavedLinesResult>;
 
 public sealed record RetryInwardUnsavedLinesResult(int PlacedLines, decimal PlacedBoxes, int StillMissingLines, int NeedsPkmLines);

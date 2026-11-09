@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.Racks.Commands;
 
+[RequiresPermission(PermissionKeys.Inventory.ManageRacks)]
 public sealed record UpdateRackCommand(
     int RackId,
     string Code,
