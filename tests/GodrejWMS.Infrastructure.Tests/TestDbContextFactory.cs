@@ -20,6 +20,22 @@ internal static class TestDbContextFactory
         return new AppDbContext(options, new TestCurrentUser(), new TestClock());
     }
 
+    /// <summary>A context acting as the given user, so the warehouse/region query filters apply as they do in production
+    /// (the default context is a Superadmin and sees everything).</summary>
+    public static AppDbContext CreateAs(string databaseName, string userId, params string[] roles)
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(databaseName).Options;
+        return new AppDbContext(options, new ScopedUser(userId, roles), new TestClock());
+    }
+
+    private sealed class ScopedUser(string userId, string[] roles) : ICurrentUserService
+    {
+        public string? UserId => userId;
+        public string? UserName => userId;
+        public IReadOnlyList<string> Roles => roles;
+        public bool IsInRole(string role) => roles.Contains(role);
+    }
+
     private sealed class TestCurrentUser : ICurrentUserService
     {
         public string? UserId => "test-user";
