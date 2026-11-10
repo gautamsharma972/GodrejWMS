@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.Inward.Commands;
 
+[RequiresPermission(PermissionKeys.Inward.Edit, PermissionKeys.Inward.Putaway)]
 public sealed record ImportInwardPutawayLocationsCommand(
     int InwardTransactionId,
     Stream FileStream,

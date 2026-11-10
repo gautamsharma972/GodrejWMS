@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Commands;
 
+[RequiresPermission(PermissionKeys.Masters.Create, PermissionKeys.Masters.Edit, PermissionKeys.Masters.Delete)]
 public sealed record CreateAopDescriptionLocationPreferenceCommand(
     int AopDescriptionId,
     int FromPalletPositionId,
@@ -48,6 +50,7 @@ public sealed class CreateAopDescriptionLocationPreferenceHandler(
     }
 }
 
+[RequiresPermission(PermissionKeys.Masters.Create, PermissionKeys.Masters.Edit, PermissionKeys.Masters.Delete)]
 public sealed record UpdateAopDescriptionLocationPreferenceCommand(
     int Id,
     int AopDescriptionId,
@@ -90,6 +93,7 @@ public sealed class UpdateAopDescriptionLocationPreferenceHandler(
     }
 }
 
+[RequiresPermission(PermissionKeys.Masters.Create, PermissionKeys.Masters.Edit, PermissionKeys.Masters.Delete)]
 public sealed record DeleteAopDescriptionLocationPreferenceCommand(int Id) : IRequest;
 
 public sealed class DeleteAopDescriptionLocationPreferenceHandler(IApplicationDbContext db)

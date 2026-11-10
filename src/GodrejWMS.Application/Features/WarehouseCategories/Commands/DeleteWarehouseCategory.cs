@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Application.Features.WarehouseCategories.Commands;
 
 /// <summary>Deletes a warehouse category, unless any warehouse still references it (per spec 2.1: "prevent deletion of categories that are already referenced by warehouses").</summary>
+[RequiresPermission(PermissionKeys.Masters.Delete, PermissionKeys.Masters.Deactivate)]
 public sealed record DeleteWarehouseCategoryCommand(int Id) : IRequest;
 
 public sealed class DeleteWarehouseCategoryHandler(IApplicationDbContext db)

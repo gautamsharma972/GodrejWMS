@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
@@ -8,6 +9,7 @@ namespace GodrejWMS.Application.Features.Regions.Commands;
 
 /// <summary>Deletes a region, unless it has dependent states (per spec 2.2: "prevent deletion of
 /// regions containing dependent states, cities, warehouses, or operational records").</summary>
+[RequiresPermission(PermissionKeys.Masters.Delete, PermissionKeys.Masters.Deactivate)]
 public sealed record DeleteRegionCommand(int Id) : IRequest;
 
 public sealed class DeleteRegionHandler(IApplicationDbContext db)

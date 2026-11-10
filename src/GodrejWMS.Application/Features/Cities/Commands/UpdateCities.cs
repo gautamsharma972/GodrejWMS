@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using MediatR;
@@ -7,6 +8,7 @@ namespace GodrejWMS.Application.Features.Cities.Commands;
 
 public sealed record CityAssignment(int Id, string Code, string Name, int StateId, bool IsActive);
 
+[RequiresPermission(PermissionKeys.Masters.Edit, PermissionKeys.Masters.Deactivate)]
 public sealed record UpdateCitiesCommand(IReadOnlyList<CityAssignment> Assignments) : IRequest;
 
 public sealed class UpdateCitiesValidator : AbstractValidator<UpdateCitiesCommand>

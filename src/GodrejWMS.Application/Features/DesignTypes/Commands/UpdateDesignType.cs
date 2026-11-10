@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.DesignTypes.Commands;
 
+[RequiresPermission(PermissionKeys.Masters.Edit, PermissionKeys.Masters.Deactivate)]
 public sealed record UpdateDesignTypeCommand(int Id, string Code, string? Description, bool IsActive, bool RequiresGroundFloor = false) : IRequest;
 
 public sealed class UpdateDesignTypeValidator : AbstractValidator<UpdateDesignTypeCommand>

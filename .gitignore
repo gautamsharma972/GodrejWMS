@@ -43,3 +43,6 @@ Thumbs.db
 
 ## Publish output
 publish/
+
+## Generated deliverables / business data exports (not source)
+outputs/

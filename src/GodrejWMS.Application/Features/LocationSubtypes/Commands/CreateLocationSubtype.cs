@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
@@ -6,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.LocationSubtypes.Commands;
 
+[RequiresPermission(PermissionKeys.Masters.Create)]
 public sealed record CreateLocationSubtypeCommand(string Code, string DisplayName, string? Description, int SortOrder) : IRequest<int>;
 
 public sealed class CreateLocationSubtypeValidator : AbstractValidator<CreateLocationSubtypeCommand>

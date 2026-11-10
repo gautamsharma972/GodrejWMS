@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.Inward.Dtos;
@@ -16,6 +17,7 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// <see cref="IExcelService.ReadInwardWorkbook"/> for the exact per-sheet layout this expects. One
 /// bad sheet is reported as an error for that sheet only - every other sheet in the same upload is
 /// still processed.</summary>
+[RequiresPermission(PermissionKeys.Inward.Create)]
 public sealed record ImportInwardWorkbookCommand(Stream FileStream, int WarehouseId) : IRequest<IReadOnlyList<InwardSheetImportOutcome>>;
 
 public sealed class ImportInwardWorkbookValidator : AbstractValidator<ImportInwardWorkbookCommand>

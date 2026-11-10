@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.Locations.Dtos;
@@ -6,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.Locations.Commands;
 
+[RequiresPermission(PermissionKeys.Inventory.ManageLocations)]
 public sealed record ImportLocationsFromExcelCommand(Stream FileStream) : IRequest<ImportLocationsResult>;
 
 public sealed class ImportLocationsFromExcelValidator : AbstractValidator<ImportLocationsFromExcelCommand>

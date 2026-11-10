@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
@@ -18,6 +19,7 @@ namespace GodrejWMS.Application.Features.Pullout.Commands;
 /// <paramref name="RefreshReference"/> are null) - they're persisted on the transaction then, and
 /// every later confirm/refresh call reads them back from there, so they don't need to be (and
 /// aren't) re-sent.</summary>
+[RequiresPermission(PermissionKeys.Pullout.Create, PermissionKeys.Pullout.Edit, PermissionKeys.Pullout.Confirm)]
 public sealed record SubmitPulloutCommand(IReadOnlyList<SubmitPulloutLine> Lines,
     PulloutResultDto? ConfirmedPreview = null, string? RefreshReference = null,
     PulloutLoadingSheetFieldsDto? HeaderFields = null, int? WarehouseId = null,

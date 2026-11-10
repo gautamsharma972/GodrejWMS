@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Application.Features.Materials.Commands;
 
 /// <summary>Bulk-imports/updates materials from a MaterialMaster-shaped Excel upload.</summary>
+[RequiresPermission(PermissionKeys.Masters.Create, PermissionKeys.Masters.Edit)]
 public sealed record ImportMaterialsFromExcelCommand(Stream FileStream) : IRequest<ImportMaterialsResult>;
 
 public sealed record ImportMaterialsResult(int Created, int Updated, IReadOnlyList<string> Errors);

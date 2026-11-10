@@ -19,6 +19,7 @@ export function PalletPositionModal({ locationCode, token, onClose }: Props) {
 
   useEffect(() => {
     if (!locationCode) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset each time the modal opens/closes
       setData(null);
       return;
     }

@@ -14,6 +14,7 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 
 public sealed record InwardPutawayDestination(int PalletPositionId, decimal QuantityBoxes);
 
+[RequiresPermission(PermissionKeys.Inward.Edit, PermissionKeys.Inward.Putaway)]
 public sealed record ChangeInwardPutawayAllocationsCommand(
     int PutawayId,
     IReadOnlyList<InwardPutawayDestination> Destinations,

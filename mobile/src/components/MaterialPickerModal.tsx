@@ -22,6 +22,7 @@ export function MaterialPickerModal({ visible, token, onClose, onSelect }: Props
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset each time the modal opens/closes
     setIsLoading(true);
     const timer = setTimeout(async () => {
       try {

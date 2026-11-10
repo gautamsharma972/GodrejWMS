@@ -16,6 +16,7 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// complete plan is validated before any tracked entity is changed, and one SaveChanges call
 /// makes the reassignment atomic.
 /// </summary>
+[RequiresPermission(PermissionKeys.Inward.Edit, PermissionKeys.Inward.Putaway)]
 public sealed record ChangeInwardPutawayRackCommand(
     IReadOnlyCollection<int> PutawayIds,
     string RackCode,

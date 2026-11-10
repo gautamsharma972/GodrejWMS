@@ -61,6 +61,7 @@ export function PulloutPickLocationChangeModal({ pick, mode, token, onClose, onS
 
   useEffect(() => {
     if (!pick) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset each time the modal opens/closes
       setOptions([]);
       setExtraSplits([]);
       setMoveSplit(null);

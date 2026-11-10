@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="@Versioned(Assets["lib/bootstrap-icons/bootstrap-icons.min.css"])" />
     <link rel="stylesheet" href="@Versioned(Assets["app.css"])" />
     <link rel="stylesheet" href="@Versioned("GodrejWMS.Web.styles.css")" />
-    <ImportMap />
+    <ImportMap nonce="@CspNonce" />
     <link rel="icon" type="image/png" href="favicon.png" />
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#2563eb" />
@@ -29,15 +29,7 @@
     <script src="@Versioned(Assets["Components/Account/Shared/PasskeySubmit.razor.js"])" type="module"></script>
     <script src="@Versioned(Assets["js/app.js"])"></script>
     <script src="@Versioned(Assets["js/tour.js"])"></script>
-    <script>
-        if ("serviceWorker" in navigator) {
-            window.addEventListener("load", () => {
-                navigator.serviceWorker.register("/service-worker.js").catch((error) => {
-                    console.warn("Service worker registration failed:", error);
-                });
-            });
-        }
-    </script>
+    <script src="@Versioned("js/print-and-sw.js")"></script>
 </body>
 
 </html>
@@ -47,6 +39,9 @@
 
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
+
+    // Per-request nonce set by the security-headers middleware; the import map is the one inline script the framework emits.
+    private string? CspNonce => HttpContext?.Items["csp-nonce"] as string;
 
     private static string Versioned(string assetUrl) => $"{assetUrl}?v={StaticAssetRevision}";
 

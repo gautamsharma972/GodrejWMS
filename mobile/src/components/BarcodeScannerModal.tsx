@@ -29,6 +29,7 @@ export function BarcodeScannerModal({ visible, title = "Scan location", onClose,
   useEffect(() => {
     if (visible) {
       lockedRef.current = false;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset each time the modal opens/closes
       setNotRecognized(null);
       if (!permission?.granted) requestPermission();
     }

@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using MediatR;
@@ -7,6 +8,7 @@ namespace GodrejWMS.Application.Features.Regions.Commands;
 
 public sealed record RegionAssignment(int Id, string Code, string Name, string? Description, bool IsActive);
 
+[RequiresPermission(PermissionKeys.Masters.Edit, PermissionKeys.Masters.Deactivate)]
 public sealed record UpdateRegionsCommand(IReadOnlyList<RegionAssignment> Assignments) : IRequest;
 
 public sealed class UpdateRegionsValidator : AbstractValidator<UpdateRegionsCommand>

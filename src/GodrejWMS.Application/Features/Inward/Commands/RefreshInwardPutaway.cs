@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
@@ -14,6 +15,7 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// Confirmed stock is immutable. Lines are refreshed sequentially so each saved line reserves
 /// capacity before the next line is allocated.
 /// </summary>
+[RequiresPermission(PermissionKeys.Inward.Edit, PermissionKeys.Inward.Putaway, PermissionKeys.Inward.Reallocate)]
 public sealed record RefreshInwardPutawayCommand(int TransactionId) : IRequest<InwardResultDto>;
 
 public sealed class RefreshInwardPutawayValidator : AbstractValidator<RefreshInwardPutawayCommand>

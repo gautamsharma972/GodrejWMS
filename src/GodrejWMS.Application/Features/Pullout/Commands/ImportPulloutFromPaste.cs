@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Features.Pullout.Dtos;
@@ -9,6 +10,7 @@ namespace GodrejWMS.Application.Features.Pullout.Commands;
 /// copy-pasted straight out of Excel (tab-separated cells, as the clipboard carries them) instead
 /// of uploaded as a file - for the real-time case of several pullouts a day where re-saving and
 /// re-uploading a growing workbook each time is slower than just pasting the latest block.</summary>
+[RequiresPermission(PermissionKeys.Pullout.Create)]
 public sealed record ImportPulloutFromPasteCommand(string PastedText, int WarehouseId) : IRequest<PulloutResultDto>;
 
 public sealed class ImportPulloutFromPasteValidator : AbstractValidator<ImportPulloutFromPasteCommand>

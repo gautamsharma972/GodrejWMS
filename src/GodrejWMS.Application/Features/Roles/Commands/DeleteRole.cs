@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Interfaces;
@@ -5,6 +6,7 @@ using MediatR;
 
 namespace GodrejWMS.Application.Features.Roles.Commands;
 
+[RequiresPermission(PermissionKeys.Users.ConfigurePermissions)]
 public sealed record DeleteRoleCommand(string Name) : IRequest;
 
 public sealed class DeleteRoleValidator : AbstractValidator<DeleteRoleCommand>

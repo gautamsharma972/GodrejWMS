@@ -13,6 +13,7 @@ public sealed record RolePermissionAssignment(string RoleName, string Permission
 /// never actually applied even if submitted differently, since Superadmin always has every
 /// permission by definition (organization-wide access per spec section 5.1), so there is nothing
 /// to "lock yourself out of" here the way there would be for the other four roles.</summary>
+[RequiresPermission(PermissionKeys.Users.ConfigurePermissions)]
 public sealed record UpdateRolePermissionsCommand(IReadOnlyList<RolePermissionAssignment> Assignments) : IRequest;
 
 public sealed class UpdateRolePermissionsValidator : AbstractValidator<UpdateRolePermissionsCommand>

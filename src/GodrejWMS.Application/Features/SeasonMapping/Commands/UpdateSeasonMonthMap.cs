@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using MediatR;
@@ -8,6 +9,7 @@ namespace GodrejWMS.Application.Features.SeasonMapping.Commands;
 public sealed record SeasonMonthAssignment(int Month, int SeasonId);
 
 /// <summary>Replaces the season assigned to each of the 12 calendar months in one save.</summary>
+[RequiresPermission(PermissionKeys.Masters.Edit)]
 public sealed record UpdateSeasonMonthMapCommand(IReadOnlyList<SeasonMonthAssignment> Assignments) : IRequest;
 
 public sealed class UpdateSeasonMonthMapValidator : AbstractValidator<UpdateSeasonMonthMapCommand>

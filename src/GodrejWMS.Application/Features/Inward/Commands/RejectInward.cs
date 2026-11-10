@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
@@ -15,6 +16,7 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// inventory, and reversing that is a different problem (a return/reversal transaction), not a
 /// rejection of the receipt itself.
 /// </summary>
+[RequiresPermission(PermissionKeys.Inward.Reject)]
 public sealed record RejectInwardCommand(int TransactionId, string Reason) : IRequest<InwardResultDto>;
 
 public sealed class RejectInwardValidator : AbstractValidator<RejectInwardCommand>

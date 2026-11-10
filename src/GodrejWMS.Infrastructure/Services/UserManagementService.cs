@@ -163,12 +163,12 @@ public sealed class UserManagementService(UserManager<ApplicationUser> userManag
 
     private static string GenerateTemporaryPassword()
     {
-        // Meets the app's configured Identity password policy (min length 8, non-alphanumeric not
+        // Meets the app's configured Identity password policy (min length 10, digit + upper + lower, non-alphanumeric not
         // required - see AddInfrastructure) with margin: a random GUID-derived string is long,
         // mixed-case and digit-containing by construction, then a symbol is appended so it also
         // satisfies a stricter policy if that's ever tightened later.
         var raw = Convert.ToBase64String(RandomNumberGenerator.GetBytes(12))
             .Replace("+", "A").Replace("/", "B").Replace("=", "C");
-        return $"{raw}!1";
+        return $"{raw}aA!1"; // the fixed suffix guarantees a lower-case, an upper-case letter, a digit and a symbol
     }
 }

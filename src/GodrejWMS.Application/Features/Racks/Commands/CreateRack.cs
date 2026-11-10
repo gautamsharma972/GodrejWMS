@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Domain.Entities;
@@ -16,6 +17,7 @@ namespace GodrejWMS.Application.Features.Racks.Commands;
 /// workbook shows each rack can follow a different ad-hoc floor-labeling scheme, so it is edited
 /// manually per position rather than derived by a fixed formula.
 /// </summary>
+[RequiresPermission(PermissionKeys.Inventory.ManageRacks)]
 public sealed record CreateRackCommand(
     string Code,
     string Name,

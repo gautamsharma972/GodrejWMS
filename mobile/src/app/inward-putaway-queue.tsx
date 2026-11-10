@@ -25,12 +25,20 @@ export default function InwardPutawayQueueScreen() {
   const load = useCallback(
     async (refreshing = false) => {
       if (!token) return;
-      refreshing ? setIsRefreshing(true) : setIsLoading(true);
+      if (refreshing) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
       try {
         const page = await getInwardHistory(token, { search: search.trim() || undefined, pageSize: 50 });
         setItems(page.items);
       } finally {
-        refreshing ? setIsRefreshing(false) : setIsLoading(false);
+        if (refreshing) {
+          setIsRefreshing(false);
+        } else {
+          setIsLoading(false);
+        }
       }
     },
     [token, search],
