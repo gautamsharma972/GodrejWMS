@@ -47,7 +47,7 @@
 }
 
 /* Keep the browser at 100% while presenting the desktop workspace at the requested
-   90% density. The sidebar stays outside this scaled surface so sticky positioning,
+   87% density. The sidebar stays outside this scaled surface so sticky positioning,
    hover expansion, and responsive navigation remain stable. */
 @media (min-width: 861px) {
     .workspace {

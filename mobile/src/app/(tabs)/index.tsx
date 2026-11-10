@@ -59,6 +59,9 @@ export default function HomeScreen() {
   const canConfirmInward = permissions.includes("Inward.Confirm");
   // Supervisors confirm old pending pullouts; pickers work the picks of posted ones - both reach the Pullout queue.
   const canConfirmPullout = permissions.includes("Pullout.Confirm") || permissions.includes("Pullout.Pick");
+  // Mirrors the web app's naming: the picker-facing queue is "Picker Pick-list" (/pullout-picker),
+  // the supervisor's is "Pullout Queue" (/pullout/history) - same route on mobile, different label.
+  const isPickerPulloutRole = permissions.includes("Pullout.Pick");
 
   const [counts, setCounts] = useState<Record<string, number | null>>({});
 
@@ -87,7 +90,7 @@ export default function HomeScreen() {
     canConfirmPullout && {
       key: "pullout",
       icon: "car-outline",
-      label: "Pullout queue",
+      label: isPickerPulloutRole ? "Picker Pick-list" : "Pullout queue",
       route: "/pullout-queue",
       fetchCount: async (token: string) => (permissions.includes("Pullout.Pick")
         ? (await getPickerPulloutQueue(token, { pageSize: 1 })).totalCount
@@ -137,8 +140,8 @@ export default function HomeScreen() {
       icon: "car-outline",
       color: "#0d9488",
       softColor: "#ccfbf1",
-      title: "Pullout queue",
-      subtitle: "Confirm picks, change locations",
+      title: isPickerPulloutRole ? "Picker Pick-list" : "Pullout queue",
+      subtitle: isPickerPulloutRole ? "Confirm each pick as you take it" : "Confirm picks, change locations",
       route: "/pullout-queue",
     },
   ].filter(Boolean) as ActionTile[];

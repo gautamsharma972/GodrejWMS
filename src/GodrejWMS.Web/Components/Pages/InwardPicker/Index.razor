@@ -156,12 +156,18 @@
     @if (_isDetailOpen)
     {
         <div class="slide-over-backdrop" role="presentation" @onclick="CloseDetail">
-            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="picker-putaway-title" @onclick:stopPropagation="true">
-                <div class="slide-over-header">
+            <div class="slide-over-panel picker-putaway-panel" role="dialog" aria-modal="true" aria-labelledby="picker-putaway-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header picker-putaway-header">
                     <div>
                         <div class="eyebrow">Goods Receipt</div>
                         <h2 id="picker-putaway-title" class="slide-over-title">@(_detail?.ReferenceNumber ?? "Loading...")</h2>
-                        <p class="slide-over-subtitle">@(_detail is null ? "" : $"Vehicle {(string.IsNullOrWhiteSpace(_detail.VehicleNumber) ? "-" : _detail.VehicleNumber)} · LR {(string.IsNullOrWhiteSpace(_detail.LrNumber) ? "-" : _detail.LrNumber)}")</p>
+                        @if (_detail is not null)
+                        {
+                            <div class="picker-receipt-meta" aria-label="Receipt details">
+                                <span><i class="bi bi-truck" aria-hidden="true"></i> Vehicle @(string.IsNullOrWhiteSpace(_detail.VehicleNumber) ? "-" : _detail.VehicleNumber)</span>
+                                <span><i class="bi bi-receipt" aria-hidden="true"></i> LR @(string.IsNullOrWhiteSpace(_detail.LrNumber) ? "-" : _detail.LrNumber)</span>
+                            </div>
+                        }
                     </div>
                     <button type="button" class="slide-over-close" aria-label="Close detail" @onclick="CloseDetail">
                         <i class="bi bi-x-lg" aria-hidden="true"></i>
@@ -223,58 +229,88 @@
                         }
                         else
                         {
-                            <button type="button" class="btn btn-link px-0 mb-2" @onclick="BackToList">
+                            <button type="button" class="picker-back-link" @onclick="BackToList">
                                 <i class="bi bi-arrow-left" aria-hidden="true"></i> All locations
                             </button>
-                            <div class="border rounded-3 p-3">
-                                <div class="text-muted small">Suggested location</div>
-                                <div class="fs-3 fw-bold mb-3">@selected.Putaway.LocationCode</div>
-                                <div class="text-muted small">Material code</div>
-                                <div class="fw-semibold mb-2">@selected.Line.MaterialNumber</div>
-                                <div class="text-muted small">Material description</div>
-                                <div class="fw-semibold mb-3">@selected.Line.MaterialDescription</div>
+                            <div class="picker-putaway-workspace">
+                                <section class="picker-location-summary" aria-labelledby="suggested-location-heading">
+                                    <div class="picker-summary-icon" aria-hidden="true"><i class="bi bi-geo-alt"></i></div>
+                                    <div class="picker-summary-content">
+                                        <div id="suggested-location-heading" class="picker-section-label">Suggested location</div>
+                                        <div class="picker-suggested-location">@selected.Putaway.LocationCode</div>
+                                        <div class="picker-material-grid">
+                                            <div>
+                                                <span class="picker-detail-label">Material code</span>
+                                                <strong>@selected.Line.MaterialNumber</strong>
+                                            </div>
+                                            <div>
+                                                <span class="picker-detail-label">Description</span>
+                                                <strong>@selected.Line.MaterialDescription</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </section>
 
-                                <label class="text-muted small mb-1" for="picker-qty">Qty (boxes)</label>
-                                <input id="picker-qty" type="number" inputmode="decimal" min="0" step="any" class="form-control form-control-lg mb-3" @bind="_qty" @bind:event="oninput" />
+                                <section class="picker-putaway-form" aria-labelledby="putaway-details-heading">
+                                    <div class="picker-form-heading">
+                                        <div>
+                                            <h3 id="putaway-details-heading">Put-away details</h3>
+                                            <p>Confirm the quantity, PKM and destination.</p>
+                                        </div>
+                                        <span class="picker-required-note">All fields required</span>
+                                    </div>
 
-                                <div class="text-muted small mb-1">PKM</div>
-                                <div class="d-grid gap-2 mb-3" style="grid-template-columns: 1fr 1fr">
-                                    <select class="form-select form-select-lg" title="PKM year" @bind="_pkmYear">
-                                        <option value="0">Year</option>
-                                        @foreach (var year in YearOptions)
-                                        {
-                                            <option value="@year">@year</option>
-                                        }
-                                    </select>
-                                    <select class="form-select form-select-lg" title="PKM month" @bind="_pkmMonth">
-                                        <option value="0">Month</option>
-                                        @foreach (var month in MonthLabels)
-                                        {
-                                            <option value="@month.Value">@month.Label</option>
-                                        }
-                                    </select>
-                                </div>
+                                    <div class="picker-form-grid">
+                                        <div class="picker-field picker-quantity-field">
+                                            <label for="picker-qty">Quantity <span>(boxes)</span></label>
+                                            <input id="picker-qty" type="number" inputmode="decimal" min="0" step="any" class="form-control form-control-lg" @bind="_qty" @bind:event="oninput" />
+                                        </div>
 
-                                <div class="text-muted small mb-1">New location</div>
-                                <div class="mb-3">
-                                    <SearchableLocationSelect Options="_locationOptions" @bind-Value="_newLocationId" @bind-Value:after="OnLocationChanged"
-                                                              Placeholder="Search location, GIT or NO RACK" AriaLabel="Search new location" />
-                                </div>
+                                        <fieldset class="picker-field picker-pkm-field">
+                                            <legend>PKM</legend>
+                                            <div class="picker-pkm-inputs">
+                                                <select class="form-select form-select-lg" title="PKM year" aria-label="PKM year" @bind="_pkmYear">
+                                                    <option value="0">Year</option>
+                                                    @foreach (var year in YearOptions)
+                                                    {
+                                                        <option value="@year">@year</option>
+                                                    }
+                                                </select>
+                                                <select class="form-select form-select-lg" title="PKM month" aria-label="PKM month" @bind="_pkmMonth">
+                                                    <option value="0">Month</option>
+                                                    @foreach (var month in MonthLabels)
+                                                    {
+                                                        <option value="@month.Value">@month.Label</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                        </fieldset>
 
-                                @if (_submitError is not null)
-                                {
-                                    <div class="alert alert-danger" role="alert"><i class="bi bi-x-octagon" aria-hidden="true"></i> @_submitError</div>
-                                }
+                                        <div class="picker-field picker-location-field">
+                                            <label>New location</label>
+                                            <SearchableLocationSelect Options="_locationOptions" @bind-Value="_newLocationId" @bind-Value:after="OnLocationChanged"
+                                                                      Placeholder="Search location, GIT or NO RACK" AriaLabel="Search new location" />
+                                        </div>
+                                    </div>
 
-                                @if (_warning is not null)
-                                {
-                                    <div class="alert alert-warning" role="alert"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> @_warning</div>
-                                }
+                                    @if (_submitError is not null)
+                                    {
+                                        <div class="alert alert-danger" role="alert"><i class="bi bi-x-octagon" aria-hidden="true"></i> @_submitError</div>
+                                    }
 
-                                <button type="button" class="btn btn-primary btn-lg w-100" disabled="@(_submitting || !CanSubmit)" @onclick="SubmitAsync">
-                                    <i class="bi bi-check2-circle" aria-hidden="true"></i>
-                                    @(_submitting ? "Submitting..." : _warning is null ? "Submit" : "Submit anyway")
-                                </button>
+                                    @if (_warning is not null)
+                                    {
+                                        <div class="alert alert-warning" role="alert"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> @_warning</div>
+                                    }
+
+                                    <div class="picker-form-actions">
+                                        <button type="button" class="btn btn-outline-secondary btn-lg" @onclick="BackToList">Cancel</button>
+                                        <button type="button" class="btn btn-primary btn-lg picker-submit-button" disabled="@(_submitting || !CanSubmit)" @onclick="SubmitAsync">
+                                            <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                                            @(_submitting ? "Submitting..." : _warning is null ? "Submit location" : "Submit anyway")
+                                        </button>
+                                    </div>
+                                </section>
                             </div>
                         }
                     }

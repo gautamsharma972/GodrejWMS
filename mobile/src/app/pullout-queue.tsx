@@ -1,5 +1,5 @@
-import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useFocusEffect, useNavigation, useRouter } from "expo-router";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { getPickerPulloutQueue, getPulloutQueue } from "../api/endpoints";
 import { useAuth } from "../auth/AuthContext";
@@ -25,8 +25,16 @@ interface PulloutQueueItem {
 export default function PulloutQueueScreen() {
   const { token, permissions } = useAuth();
   const router = useRouter();
+  const navigation = useNavigation();
   // A picker works the posted pullouts' picks; a supervisor without the pick permission still sees the old pending ones.
   const isPicker = permissions.includes("Pullout.Pick");
+
+  // Matches the web app's naming: the picker's queue is "Picker Pick-list" (/pullout-picker page title),
+  // a supervisor's is "Pullout Queue" (/pullout/history) - same screen here, label follows the role.
+  useLayoutEffect(() => {
+    navigation.setOptions({ title: isPicker ? "Picker Pick-list" : "Pullout Queue" });
+  }, [navigation, isPicker]);
+
   const [search, setSearch] = useState("");
   const [items, setItems] = useState<PulloutQueueItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);

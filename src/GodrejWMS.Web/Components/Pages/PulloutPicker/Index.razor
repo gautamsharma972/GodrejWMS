@@ -138,8 +138,8 @@
     @if (_isDetailOpen)
     {
         <div class="slide-over-backdrop" role="presentation" @onclick="CloseDetail">
-            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="picker-picklist-title" @onclick:stopPropagation="true">
-                <div class="slide-over-header">
+            <div class="slide-over-panel pullout-pick-panel" role="dialog" aria-modal="true" aria-labelledby="picker-picklist-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header pullout-pick-header">
                     <div>
                         <div class="eyebrow">Pullout</div>
                         <h2 id="picker-picklist-title" class="slide-over-title">@(_detail?.ReferenceNumber ?? "Loading...")</h2>
@@ -195,80 +195,119 @@
                     else
                     {
                         var pick = _selected.Pick;
-                        <button type="button" class="btn btn-link px-0 mb-2" @onclick="BackToList"><i class="bi bi-arrow-left" aria-hidden="true"></i> All picks</button>
-                        <div class="border rounded-3 p-3">
-                            <div class="text-muted small">Pick from</div>
-                            <div class="fs-3 fw-bold mb-1">@pick.LocationCode @if (pick.IsVirtual) { <span class="status-pill info ms-1">Virtual</span> }</div>
-                            <div class="fw-semibold">@_selected.Line.MaterialNumber &middot; @_selected.Line.MaterialDescription</div>
-                            <div class="text-muted small mb-3">PKM @pick.MfgMonthLabel &middot; @pick.QuantityBoxes.ToString("0.###") boxes allocated &middot; the order line asks for @_selected.Line.RequestedQuantityBoxes.ToString("0.###")</div>
+                        <button type="button" class="pullout-pick-back" @onclick="BackToList"><i class="bi bi-arrow-left" aria-hidden="true"></i> All picks</button>
+                        <div class="pullout-pick-workspace">
+                            <section class="pullout-pick-summary" aria-label="Pick details">
+                                <div class="pullout-pick-location-icon" aria-hidden="true"><i class="bi bi-box-seam"></i></div>
+                                <div class="pullout-pick-summary-main">
+                                    <div class="pullout-pick-label">Pick from</div>
+                                    <div class="pullout-pick-location">@pick.LocationCode @if (pick.IsVirtual) { <span class="status-pill info">Virtual</span> }</div>
+                                    <div class="pullout-pick-material"><strong>@_selected.Line.MaterialNumber</strong><span>@_selected.Line.MaterialDescription</span></div>
+                                </div>
+                                <div class="pullout-pick-facts">
+                                    <div><span>PKM</span><strong>@pick.MfgMonthLabel</strong></div>
+                                    <div><span>Allocated</span><strong>@pick.QuantityBoxes.ToString("0.###") boxes</strong></div>
+                                    <div><span>Order asks</span><strong>@_selected.Line.RequestedQuantityBoxes.ToString("0.###") boxes</strong></div>
+                                </div>
+                            </section>
 
                             @if (_formError is not null)
                             {
                                 <div class="alert alert-danger" role="alert"><i class="bi bi-x-octagon" aria-hidden="true"></i> @_formError</div>
                             }
 
-                            <div class="btn-group w-100 mb-3" role="group" aria-label="What to do with this pick">
+                            <div class="btn-group pullout-pick-mode" role="group" aria-label="What to do with this pick">
                                 <button type="button" class="btn @(_changing ? "btn-outline-primary" : "btn-primary")" @onclick="() => _changing = false">Confirm pick</button>
                                 <button type="button" class="btn @(_changing ? "btn-primary" : "btn-outline-primary")" @onclick="StartChangeAsync">Change location</button>
                             </div>
 
                             @if (!_changing)
                             {
-                                <label class="text-muted small mb-1" for="picklist-qty">Quantity picked (boxes)</label>
-                                <input id="picklist-qty" type="number" inputmode="decimal" min="1" max="@MaxPickable" step="1" class="form-control form-control-lg mb-1"
-                                       @bind="_qty" @bind:event="oninput" @bind:after="OnQtyChangedAsync" />
-                                @if (_qty > pick.QuantityBoxes)
-                                {
-                                    <div class="small text-muted mb-2">@((_qty - pick.QuantityBoxes).ToString("0.###")) extra box(es) are taken from the stock still at @pick.LocationCode when you confirm the pick-list (up to @MaxPickable.ToString("0.###") here). Use Change location to take more from another location.</div>
-                                }
-                                else if (_qty > 0 && _qty < pick.QuantityBoxes)
-                                {
-                                    <div class="small text-muted mb-2">@((pick.QuantityBoxes - _qty).ToString("0.###")) box(es) not found go back to stock at @pick.LocationCode when you confirm the pick-list.</div>
-                                }
+                                <section class="pullout-pick-card pullout-quantity-card" aria-labelledby="pick-quantity-heading">
+                                    <div class="pullout-section-heading">
+                                        <div>
+                                            <h3 id="pick-quantity-heading">Confirm quantity</h3>
+                                            <p>Enter the number of boxes physically picked.</p>
+                                        </div>
+                                        <span class="pullout-step-badge">Required</span>
+                                    </div>
+                                    <label class="pullout-field-label" for="picklist-qty">Quantity picked <span>(boxes)</span></label>
+                                    <input id="picklist-qty" type="number" inputmode="decimal" min="1" max="@MaxPickable" step="1" class="form-control form-control-lg"
+                                           @bind="_qty" @bind:event="oninput" @bind:after="OnQtyChangedAsync" />
+                                    @if (_qty > pick.QuantityBoxes)
+                                    {
+                                        <div class="pullout-inline-note"><i class="bi bi-info-circle" aria-hidden="true"></i><span>@((_qty - pick.QuantityBoxes).ToString("0.###")) extra box(es) are taken from the stock still at @pick.LocationCode when you confirm the pick-list (up to @MaxPickable.ToString("0.###") here). Use Change location to take more from another location.</span></div>
+                                    }
+                                    else if (_qty > 0 && _qty < pick.QuantityBoxes)
+                                    {
+                                        <div class="pullout-inline-note"><i class="bi bi-info-circle" aria-hidden="true"></i><span>@((pick.QuantityBoxes - _qty).ToString("0.###")) box(es) not found go back to stock at @pick.LocationCode when you confirm the pick-list.</span></div>
+                                    }
+                                </section>
 
                                 @if (RemainingAfter > 0)
                                 {
-                                    <div class="mt-3">
-                                        <div class="fw-semibold mb-1">Move the remaining @RemainingAfter.ToString("0.###") box(es)? <span class="text-muted fw-normal">(optional)</span></div>
-                                        <div class="small text-muted mb-2">They stay at @pick.LocationCode unless you choose a location. Nothing moves until you confirm the pick-list, so you can still change your mind.</div>
-                                        <div class="d-grid gap-2 mb-2">
-                                            <button type="button" class="btn text-start border rounded-3 p-3 @(!_moveEnabled ? "btn-primary" : "btn-outline-secondary")" @onclick="() => _moveEnabled = false">
-                                                Leave them at @pick.LocationCode
+                                    <section class="pullout-pick-card pullout-remainder-card" aria-labelledby="remaining-boxes-heading">
+                                        <div class="pullout-section-heading">
+                                            <div>
+                                                <h3 id="remaining-boxes-heading">Move the remaining @RemainingAfter.ToString("0.###") box(es)?</h3>
+                                                <p>Leave them here or choose a destination. Stock moves only when the pick-list is confirmed.</p>
+                                            </div>
+                                            <span class="pullout-step-badge optional">Optional</span>
+                                        </div>
+                                        <div class="pullout-destination-list">
+                                            <button type="button" class="pullout-destination-option @(!_moveEnabled ? "selected" : null)" @onclick="() => _moveEnabled = false">
+                                                <span class="pullout-option-icon"><i class="bi bi-geo-alt" aria-hidden="true"></i></span>
+                                                <span class="pullout-option-copy"><strong>Leave at @pick.LocationCode</strong><small>Keep the remaining stock in its current location</small></span>
+                                                <span class="pullout-option-check"><i class="bi bi-check-lg" aria-hidden="true"></i></span>
                                             </button>
                                             @foreach (var suggestion in _suggestions)
                                             {
-                                                <button type="button" class="btn text-start border rounded-3 p-3 @(_moveEnabled && _destinationId == suggestion.PalletPositionId ? "btn-primary" : "btn-outline-secondary")"
+                                                <button type="button" class="pullout-destination-option @(_moveEnabled && _destinationId == suggestion.PalletPositionId ? "selected" : null)"
                                                         @onclick="() => ChooseDestination(suggestion.PalletPositionId)">
-                                                    <strong>@suggestion.LocationCode</strong>@(suggestion.IsVirtual ? " (virtual)" : "")<br />
-                                                    <span class="small">@suggestion.Reason</span>
+                                                    <span class="pullout-option-icon"><i class="bi bi-arrow-right" aria-hidden="true"></i></span>
+                                                    <span class="pullout-option-copy"><strong>@suggestion.LocationCode@(suggestion.IsVirtual ? " (virtual)" : "")</strong><small>@suggestion.Reason</small></span>
+                                                    <span class="pullout-option-check"><i class="bi bi-check-lg" aria-hidden="true"></i></span>
                                                 </button>
                                             }
                                         </div>
-                                        <label class="text-muted small mb-1">Or search another location</label>
-                                        <div class="mb-2">
+                                        <div class="pullout-other-location">
+                                            <span>Or choose another location</span>
                                             <SearchableLocationSelect Options="_locationOptions" @bind-Value="_otherDestinationId" @bind-Value:after="OnOtherDestinationChanged"
                                                                       Placeholder="Search location" AriaLabel="Search destination location" />
                                         </div>
                                         @if (_moveEnabled && _destinationId > 0)
                                         {
-                                            <label class="text-muted small mb-1" for="picklist-move">Boxes to move to @DestinationCode</label>
-                                            <input id="picklist-move" type="number" inputmode="decimal" min="1" max="@RemainingAfter" step="1" class="form-control form-control-lg mb-2" @bind="_moveQty" />
+                                            <div class="pullout-move-quantity">
+                                                <label class="pullout-field-label" for="picklist-move">Boxes to move to <strong>@DestinationCode</strong></label>
+                                                <input id="picklist-move" type="number" inputmode="decimal" min="1" max="@RemainingAfter" step="1" class="form-control form-control-lg" @bind="_moveQty" />
+                                            </div>
                                         }
-                                    </div>
+                                    </section>
                                 }
 
-                                <button type="button" class="btn btn-primary btn-lg w-100 mt-3" disabled="@(_submitting || _qty <= 0)" @onclick="ConfirmPickAsync">
-                                    <i class="bi bi-check2-circle" aria-hidden="true"></i>
-                                    @(_submitting ? "Saving..." : $"Confirm pick of {_qty:0.###}")
-                                </button>
-                                @if (_moveEnabled && _destinationId > 0 && RemainingAfter > 0)
-                                {
-                                    <div class="small text-muted mt-2">@_moveQty.ToString("0.###") box(es) will move to @DestinationCode when you confirm the pick-list.</div>
-                                }
+                                <div class="pullout-pick-actions">
+                                    <button type="button" class="btn btn-outline-secondary btn-lg" @onclick="BackToList">Cancel</button>
+                                    <div>
+                                        <button type="button" class="btn btn-primary btn-lg pullout-confirm-button" disabled="@(_submitting || _qty <= 0)" @onclick="ConfirmPickAsync">
+                                            <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                                            @(_submitting ? "Saving..." : $"Confirm pick of {_qty:0.###}")
+                                        </button>
+                                        @if (_moveEnabled && _destinationId > 0 && RemainingAfter > 0)
+                                        {
+                                            <div class="pullout-action-note">@_moveQty.ToString("0.###") box(es) will move to @DestinationCode when you confirm the pick-list.</div>
+                                        }
+                                    </div>
+                                </div>
                             }
                             else
                             {
-                                <div class="text-muted small mb-2">Take this pick from another location that holds the material.</div>
+                                <section class="pullout-pick-card pullout-change-card">
+                                <div class="pullout-section-heading">
+                                    <div>
+                                        <h3>Choose another location</h3>
+                                        <p>Take this pick from another location that holds the material.</p>
+                                    </div>
+                                </div>
                                 @if (_changeOptions is null)
                                 {
                                     <div class="loading-panel"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Loading locations...</div>
@@ -279,7 +318,7 @@
                                 }
                                 else
                                 {
-                                    <div class="d-grid gap-2 mb-3">
+                                    <div class="pullout-change-options">
                                         @foreach (var option in _changeOptions)
                                         {
                                             <button type="button" class="btn text-start border rounded-3 p-3 @(_changeTo == option ? "btn-primary" : "btn-outline-secondary")" disabled="@option.IsCurrent" @onclick="() => _changeTo = option">
@@ -299,6 +338,7 @@
                                         @(_submitting ? "Saving..." : _changeTo is null ? "Select a location" : $"Take from {_changeTo.LocationCode}")
                                     </button>
                                 }
+                                </section>
                             }
                         </div>
                     }

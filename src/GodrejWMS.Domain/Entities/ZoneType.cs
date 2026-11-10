@@ -17,7 +17,12 @@ public static class ZoneTypeIds
     public const int Reserve = 2;
     public const int Seasonal = 3;
     public const int DispatchNear = 4;
-    public const int Overflow = 5;
+
+    /// <summary>Deliberately far outside the normal auto-increment range: IDs 1-4 are the original
+    /// seeded zone types, but any ID just past them (e.g. 5) may already belong to a zone type a
+    /// warehouse admin created through the UI before this one was introduced, so Overflow can't
+    /// safely assume the next sequential ID is free.</summary>
+    public const int Overflow = 9000;
 }
 
 public static class ZoneTypeCodes

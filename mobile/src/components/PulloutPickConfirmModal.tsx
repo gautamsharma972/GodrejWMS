@@ -7,7 +7,7 @@ import { AppIcon } from "./ui/AppIcon";
 import { Button } from "./ui/Button";
 import { FullScreenModal } from "./ui/FullScreenModal";
 import { TextField } from "./ui/TextField";
-import { colors, radius, spacing, typography } from "../theme";
+import { colors, radius, shadow, spacing, typography } from "../theme";
 import type { ConfirmPickResult, PickRemainderDto, RelocationSuggestionDto } from "../types/api";
 import { errorPulse, lightTap, successPulse } from "../utils/haptics";
 
@@ -47,13 +47,26 @@ function Stepper({ value, min, max, onChange }: { value: number; min: number; ma
   };
   return (
     <View style={styles.stepper}>
-      <TouchableOpacity style={styles.stepButton} onPress={() => set(value - 1)} disabled={value <= min} accessibilityLabel="Decrease quantity">
+      <TouchableOpacity style={[styles.stepButton, value <= min && styles.stepButtonDisabled]} onPress={() => set(value - 1)} disabled={value <= min} accessibilityLabel="Decrease quantity">
         <AppIcon name="remove" size={26} color={value <= min ? colors.textMuted : colors.primary} />
       </TouchableOpacity>
-      <Text style={styles.stepValue}>{value}</Text>
-      <TouchableOpacity style={styles.stepButton} onPress={() => set(value + 1)} disabled={value >= max} accessibilityLabel="Increase quantity">
+      <View style={styles.stepValueWrap}>
+        <Text style={styles.stepValue}>{value}</Text>
+        <Text style={styles.stepUnit}>BOXES</Text>
+      </View>
+      <TouchableOpacity style={[styles.stepButton, value >= max && styles.stepButtonDisabled]} onPress={() => set(value + 1)} disabled={value >= max} accessibilityLabel="Increase quantity">
         <AppIcon name="add" size={26} color={value >= max ? colors.textMuted : colors.primary} />
       </TouchableOpacity>
+    </View>
+  );
+}
+
+function StepHeader({ number, title, optional = false }: { number: number; title: string; optional?: boolean }) {
+  return (
+    <View style={styles.stepHeader}>
+      <View style={styles.stepNumber}><Text style={styles.stepNumberText}>{number}</Text></View>
+      <Text style={styles.stepTitle}>{title}</Text>
+      {optional && <Text style={styles.optionalBadge}>OPTIONAL</Text>}
     </View>
   );
 }
@@ -161,64 +174,84 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
 
   return (
     <FullScreenModal visible title="Confirm pick" onClose={onClose}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
-          <Text style={styles.heroLabel}>PICK FROM</Text>
-          <Text style={styles.heroLocation}>{pick.locationCode}</Text>
-          {pick.isVirtual && <Text style={styles.virtualBadge}>Virtual overflow location</Text>}
-          <Text style={styles.heroMaterial}>{pick.materialNumber} · {pick.materialDescription}</Text>
-          <Text style={styles.heroMeta}>PKM {pick.mfgMonthLabel} · {planned} boxes allocated</Text>
+          <View style={styles.heroTop}>
+            <View style={styles.heroIcon}><AppIcon name="cube-outline" size={22} color={colors.primary} /></View>
+            <View style={styles.heroLocationWrap}>
+              <Text style={styles.heroLabel}>PICK FROM</Text>
+              <View style={styles.heroLocationRow}>
+                <Text style={styles.heroLocation}>{pick.locationCode}</Text>
+                {pick.isVirtual && <Text style={styles.virtualBadge}>VIRTUAL</Text>}
+              </View>
+            </View>
+          </View>
+          <View style={styles.heroDivider} />
+          <Text style={styles.heroMaterialNumber}>{pick.materialNumber}</Text>
+          <Text style={styles.heroMaterial}>{pick.materialDescription}</Text>
+          <View style={styles.heroMetaRow}>
+            <View style={styles.metaPill}><Text style={styles.metaPillLabel}>PKM</Text><Text style={styles.metaPillValue}>{pick.mfgMonthLabel}</Text></View>
+            <View style={styles.metaPill}><Text style={styles.metaPillValue}>{planned} boxes allocated</Text></View>
+          </View>
         </View>
 
         {error && <Text style={styles.error}>{error}</Text>}
 
-        <Text style={styles.step}>1 · Verify the location</Text>
-        {verified ? (
-          <View style={styles.okRow}>
-            <AppIcon name="checkmark-circle" size={22} color={colors.success} />
-            <Text style={styles.okText}>At {pick.locationCode}</Text>
-          </View>
-        ) : (
-          <>
-            <Button title="Scan location" size="lg" onPress={() => setScanning("verify")} icon={<AppIcon name="scan-outline" size={22} color={colors.textOnPrimary} />} />
-            <TextField
-              label="Or type the location code"
-              value={typedCode}
-              onChangeText={setTypedCode}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              size="lg"
-              placeholder={pick.locationCode}
-              onSubmitEditing={() => matches(typedCode) ? setVerified(true) : setError(`That is not ${pick.locationCode}.`)}
-            />
-            <Button
-              title="Verify"
-              variant="outline"
-              size="lg"
-              disabled={typedCode.trim().length === 0}
-              onPress={() => (matches(typedCode) ? (setError(null), setVerified(true)) : (errorPulse(), setError(`That is not ${pick.locationCode}.`)))}
-            />
-            <TouchableOpacity onPress={() => setVerified(true)} style={styles.skip}>
-              <Text style={styles.skipText}>Skip scanning</Text>
-            </TouchableOpacity>
-          </>
-        )}
+        <View style={styles.sectionCard}>
+          <StepHeader number={1} title="Verify the location" />
+          {verified ? (
+            <View style={styles.okRow}>
+              <View style={styles.okIcon}><AppIcon name="checkmark" size={18} color={colors.textOnPrimary} /></View>
+              <View>
+                <Text style={styles.okLabel}>LOCATION VERIFIED</Text>
+                <Text style={styles.okText}>You are at {pick.locationCode}</Text>
+              </View>
+            </View>
+          ) : (
+            <>
+              <Button title="Scan location" size="lg" onPress={() => setScanning("verify")} icon={<AppIcon name="scan-outline" size={22} color={colors.textOnPrimary} />} />
+              <View style={styles.orRow}><View style={styles.orLine} /><Text style={styles.orText}>OR ENTER CODE</Text><View style={styles.orLine} /></View>
+              <TextField
+                label="Location code"
+                value={typedCode}
+                onChangeText={setTypedCode}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                size="lg"
+                placeholder={pick.locationCode}
+                onSubmitEditing={() => matches(typedCode) ? setVerified(true) : setError(`That is not ${pick.locationCode}.`)}
+              />
+              <Button
+                title="Verify location"
+                variant="outline"
+                size="lg"
+                disabled={typedCode.trim().length === 0}
+                onPress={() => (matches(typedCode) ? (setError(null), setVerified(true)) : (errorPulse(), setError(`That is not ${pick.locationCode}.`)))}
+              />
+              <TouchableOpacity onPress={() => setVerified(true)} style={styles.skip}>
+                <Text style={styles.skipText}>Skip scanning</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
 
-        <Text style={styles.step}>2 · Quantity picked</Text>
-        <Stepper value={qty} min={1} max={planned + (remainder?.remainingBoxes ?? 0)} onChange={setQty} />
-        {qty > planned && (
-          <Text style={styles.hint}>
-            {qty - planned} extra box(es) are taken from the stock still at {pick.locationCode} when you confirm the pick-list. Use Change location to take more from another location.
-          </Text>
-        )}
-        {qty < planned && (
-          <Text style={styles.hint}>{planned - qty} box(es) not found go back to stock at {pick.locationCode} when you confirm the pick-list.</Text>
-        )}
+        <View style={styles.sectionCard}>
+          <StepHeader number={2} title="Quantity picked" />
+          <Stepper value={qty} min={1} max={planned + (remainder?.remainingBoxes ?? 0)} onChange={setQty} />
+          {qty > planned && (
+            <View style={styles.hintBox}><AppIcon name="information-circle-outline" size={18} color={colors.info} /><Text style={styles.hint}>
+              {qty - planned} extra box(es) are taken from the stock still at {pick.locationCode} when you confirm the pick-list. Use Change location to take more from another location.
+            </Text></View>
+          )}
+          {qty < planned && (
+            <View style={styles.hintBox}><AppIcon name="information-circle-outline" size={18} color={colors.info} /><Text style={styles.hint}>{planned - qty} box(es) not found go back to stock at {pick.locationCode} when you confirm the pick-list.</Text></View>
+          )}
+        </View>
 
         {remainingAfter > 0 && (
-          <>
-            <Text style={styles.step}>3 · Move the remaining {remainingAfter} box(es)? (optional)</Text>
-            <Text style={styles.hint}>
+          <View style={styles.sectionCard}>
+            <StepHeader number={3} title={`Move the remaining ${remainingAfter} box(es)?`} optional />
+            <Text style={styles.sectionIntro}>
               {remainingAfter} box(es) of this material stay at {pick.locationCode} unless you choose a location. Nothing moves until you confirm the pick-list, so you can still change your mind.
             </Text>
 
@@ -226,7 +259,9 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
               style={[styles.choice, !moveEnabled && styles.choiceActive]}
               onPress={() => setMoveEnabled(false)}
             >
-              <Text style={styles.choiceTitle}>Leave them at {pick.locationCode}</Text>
+              <View style={[styles.choiceIcon, !moveEnabled && styles.choiceIconActive]}><AppIcon name="location-outline" size={20} color={!moveEnabled ? colors.primary : colors.textSecondary} /></View>
+              <View style={styles.choiceCopy}><Text style={styles.choiceTitle}>Leave them at {pick.locationCode}</Text><Text style={styles.choiceMeta}>Keep stock in its current location</Text></View>
+              <AppIcon name={!moveEnabled ? "checkmark-circle" : "ellipse-outline"} size={22} color={!moveEnabled ? colors.primary : colors.borderStrong} />
             </TouchableOpacity>
 
             {suggestions.map((suggestion) => (
@@ -239,13 +274,14 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
                   setMoveEnabled(true);
                 }}
               >
-                <Text style={styles.choiceTitle}>
-                  {suggestion.locationCode}{suggestion.isVirtual ? "  (virtual)" : ""}
-                </Text>
-                <Text style={styles.choiceMeta}>{suggestion.reason}</Text>
+                <View style={[styles.choiceIcon, moveEnabled && destination?.id === suggestion.palletPositionId && styles.choiceIconActive]}><AppIcon name="arrow-forward" size={20} color={moveEnabled && destination?.id === suggestion.palletPositionId ? colors.primary : colors.textSecondary} /></View>
+                <View style={styles.choiceCopy}><Text style={styles.choiceTitle}>{suggestion.locationCode}{suggestion.isVirtual ? "  (virtual)" : ""}</Text><Text style={styles.choiceMeta}>{suggestion.reason}</Text></View>
+                <AppIcon name={moveEnabled && destination?.id === suggestion.palletPositionId ? "checkmark-circle" : "ellipse-outline"} size={22} color={moveEnabled && destination?.id === suggestion.palletPositionId ? colors.primary : colors.borderStrong} />
               </TouchableOpacity>
             ))}
 
+            <View style={styles.otherDestination}>
+            <Text style={styles.otherDestinationTitle}>Another destination</Text>
             <Button title="Scan another location" variant="outline" size="lg" onPress={() => setScanning("destination")} icon={<AppIcon name="scan-outline" size={20} color={colors.primary} />} />
             <TextField
               label="Or type a location code"
@@ -257,18 +293,24 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
               onSubmitEditing={() => destCode.trim() && lookupDestination(destCode)}
             />
             <Button title="Use this location" variant="ghost" disabled={destCode.trim().length === 0} onPress={() => lookupDestination(destCode)} />
+            </View>
 
             {moveEnabled && destination && (
               <View style={styles.moveBox}>
-                <Text style={styles.moveTitle}>Move to {destination.code}</Text>
+                <Text style={styles.moveEyebrow}>MOVE QUANTITY</Text>
+                <Text style={styles.moveTitle}>Moving to {destination.code}</Text>
                 <Stepper value={moveQty} min={1} max={remainingAfter} onChange={setMoveQty} />
               </View>
             )}
-          </>
+          </View>
         )}
       </ScrollView>
 
       <View style={styles.footer}>
+        <View style={styles.footerSummary}>
+          <Text style={styles.footerSummaryLabel}>{verified ? "Ready to confirm" : "Location verification required"}</Text>
+          <Text style={styles.footerSummaryValue}>{qty} box(es)</Text>
+        </View>
         <Button
           title={`Confirm pick of ${qty}`}
           size="lg"
@@ -305,29 +347,63 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
 }
 
 const styles = StyleSheet.create({
-  content: { padding: spacing.lg, paddingBottom: 140 },
-  hero: { backgroundColor: colors.primarySoft, borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.lg },
-  heroLabel: { ...typography.label, color: colors.primary, letterSpacing: 0.6 },
-  heroLocation: { fontSize: 40, fontWeight: "800", color: colors.textPrimary, marginTop: 2 },
-  virtualBadge: { ...typography.caption, color: colors.primaryText, fontWeight: "700", marginTop: 2 },
-  heroMaterial: { ...typography.bodyStrong, color: colors.textPrimary, marginTop: spacing.sm },
-  heroMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  scroll: { flex: 1, marginHorizontal: -spacing.lg },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl },
+  hero: { backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: "#dfe4ff", borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.md },
+  heroTop: { flexDirection: "row", alignItems: "center" },
+  heroIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", marginRight: spacing.md },
+  heroLocationWrap: { flex: 1 },
+  heroLabel: { ...typography.label, color: colors.primary, letterSpacing: 0.8 },
+  heroLocationRow: { flexDirection: "row", alignItems: "center", marginTop: 1 },
+  heroLocation: { fontSize: 32, fontWeight: "800", color: colors.textPrimary, letterSpacing: -0.5 },
+  virtualBadge: { ...typography.caption, color: colors.primaryText, fontWeight: "800", backgroundColor: colors.surface, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 3, marginLeft: spacing.sm },
+  heroDivider: { height: 1, backgroundColor: "#dfe4ff", marginVertical: spacing.md },
+  heroMaterialNumber: { ...typography.bodyStrong, color: colors.textPrimary },
+  heroMaterial: { ...typography.body, color: colors.textSecondary, marginTop: 2, lineHeight: 19 },
+  heroMetaRow: { flexDirection: "row", flexWrap: "wrap", marginTop: spacing.md, gap: spacing.sm },
+  metaPill: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 7 },
+  metaPillLabel: { ...typography.caption, color: colors.textMuted, fontWeight: "700", marginRight: spacing.xs },
+  metaPillValue: { ...typography.caption, color: colors.textPrimary, fontWeight: "700" },
   error: { backgroundColor: colors.dangerSoft, color: colors.dangerText, borderRadius: radius.md, padding: spacing.md, fontWeight: "700", marginBottom: spacing.md },
-  step: { ...typography.title, fontSize: 17, color: colors.textPrimary, marginTop: spacing.lg, marginBottom: spacing.sm },
-  hint: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.sm },
+  sectionCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md, ...shadow.card },
+  stepHeader: { flexDirection: "row", alignItems: "center", marginBottom: spacing.lg },
+  stepNumber: { width: 28, height: 28, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary },
+  stepNumberText: { ...typography.label, color: colors.textOnPrimary, fontSize: 13 },
+  stepTitle: { ...typography.subtitle, color: colors.textPrimary, flex: 1, marginLeft: spacing.sm },
+  optionalBadge: { ...typography.caption, color: colors.textSecondary, fontWeight: "800", backgroundColor: colors.neutralSoft, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 5 },
+  orRow: { flexDirection: "row", alignItems: "center", marginVertical: spacing.md },
+  orLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  orText: { ...typography.caption, color: colors.textMuted, fontWeight: "800", marginHorizontal: spacing.sm },
   okRow: { flexDirection: "row", alignItems: "center", backgroundColor: colors.successSoft, borderRadius: radius.md, padding: spacing.md },
-  okText: { color: colors.successText, fontWeight: "700", marginLeft: spacing.sm },
+  okIcon: { width: 34, height: 34, borderRadius: radius.pill, backgroundColor: colors.success, alignItems: "center", justifyContent: "center", marginRight: spacing.md },
+  okLabel: { ...typography.caption, color: colors.successText, fontWeight: "800" },
+  okText: { color: colors.successText, fontWeight: "700", marginTop: 1 },
   skip: { alignSelf: "center", padding: spacing.md, minHeight: 48, justifyContent: "center" },
   skipText: { ...typography.caption, color: colors.textSecondary, textDecorationLine: "underline" },
-  stepper: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
-  stepButton: { width: 64, height: 64, borderRadius: radius.xl, backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center" },
-  stepValue: { fontSize: 36, fontWeight: "800", color: colors.textPrimary, minWidth: 90, textAlign: "center" },
-  choice: { minHeight: 56, borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, backgroundColor: colors.surface, justifyContent: "center" },
+  stepper: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  stepButton: { width: 58, height: 58, borderRadius: radius.lg, backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: "#dfe4ff", alignItems: "center", justifyContent: "center" },
+  stepButtonDisabled: { opacity: 0.5 },
+  stepValueWrap: { minWidth: 100, alignItems: "center" },
+  stepValue: { fontSize: 36, fontWeight: "800", color: colors.textPrimary, textAlign: "center", lineHeight: 40 },
+  stepUnit: { ...typography.caption, color: colors.textMuted, fontWeight: "800", letterSpacing: 0.8 },
+  hintBox: { flexDirection: "row", alignItems: "flex-start", backgroundColor: colors.infoSoft, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md },
+  hint: { ...typography.caption, color: colors.infoText, flex: 1, marginLeft: spacing.sm, lineHeight: 17 },
+  sectionIntro: { ...typography.caption, color: colors.textSecondary, lineHeight: 18, marginTop: -spacing.sm, marginBottom: spacing.md },
+  choice: { minHeight: 66, flexDirection: "row", alignItems: "center", borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, backgroundColor: colors.surface },
   choiceActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  choiceIcon: { width: 36, height: 36, borderRadius: radius.sm, backgroundColor: colors.neutralSoft, alignItems: "center", justifyContent: "center", marginRight: spacing.md },
+  choiceIconActive: { backgroundColor: colors.surface },
+  choiceCopy: { flex: 1, paddingRight: spacing.sm },
   choiceTitle: { ...typography.bodyStrong, color: colors.textPrimary },
   choiceMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  moveBox: { backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm },
-  moveTitle: { ...typography.bodyStrong, color: colors.textPrimary, marginBottom: spacing.sm },
-  footer: { paddingTop: spacing.md },
+  otherDestination: { marginTop: spacing.sm, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  otherDestinationTitle: { ...typography.label, color: colors.textSecondary, marginBottom: spacing.sm },
+  moveBox: { backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: "#dfe4ff", borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md },
+  moveEyebrow: { ...typography.caption, color: colors.primary, fontWeight: "800", letterSpacing: 0.6 },
+  moveTitle: { ...typography.bodyStrong, color: colors.textPrimary, marginTop: 2, marginBottom: spacing.md },
+  footer: { marginHorizontal: -spacing.lg, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xs, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface, ...shadow.raised },
+  footerSummary: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm },
+  footerSummaryLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: "700" },
+  footerSummaryValue: { ...typography.bodyStrong, color: colors.textPrimary },
   footerHint: { ...typography.caption, color: colors.textMuted, textAlign: "center", marginTop: spacing.xs },
 });

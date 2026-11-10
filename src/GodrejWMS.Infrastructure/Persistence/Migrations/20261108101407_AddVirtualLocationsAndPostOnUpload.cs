@@ -13,9 +13,12 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             // The Overflow zone owns every virtual location (see PalletPosition.IsVirtual). Idempotent.
+            // Id is a fixed, far-out-of-range value (ZoneTypeIds.Overflow), not the next sequential
+            // one - a warehouse admin may already have created custom zone types through the UI
+            // before this migration ever runs, so the next auto-increment ID is not guaranteed free.
             migrationBuilder.Sql(@"
                 INSERT INTO ZoneTypes (Id, Code, DisplayName, Description, SortOrder, IsActive, CreatedAt)
-                SELECT 5, 'Overflow', 'Overflow', 'Auto-generated virtual overflow locations', 90, 1, UTC_TIMESTAMP(6)
+                SELECT 9000, 'Overflow', 'Overflow', 'Auto-generated virtual overflow locations', 90, 1, UTC_TIMESTAMP(6)
                 FROM DUAL
                 WHERE NOT EXISTS (SELECT 1 FROM ZoneTypes WHERE Code = 'Overflow');
 
