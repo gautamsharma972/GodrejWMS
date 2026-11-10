@@ -19,6 +19,10 @@ x86/
 ## Logs
 Logs/
 *.log
+# Not log output - the PlatformAdmin log viewer feature's source code, caught by the unanchored
+# rule above because its folder happens to be named "Logs" too.
+!src/GodrejWMS.Application/Features/PlatformAdmin/Logs/
+!src/GodrejWMS.Application/Features/PlatformAdmin/Logs/**
 
 ## Local database backups
 backups/
