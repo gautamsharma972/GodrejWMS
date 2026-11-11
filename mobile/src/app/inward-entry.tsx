@@ -45,14 +45,17 @@ export default function InwardEntryScreen() {
   const [lines, setLines] = useState<LineRow[]>([newLine()]);
   const [materialPickerKey, setMaterialPickerKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lineErrors, setLineErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [importOutcomes, setImportOutcomes] = useState<InwardSheetImportOutcome[] | null>(null);
 
   if (!token) return null;
 
-  const updateLine = (key: string, patch: Partial<LineRow>) =>
+  const updateLine = (key: string, patch: Partial<LineRow>) => {
     setLines((prev) => prev.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+    setLineErrors((prev) => (prev[key] ? { ...prev, [key]: "" } : prev));
+  };
 
   const removeLine = (key: string) => setLines((prev) => (prev.length > 1 ? prev.filter((line) => line.key !== key) : prev));
 
@@ -71,17 +74,17 @@ export default function InwardEntryScreen() {
 
   const handleSubmit = async () => {
     setError(null);
+    setLineErrors({});
     const validationError = validate();
     if (validationError) {
       setError(validationError);
       return;
     }
 
+    const populatedLines = lines.filter((line) => line.material !== null);
     const payload = {
       warehouseId: warehouse!.id,
-      lines: lines
-        .filter((line) => line.material !== null)
-        .map((line) => ({ materialCode: line.material!.materialNumber, quantityBoxes: Number(line.quantityText) })),
+      lines: populatedLines.map((line) => ({ materialCode: line.material!.materialNumber, quantityBoxes: Number(line.quantityText) })),
     };
 
     setIsSubmitting(true);
@@ -93,8 +96,24 @@ export default function InwardEntryScreen() {
     } catch (err) {
       errorPulse();
       if (err instanceof ApiError) {
-        const firstFieldError = err.fieldErrors ? Object.values(err.fieldErrors)[0]?.[0] : undefined;
-        setError(firstFieldError ?? err.message);
+        if (err.fieldErrors) {
+          // Server field errors look like "Lines[2].QuantityBoxes" - map that index back to the
+          // line row it came from (same order as populatedLines, which is what was submitted).
+          const nextLineErrors: Record<string, string> = {};
+          for (const [field, messages] of Object.entries(err.fieldErrors)) {
+            const match = /^Lines\[(\d+)\]/i.exec(field);
+            const row = match ? populatedLines[Number(match[1])] : undefined;
+            if (row && messages[0]) nextLineErrors[row.key] = messages[0];
+          }
+          if (Object.keys(nextLineErrors).length > 0) {
+            setLineErrors(nextLineErrors);
+            setError(err.message);
+          } else {
+            setError(Object.values(err.fieldErrors)[0]?.[0] ?? err.message);
+          }
+        } else {
+          setError(err.message);
+        }
       } else {
         setError("Unable to submit. Check your connection and try again.");
       }
@@ -189,6 +208,7 @@ export default function InwardEntryScreen() {
               onChangeText={(text) => updateLine(line.key, { quantityText: text })}
               style={{ marginBottom: 0 }}
             />
+            {lineErrors[line.key] && <Text style={styles.lineError}>{lineErrors[line.key]}</Text>}
           </Card>
         ))}
 
@@ -277,6 +297,7 @@ const styles = StyleSheet.create({
   materialButtonPlaceholder: { fontSize: 14, color: colors.textMuted },
   errorBox: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.dangerSoft, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm },
   error: { flex: 1, color: colors.dangerText, fontSize: 12, fontWeight: "700" },
+  lineError: { color: colors.dangerText, fontSize: 12, fontWeight: "700", marginTop: spacing.xs },
   uploadCard: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginTop: spacing.lg },
   uploadTitleRow: { flexDirection: "row", alignItems: "center", marginBottom: spacing.md },
   uploadIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center", marginRight: spacing.md },

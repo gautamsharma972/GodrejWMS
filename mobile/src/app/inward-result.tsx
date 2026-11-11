@@ -71,7 +71,10 @@ export default function InwardResultScreen() {
             {line.remarks && <Text style={styles.remarks}>{line.remarks}</Text>}
             {line.allocatedTo.map((allocation, i) => (
               <TouchableOpacity key={i} style={styles.allocationRow} onPress={() => setActiveLocation(allocation.locationCode)}>
-                <Text style={styles.allocationLocation}>{allocation.locationCode}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.allocationLocation}>{allocation.locationCode}</Text>
+                  {allocation.reason && <Text style={styles.allocationReason}>{allocation.reason}</Text>}
+                </View>
                 <Text style={styles.allocationQty}>{allocation.quantityBoxes} boxes</Text>
               </TouchableOpacity>
             ))}
@@ -112,8 +115,9 @@ const styles = StyleSheet.create({
   qtyPill: { alignSelf: "flex-start", backgroundColor: colors.neutralSoft, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 5, marginBottom: spacing.xs },
   qtyLine: { fontSize: 12, color: colors.textSecondary, fontWeight: "700" },
   remarks: { fontSize: 12, color: colors.danger, marginBottom: spacing.sm, fontWeight: "600" },
-  allocationRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  allocationRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
   allocationLocation: { color: colors.primary, fontWeight: "700", fontSize: 13 },
+  allocationReason: { color: colors.textMuted, fontSize: 11, marginTop: 1 },
   allocationQty: { color: colors.textSecondary, fontSize: 13 },
   unsavedBox: { backgroundColor: colors.dangerSoft, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md },
   unsavedTitle: { fontWeight: "700", color: colors.dangerText, marginBottom: spacing.sm },

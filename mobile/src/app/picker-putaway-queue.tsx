@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
-import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { getPickerPutawayQueue } from "../api/endpoints";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui/Card";
@@ -29,22 +29,31 @@ function submissionLabel(item: InwardHistoryDto): string {
   return allSubmitted(item) ? "All submitted" : `${item.submittedLocationCount} of ${item.locationCount} submitted`;
 }
 
+const PAGE_SIZE = 20;
+
 export default function PickerPutawayQueueScreen() {
   const { token } = useAuth();
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [items, setItems] = useState<InwardHistoryDto[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNextPage, setHasNextPage] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const pageRef = useRef(1);
 
   const load = useCallback(
     async (refreshing = false) => {
       if (!token) return;
+      pageRef.current = 1;
       if (refreshing) setIsRefreshing(true);
       else setIsLoading(true);
       try {
-        const page = await getPickerPutawayQueue(token, { search: search.trim() || undefined, pageSize: 50 });
+        const page = await getPickerPutawayQueue(token, { search: search.trim() || undefined, pageNumber: 1, pageSize: PAGE_SIZE });
         setItems(page.items);
+        setTotalCount(page.totalCount);
+        setHasNextPage(page.hasNextPage);
       } finally {
         if (refreshing) setIsRefreshing(false);
         else setIsLoading(false);
@@ -52,6 +61,20 @@ export default function PickerPutawayQueueScreen() {
     },
     [token, search],
   );
+
+  const loadMore = useCallback(async () => {
+    if (!token || isLoadingMore || !hasNextPage) return;
+    setIsLoadingMore(true);
+    try {
+      const nextPage = pageRef.current + 1;
+      const page = await getPickerPutawayQueue(token, { search: search.trim() || undefined, pageNumber: nextPage, pageSize: PAGE_SIZE });
+      pageRef.current = nextPage;
+      setItems((prev) => [...prev, ...page.items]);
+      setHasNextPage(page.hasNextPage);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [token, search, isLoadingMore, hasNextPage]);
 
   useEffect(() => {
     const timer = setTimeout(() => load(), 300);
@@ -76,7 +99,7 @@ export default function PickerPutawayQueueScreen() {
         </View>
         <View style={styles.introActions}>
           <RefreshButton onPress={() => load(true)} refreshing={isRefreshing} />
-          <View style={styles.countPill}><Text style={styles.countText}>{items.length}</Text></View>
+          <View style={styles.countPill}><Text style={styles.countText}>{totalCount}</Text></View>
         </View>
       </View>
       <SearchField placeholder="Search reference, vehicle, LR, material" value={search} onChangeText={setSearch} />
@@ -89,6 +112,9 @@ export default function PickerPutawayQueueScreen() {
           keyExtractor={(item) => String(item.id)}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => load(true)} tintColor={colors.primary} />}
           contentContainerStyle={{ paddingBottom: 24 }}
+          onEndReachedThreshold={0.4}
+          onEndReached={loadMore}
+          ListFooterComponent={isLoadingMore ? <ActivityIndicator style={{ marginVertical: spacing.lg }} color={colors.primary} /> : null}
           renderItem={({ item }) => (
             <Card onPress={() => router.push(`/picker-putaway/${item.id}`)} style={styles.card}>
               <View style={styles.cardHeader}>

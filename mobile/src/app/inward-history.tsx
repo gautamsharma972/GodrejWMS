@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
-import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, FlatList, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { getInwardHistory } from "../api/endpoints";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui/Card";
@@ -15,35 +15,59 @@ import { colors, spacing, typography } from "../theme";
 import type { InwardHistoryDto } from "../types/api";
 import { allocationStatusLabel, allocationStatusTone, formatDateTime } from "../utils/status";
 
+const PAGE_SIZE = 20;
+
 export default function InwardHistoryScreen() {
-  const { token } = useAuth();
+  const { token, warehouses } = useAuth();
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [warehouseId, setWarehouseId] = useState<number | undefined>(undefined);
   const [items, setItems] = useState<InwardHistoryDto[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNextPage, setHasNextPage] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const pageRef = useRef(1);
 
   const load = useCallback(
     async (refreshing = false) => {
       if (!token) return;
+      pageRef.current = 1;
       if (refreshing) setIsRefreshing(true);
       else setIsLoading(true);
       try {
-        const page = await getInwardHistory(token, { search: search.trim() || undefined, pageSize: 50 });
+        const page = await getInwardHistory(token, { search: search.trim() || undefined, warehouseId, pageNumber: 1, pageSize: PAGE_SIZE });
         setItems(page.items);
+        setTotalCount(page.totalCount);
+        setHasNextPage(page.hasNextPage);
       } finally {
         if (refreshing) setIsRefreshing(false);
         else setIsLoading(false);
       }
     },
-    [token, search],
+    [token, search, warehouseId],
   );
+
+  const loadMore = useCallback(async () => {
+    if (!token || isLoadingMore || !hasNextPage) return;
+    setIsLoadingMore(true);
+    try {
+      const nextPage = pageRef.current + 1;
+      const page = await getInwardHistory(token, { search: search.trim() || undefined, warehouseId, pageNumber: nextPage, pageSize: PAGE_SIZE });
+      pageRef.current = nextPage;
+      setItems((prev) => [...prev, ...page.items]);
+      setHasNextPage(page.hasNextPage);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [token, search, warehouseId, isLoadingMore, hasNextPage]);
 
   useEffect(() => {
     const timer = setTimeout(() => load(), 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, token]);
+  }, [search, warehouseId, token]);
 
   useFocusEffect(
     useCallback(() => {
@@ -62,11 +86,24 @@ export default function InwardHistoryScreen() {
         <View style={styles.introActions}>
           <RefreshButton onPress={() => load(true)} refreshing={isRefreshing} />
           <View style={styles.countPill}>
-            <Text style={styles.countText}>{items.length}</Text>
+            <Text style={styles.countText}>{totalCount}</Text>
           </View>
         </View>
       </View>
       <SearchField placeholder="Search reference, vehicle, LR, material" value={search} onChangeText={setSearch} />
+
+      {warehouses.length > 1 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.warehouseRow} contentContainerStyle={{ gap: spacing.sm }}>
+          <TouchableOpacity style={[styles.chip, warehouseId === undefined && styles.chipActive]} onPress={() => setWarehouseId(undefined)}>
+            <Text style={[styles.chipText, warehouseId === undefined && styles.chipTextActive]}>All warehouses</Text>
+          </TouchableOpacity>
+          {warehouses.map((w) => (
+            <TouchableOpacity key={w.id} style={[styles.chip, warehouseId === w.id && styles.chipActive]} onPress={() => setWarehouseId(w.id)}>
+              <Text style={[styles.chipText, warehouseId === w.id && styles.chipTextActive]}>{w.code}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
 
       {isLoading ? (
         <SkeletonList />
@@ -76,6 +113,9 @@ export default function InwardHistoryScreen() {
           keyExtractor={(item) => String(item.id)}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => load(true)} tintColor={colors.primary} />}
           contentContainerStyle={{ paddingBottom: 24 }}
+          onEndReachedThreshold={0.4}
+          onEndReached={loadMore}
+          ListFooterComponent={isLoadingMore ? <ActivityIndicator style={{ marginVertical: spacing.lg }} color={colors.primary} /> : null}
           renderItem={({ item }) => (
             <Card onPress={() => router.push(`/inward-detail/${item.id}`)} style={styles.card}>
               <View style={styles.cardHeader}>
@@ -101,6 +141,11 @@ export default function InwardHistoryScreen() {
 }
 
 const styles = StyleSheet.create({
+  warehouseRow: { marginTop: spacing.sm, marginBottom: spacing.xs, maxHeight: 40 },
+  chip: { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  chipActive: { backgroundColor: colors.primarySoft, borderColor: colors.primary },
+  chipText: { ...typography.caption, color: colors.textSecondary, fontWeight: "700" },
+  chipTextActive: { color: colors.primaryText },
   introRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
   introActions: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   eyebrow: { ...typography.label, fontSize: 10, color: colors.primary, letterSpacing: 0.8 },

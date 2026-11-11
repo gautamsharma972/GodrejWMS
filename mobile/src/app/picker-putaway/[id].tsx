@@ -362,7 +362,7 @@ export default function PickerPutawayDetailScreen() {
             )}
 
             <Button
-              title={isSubmitting ? "Submitting..." : warning ? "Submit anyway" : "Confirm put-away"}
+              title={isSubmitting ? "Submitting..." : warning ? "Submit anyway" : "Submit location"}
               icon={<AppIcon name="checkmark-circle-outline" size={19} color={colors.textOnPrimary} />}
               onPress={() => submit(warning !== null)}
               loading={isSubmitting}
