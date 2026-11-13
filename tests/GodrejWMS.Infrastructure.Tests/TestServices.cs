@@ -11,6 +11,8 @@ internal static class TestServices
 
     public static VirtualLocationService Virtuals(AppDbContext db) => new(db, new SvcClock());
 
+    public static GitLocationService Git(AppDbContext db) => new(db);
+
     public static StockPostingService Posting(AppDbContext db) =>
         new(db, Virtuals(db), new SvcClock(), new SvcUser());
 

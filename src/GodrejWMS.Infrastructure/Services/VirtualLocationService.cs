@@ -121,6 +121,7 @@ public sealed class VirtualLocationService(AppDbContext db, IDateTimeProvider cl
                 FROM PalletPositions p
                 INNER JOIN Racks r ON r.Id = p.RackId
                 WHERE p.IsVirtual = 1 AND p.VirtualStatus = 'FREE' AND p.IsActive = 1 AND r.WarehouseId = {warehouseId}
+                    AND p.ZoneType = {ZoneTypeIds.Overflow}
                 ORDER BY p.`Column`
                 LIMIT 1
                 FOR UPDATE OF p SKIP LOCKED").ToListAsync(cancellationToken);
@@ -128,7 +129,8 @@ public sealed class VirtualLocationService(AppDbContext db, IDateTimeProvider cl
         }
 
         return await db.PalletPositions
-            .Where(p => p.IsVirtual && p.VirtualStatus == VirtualLocationStatus.Free && p.IsActive && p.Rack.WarehouseId == warehouseId)
+            .Where(p => p.IsVirtual && p.VirtualStatus == VirtualLocationStatus.Free && p.IsActive && p.Rack.WarehouseId == warehouseId
+                && p.ZoneTypeId == ZoneTypeIds.Overflow)
             .OrderBy(p => p.Column)
             .Select(p => (int?)p.Id)
             .FirstOrDefaultAsync(cancellationToken);

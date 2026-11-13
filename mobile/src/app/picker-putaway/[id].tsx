@@ -106,8 +106,10 @@ export default function PickerPutawayDetailScreen() {
   const selectedRow = selectedPutawayId != null ? rows.find((r) => r.putaway.id === selectedPutawayId) ?? null : null;
   const pickerLocationOptions: PickerLocationOption[] = useMemo(() => buildPickerLocationOptions(locationOptions), [locationOptions]);
 
+  // GIT now tracks a real, trackable location (unlike NO RACK), so it needs a PKM just like a real
+  // shelf location does.
   const canSubmit =
-    Number(qtyText) > 0 && newLocationId !== 0 && (newLocationId < 0 || (pkmYear > 0 && pkmMonth > 0));
+    Number(qtyText) > 0 && newLocationId !== 0 && (newLocationId === NO_RACK_OPTION_ID || (pkmYear > 0 && pkmMonth > 0));
 
   if (!token) return null;
 
@@ -148,7 +150,7 @@ export default function PickerPutawayDetailScreen() {
   const submit = async (acknowledgeWarning = false) => {
     if (!selectedRow || !canSubmit) return;
     const excluded = newLocationId === GIT_OPTION_ID ? "GIT" : newLocationId === NO_RACK_OPTION_ID ? "NO RACK" : null;
-    const mfgMonthText = excluded === null && pkmYear > 0 && pkmMonth > 0 ? `${MONTH_LABELS[pkmMonth - 1]}|${pkmYear}` : null;
+    const mfgMonthText = excluded !== "NO RACK" && pkmYear > 0 && pkmMonth > 0 ? `${MONTH_LABELS[pkmMonth - 1]}|${pkmYear}` : null;
 
     setIsSubmitting(true);
     setSubmitError(null);
