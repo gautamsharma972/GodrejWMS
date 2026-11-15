@@ -13,10 +13,11 @@ START TRANSACTION;
 
 DELETE FROM AopDescriptionLocationPreferences;
 
--- Ranges to load: AOP code, rack code, from column, to column (all levels of those columns are covered).
+-- Ranges to load: AOP code, rack NAME (e.g. I), from column, to column. One rack name is made of several physical racks
+-- (I = columns 1-10, I1 = 11-51, I2 = 52-59), so each range is split across them below. All levels are covered.
 CREATE TEMPORARY TABLE tmp_aop_ranges (
   aop_code  VARCHAR(50) NOT NULL,
-  rack_code VARCHAR(10) NOT NULL,
+  rack_code VARCHAR(10) NOT NULL,  -- the rack NAME
   col_from  INT NOT NULL,
   col_to    INT NOT NULL
 ) DEFAULT CHARSET=utf8mb4;
@@ -128,33 +129,52 @@ SELECT DISTINCT t.aop_code AS aop_code_not_found
 FROM tmp_aop_ranges t LEFT JOIN AopDescriptions a ON a.Code = t.aop_code
 WHERE a.Id IS NULL;
 
--- Check B: ranges whose rack, first column or last column has no ACTIVE pallet position (expect 0 rows)
-SELECT t.aop_code, t.rack_code, t.col_from, t.col_to
+-- Check B: ranges that match NO active pallet position at all (expect 0 rows)
+SELECT t.aop_code, t.rack_code AS rack_name, t.col_from, t.col_to
 FROM tmp_aop_ranges t
-LEFT JOIN Racks r ON r.Code = t.rack_code AND r.IsActive = 1 AND r.IsSystem = 0
-LEFT JOIN PalletPositions pf ON pf.RackId = r.Id AND pf.`Column` = t.col_from AND pf.IsActive = 1
-LEFT JOIN PalletPositions pt ON pt.RackId = r.Id AND pt.`Column` = t.col_to   AND pt.IsActive = 1
-WHERE r.Id IS NULL OR pf.Id IS NULL OR pt.Id IS NULL
-GROUP BY t.aop_code, t.rack_code, t.col_from, t.col_to;
+LEFT JOIN Racks r ON r.Name = t.rack_code AND r.IsActive = 1 AND r.IsSystem = 0
+LEFT JOIN PalletPositions p ON p.RackId = r.Id AND p.IsActive = 1 AND p.`Column` BETWEEN t.col_from AND t.col_to
+GROUP BY t.aop_code, t.rack_code, t.col_from, t.col_to
+HAVING COUNT(p.Id) = 0;
 
--- The reload: From = lowest level of the first column, To = highest level of the last column, on the same rack.
+-- Check C: ranges where some column numbers have no pallet position (information - rows here are loaded only for the columns that exist)
+SELECT t.aop_code, t.rack_code AS rack_name, t.col_from, t.col_to,
+       COUNT(DISTINCT p.`Column`) AS columns_found, t.col_to - t.col_from + 1 AS columns_asked
+FROM tmp_aop_ranges t
+LEFT JOIN Racks r ON r.Name = t.rack_code AND r.IsActive = 1 AND r.IsSystem = 0
+LEFT JOIN PalletPositions p ON p.RackId = r.Id AND p.IsActive = 1 AND p.`Column` BETWEEN t.col_from AND t.col_to
+GROUP BY t.aop_code, t.rack_code, t.col_from, t.col_to
+HAVING COUNT(DISTINCT p.`Column`) < t.col_to - t.col_from + 1;
+
+-- The reload. Each range is cut at the boundaries of the physical racks that share the rack name.
+-- Per rack: From = lowest level of the first covered column, To = highest level of the last covered column.
 INSERT INTO AopDescriptionLocationPreferences
   (AopDescriptionId, FromPalletPositionId, ToPalletPositionId, IsActive, CreatedAt)
 SELECT a.Id, pf.Id, pt.Id, 1, UTC_TIMESTAMP(6)
-FROM tmp_aop_ranges t
-JOIN AopDescriptions a ON a.Code = t.aop_code
-JOIN Racks r ON r.Code = t.rack_code AND r.IsActive = 1 AND r.IsSystem = 0
-JOIN PalletPositions pf ON pf.RackId = r.Id AND pf.`Column` = t.col_from AND pf.IsActive = 1
-     AND pf.`Level` = (SELECT MIN(x.`Level`) FROM PalletPositions x WHERE x.RackId = r.Id AND x.`Column` = t.col_from AND x.IsActive = 1)
-JOIN PalletPositions pt ON pt.RackId = r.Id AND pt.`Column` = t.col_to AND pt.IsActive = 1
-     AND pt.`Level` = (SELECT MAX(x.`Level`) FROM PalletPositions x WHERE x.RackId = r.Id AND x.`Column` = t.col_to AND x.IsActive = 1);
+FROM (
+  SELECT t.aop_code, r.Id AS rack_id, MIN(p.`Column`) AS first_col, MAX(p.`Column`) AS last_col
+  FROM tmp_aop_ranges t
+  JOIN Racks r ON r.Name = t.rack_code AND r.IsActive = 1 AND r.IsSystem = 0
+  JOIN PalletPositions p ON p.RackId = r.Id AND p.IsActive = 1 AND p.`Column` BETWEEN t.col_from AND t.col_to
+  GROUP BY t.aop_code, t.rack_code, t.col_from, t.col_to, r.Id
+) s
+JOIN AopDescriptions a ON a.Code = s.aop_code
+JOIN PalletPositions pf ON pf.RackId = s.rack_id AND pf.`Column` = s.first_col AND pf.IsActive = 1
+     AND pf.`Level` = (SELECT MIN(x.`Level`) FROM PalletPositions x WHERE x.RackId = s.rack_id AND x.`Column` = s.first_col AND x.IsActive = 1)
+JOIN PalletPositions pt ON pt.RackId = s.rack_id AND pt.`Column` = s.last_col AND pt.IsActive = 1
+     AND pt.`Level` = (SELECT MAX(x.`Level`) FROM PalletPositions x WHERE x.RackId = s.rack_id AND x.`Column` = s.last_col AND x.IsActive = 1);
 
-SELECT ROW_COUNT() AS rows_inserted,
-       (SELECT COUNT(*) FROM tmp_aop_ranges) AS rows_expected;   -- both must be 335
+SELECT ROW_COUNT() AS rows_inserted;
+
+-- Review: every AOP Description must have at least one row (expect 0 rows from this query)
+SELECT a.Code AS aop_without_any_range
+FROM AopDescriptions a
+WHERE a.Code IN (SELECT aop_code FROM tmp_aop_ranges)
+  AND NOT EXISTS (SELECT 1 FROM AopDescriptionLocationPreferences x WHERE x.AopDescriptionId = a.Id);
 
 DROP TEMPORARY TABLE tmp_aop_ranges;
 
--- Review the checks above. If rows_inserted = rows_expected and Checks A and B returned nothing:
+-- If Checks A and B returned nothing, rows_inserted looks right and the review query returned nothing:
 --   COMMIT;
 -- otherwise:
 --   ROLLBACK;     -- the delete is undone and nothing is lost
