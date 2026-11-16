@@ -4,6 +4,7 @@ using GodrejWMS.Domain.Entities;
 using GodrejWMS.Domain.Enums;
 using GodrejWMS.Infrastructure.Persistence;
 using GodrejWMS.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace GodrejWMS.Infrastructure.Tests;
@@ -236,6 +237,7 @@ public class PickerPlaceInwardPutawayTests
     private static async Task<(AppDbContext Db, Material A, Material B, InwardTransaction Grn, InwardPutaway Putaway, List<PalletPosition> Positions)> SeedAsync()
     {
         var db = TestDbContextFactory.Create();
+        db.Warehouses.Add(new Warehouse { Id = 1, Code = "GDR1", Name = "Godrej 1" });
         var rack = new Rack { Code = "P", Columns = 3, Levels = 1, ShelfLengthMm = 2000, ShelfWidthMm = 2500, ShelfHeightMm = 3600 };
         for (var c = 1; c <= 3; c++)
         {
@@ -253,7 +255,7 @@ public class PickerPlaceInwardPutawayTests
         await db.SaveChangesAsync();
 
         var positions = rack.PalletPositions.OrderBy(p => p.Column).ToList();
-        var grn = new InwardTransaction { ReferenceNumber = "GRN-1" };
+        var grn = new InwardTransaction { ReferenceNumber = "GRN-1", WarehouseId = 1 };
         var line = new InwardTransactionLine { MaterialId = a.Id, MfgMonth = 202610, RequestedQuantityBoxes = 30, AllocatedQuantityBoxes = 30 };
         var putaway = new InwardPutaway { PalletPositionId = positions[0].Id, QuantityBoxes = 30 };
         line.Putaways.Add(putaway);
@@ -263,7 +265,7 @@ public class PickerPlaceInwardPutawayTests
         return (db, a, b, grn, putaway, positions);
     }
 
-    private static PickerPlaceInwardPutawayHandler Handler(AppDbContext db) => new(db, TestServices.Posting(db), TestServices.Uow(db), new AllowAll(), new FragUser(), new FragClock());
+    private static PickerPlaceInwardPutawayHandler Handler(AppDbContext db) => new(db, TestServices.Posting(db), TestServices.Git(db), TestServices.Uow(db), new AllowAll(), new FragUser(), new FragClock());
 
     [Fact]
     public async Task ChangesLocationQuantityAndPkm_MovingThePutawayToTheLineOfThatPkm()
@@ -377,18 +379,27 @@ public class PickerPlaceInwardPutawayTests
     }
 
     [Fact]
-    public async Task Git_ClosesThePutawayWithoutCreatingStock()
+    public async Task Git_OnAPendingOrder_PostsRealStockOnlyOnceTheSupervisorConfirms()
     {
         var (db, _, _, _, putaway, _) = await SeedAsync();
         using var _ = db;
 
-        var result = await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "git"), default);
+        var result = await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", null, "git"), default);
 
         Assert.True(result.Saved);
         var saved = db.InwardPutaways.Single();
-        Assert.Equal("GIT", saved.ExcludedLocation);
-        Assert.True(saved.IsConfirmed);
+        Assert.Equal("GIT", saved.ExcludedLocation); // still labelled GIT even though it now tracks a real location
+        var gitLocation = db.PalletPositions.Single(p => p.ZoneTypeId == ZoneTypeIds.Git);
+        Assert.Equal(gitLocation.Id, saved.PalletPositionId);
+        // A pending order's GIT stock, like a real location, waits for the supervisor's confirmation - nothing posted yet.
+        Assert.False(saved.IsConfirmed);
         Assert.Empty(db.StockBatches);
+
+        await new ConfirmInwardPutawayHandler(db, TestServices.Posting(db), new FragClock(), new FragUser(), new AllowAll())
+            .Handle(new ConfirmInwardPutawayCommand("GRN-1"), default);
+
+        Assert.True(db.InwardPutaways.AsNoTracking().Single().IsConfirmed);
+        Assert.Equal(30, db.StockBatches.Where(b => b.PalletPositionId == gitLocation.Id).Sum(b => b.QuantityBoxes));
     }
 
     [Fact]
@@ -396,7 +407,7 @@ public class PickerPlaceInwardPutawayTests
     {
         var (db, _, _, _, putaway, positions) = await SeedAsync();
         using var _ = db;
-        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "GIT"), default);
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", null, "GIT"), default);
 
         var result = await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", positions[2].Id, null), default);
 
@@ -417,7 +428,7 @@ public class PickerPlaceInwardPutawayTests
     {
         var (db, _, _, _, putaway, positions) = await SeedAsync();
         using var _ = db;
-        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "GIT"), default);
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", null, "GIT"), default);
 
         await new ConfirmInwardPutawayHandler(db, TestServices.Posting(db), new FragClock(), new FragUser(), new AllowAll())
             .Handle(new ConfirmInwardPutawayCommand("GRN-1"), default);

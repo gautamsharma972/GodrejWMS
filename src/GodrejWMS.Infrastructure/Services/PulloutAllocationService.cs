@@ -36,7 +36,10 @@ public class PulloutAllocationService(IApplicationDbContext db, IOptions<Picking
                 && b.QuantityBoxes > 0
                 && b.PalletPosition.IsActive
                 && b.PalletPosition.LocationSubtypeId == LocationSubtypeIds.Good
-                && b.PalletPosition.Rack.WarehouseId == warehouseId)
+                && b.PalletPosition.Rack.WarehouseId == warehouseId
+                // GIT stock is real but only ever reachable through a deliberate manual pick
+                // (Change Pick Location), never the automatic FIFO allocator.
+                && b.PalletPosition.ZoneTypeId != ZoneTypeIds.Git)
             .Include(b => b.PalletPosition)
             // 1. FIFO: oldest PKM first - never broken by anything below.
             .OrderBy(b => b.MfgMonth)

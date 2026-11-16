@@ -121,7 +121,9 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
       setSuggestions([]);
       return;
     }
-    setMoveQty((current) => (current <= 0 || current > remainingAfter ? (pick.moveQuantityBoxes && pick.moveQuantityBoxes <= remainingAfter ? pick.moveQuantityBoxes : remainingAfter) : current));
+    // Always defaults to the full remaining amount - the picker can still dial it down with the
+    // stepper, but re-opening/editing a pick should never leave a stale smaller amount selected.
+    setMoveQty((current) => (current <= 0 || current > remainingAfter ? remainingAfter : current));
     let cancelled = false;
     getRelocationSuggestions(token, pick.pickId, remainingAfter)
       .then((value) => !cancelled && setSuggestions(value))
@@ -173,7 +175,7 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
   };
 
   return (
-    <FullScreenModal visible title="Confirm pick" onClose={onClose}>
+    <FullScreenModal visible title="Submit Pick" onClose={onClose}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
           <View style={styles.heroTop}>
@@ -312,7 +314,7 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
           <Text style={styles.footerSummaryValue}>{qty} box(es)</Text>
         </View>
         <Button
-          title={`Confirm pick of ${qty}`}
+          title={`Submit pick of ${qty}`}
           size="lg"
           loading={submitting}
           disabled={!verified}

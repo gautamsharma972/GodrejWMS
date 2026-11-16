@@ -18,12 +18,14 @@ import { formatDateTime } from "../../utils/status";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const CURRENT_YEAR = new Date().getFullYear();
-const YEARS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1];
+// Matches web's YearOptions (History.razor): today.Year-3 .. today.Year+1, 5 years.
+const YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 3 + i);
 
 interface PutawayRow {
   putaway: InwardPutawayDto;
   materialNumber: number;
   materialDescription: string;
+  mfgMonthLabel: string;
 }
 
 export default function InwardDetailScreen() {
@@ -64,7 +66,12 @@ export default function InwardDetailScreen() {
   }
 
   const rows: PutawayRow[] = detail.lines.flatMap((line) =>
-    line.putaways.map((putaway) => ({ putaway, materialNumber: line.materialNumber, materialDescription: line.materialDescription })),
+    line.putaways.map((putaway) => ({
+      putaway,
+      materialNumber: line.materialNumber,
+      materialDescription: line.materialDescription,
+      mfgMonthLabel: line.mfgMonthLabel,
+    })),
   );
   const pendingRows = rows.filter((row) => !row.putaway.isConfirmed).length;
   const totalBoxes = rows.reduce((total, row) => total + row.putaway.quantityBoxes, 0);
@@ -80,8 +87,18 @@ export default function InwardDetailScreen() {
 
   const openAssign = (row: PutawayRow) => {
     setActivePutaway(row);
-    setSelectedMonth(null);
-    setSelectedYear(null);
+    // Matches web's PickFor: default the pickers to the line's own PKM label (e.g. "OCT|2026") as a
+    // sane starting guess, same as MfgMonthParser.TryParse - "No PKM" (or anything else unparsable)
+    // just leaves both unset.
+    const [month, yearText] = row.mfgMonthLabel.split("|");
+    const year = Number(yearText);
+    if (month && MONTHS.includes(month) && Number.isInteger(year)) {
+      setSelectedMonth(month);
+      setSelectedYear(year);
+    } else {
+      setSelectedMonth(null);
+      setSelectedYear(null);
+    }
   };
 
   const handleAssign = async () => {

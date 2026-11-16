@@ -108,7 +108,9 @@ public class PalletAllocationService(
                 && (!groundFloorOnly || p.Level == GroundFloorRule.GroundLevel)
                 // A virtual location is only a candidate while it holds this warehouse's overflow stock (Tier 1 top-up below);
                 // a FREE one is never a candidate - it is handed out by the virtual-location service when nothing physical fits.
-                && (!p.IsVirtual || p.VirtualStatus == VirtualLocationStatus.InUse))
+                && (!p.IsVirtual || p.VirtualStatus == VirtualLocationStatus.InUse)
+                // GIT stock is real but only ever reachable through a deliberate manual placement, never automatic allocation.
+                && p.ZoneTypeId != ZoneTypeIds.Git)
             .Include(p => p.Rack)
             .Include(p => p.StockBatches.Where(b => b.Material.IsActive))
             .AsNoTracking()

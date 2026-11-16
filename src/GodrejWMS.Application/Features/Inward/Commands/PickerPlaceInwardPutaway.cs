@@ -59,7 +59,8 @@ public sealed class PickerPlaceInwardPutawayValidator : AbstractValidator<Picker
 }
 
 public sealed class PickerPlaceInwardPutawayHandler(
-    IApplicationDbContext db, IStockPostingService posting, IUnitOfWork uow, IPermissionService permissions, ICurrentUserService currentUser, IDateTimeProvider clock)
+    IApplicationDbContext db, IStockPostingService posting, IGitLocationService gitLocations, IUnitOfWork uow,
+    IPermissionService permissions, ICurrentUserService currentUser, IDateTimeProvider clock)
     : IRequestHandler<PickerPlaceInwardPutawayCommand, PickerPlaceInwardPutawayResult>
 {
     public async Task<PickerPlaceInwardPutawayResult> Handle(PickerPlaceInwardPutawayCommand request, CancellationToken cancellationToken)
@@ -125,7 +126,15 @@ public sealed class PickerPlaceInwardPutawayHandler(
             }
         }
 
-        // PKM: the one entered here, else the line's own. Required only when the goods go into a real location.
+        // GIT is a real, trackable location (unlike NO RACK, which still has no destination at all): the goods
+        // physically go into the warehouse's one GIT staging location instead of a picker-chosen shelf.
+        var gitPosition = excluded == PickerExcludedLocations.Git
+            ? await gitLocations.GetOrCreateAsync(transaction.WarehouseId, cancellationToken)
+            : null;
+        var newPosition = excluded == PickerExcludedLocations.NoRack ? null : target ?? gitPosition;
+
+        // PKM: the one entered here, else the line's own. Required whenever the goods go somewhere trackable
+        // (a real location or GIT) - only NO RACK has no stock to key by PKM at all.
         int? pkm = line.MfgMonth;
         if (!string.IsNullOrWhiteSpace(request.MfgMonthText))
         {
@@ -133,7 +142,7 @@ public sealed class PickerPlaceInwardPutawayHandler(
             pkm = parsed;
         }
 
-        if (excluded is null && pkm is null)
+        if (excluded != PickerExcludedLocations.NoRack && pkm is null)
         {
             throw new InvalidOperationException("Select the PKM for this location.");
         }
@@ -150,7 +159,7 @@ public sealed class PickerPlaceInwardPutawayHandler(
         // Quantity actually put away: only the line's allocated total follows it. The requested quantity is the inward
         // order's own figure (the GRN's inbound volume) and is never changed by the picker.
         var originalQuantity = putaway.QuantityBoxes;
-        var hadStock = postedOrder && putaway.IsConfirmed && putaway.ExcludedLocation is null && line.MfgMonth is not null;
+        var hadStock = postedOrder && putaway.IsConfirmed && putaway.ExcludedLocation != PickerExcludedLocations.NoRack && line.MfgMonth is not null;
         var oldPkm = line.MfgMonth;
         var oldStockPosition = putaway.PalletPosition;
         // Remembered so the supervisor's Confirm can check the entries still add up to what the system allocated.
@@ -160,7 +169,7 @@ public sealed class PickerPlaceInwardPutawayHandler(
 
         // PKM: the put-away belongs to the line carrying its PKM (stock is keyed by line PKM), so it moves to the
         // GRN's line for this material + PKM (created when none exists). A lone no-PKM line just takes the PKM.
-        if (excluded is null && pkm != line.MfgMonth)
+        if (excluded != PickerExcludedLocations.NoRack && pkm != line.MfgMonth)
         {
             MovePutawayToPkmLine(transaction, line, putaway, originalQuantity, pkm!.Value);
         }
@@ -179,14 +188,14 @@ public sealed class PickerPlaceInwardPutawayHandler(
             var addQuantity = request.QuantityBoxes;
             var returnedToOldCell = 0m;
             var repointedToNewCell = 0m;
-            var noMove = hadStock && excluded is null && target!.Id == oldStockPosition.Id && pkm == oldPkm && request.QuantityBoxes == originalQuantity;
+            var noMove = hadStock && newPosition is not null && newPosition.Id == oldStockPosition.Id && pkm == oldPkm && request.QuantityBoxes == originalQuantity;
             if (hadStock && !noMove)
             {
                 // Stock is available for picking as soon as it is posted, so a pullout may already have taken boxes of this put-away
                 // out of the suggested location. Those boxes are not on the shelf to move: the pullout's unconfirmed picks of the
-                // cell follow the stock to the new location (or are cut back when the boxes are set aside as GIT / NO RACK).
+                // cell follow the stock to the new location (or are cut back when the boxes are set aside as NO RACK).
                 (removeQuantity, addQuantity, returnedToOldCell, repointedToNewCell) = await FollowOpenPicksAsync(
-                    line, oldStockPosition, oldPkm!.Value, originalQuantity, target, pkm, request.QuantityBoxes, excluded, cancellationToken);
+                    line, oldStockPosition, oldPkm!.Value, originalQuantity, newPosition, pkm, request.QuantityBoxes, excluded, cancellationToken);
             }
 
             if (hadStock)
@@ -194,9 +203,9 @@ public sealed class PickerPlaceInwardPutawayHandler(
                 changes.Add(new StockChange(line.MaterialId, oldPkm!.Value, LocationSubtypeIds.Good, oldStockPosition, -removeQuantity + returnedToOldCell));
             }
 
-            if (excluded is null)
+            if (newPosition is not null)
             {
-                changes.Add(new StockChange(line.MaterialId, pkm!.Value, LocationSubtypeIds.Good, target!, addQuantity - repointedToNewCell));
+                changes.Add(new StockChange(line.MaterialId, pkm!.Value, LocationSubtypeIds.Good, newPosition, addQuantity - repointedToNewCell));
             }
 
             if (changes.Count > 0)
@@ -215,7 +224,7 @@ public sealed class PickerPlaceInwardPutawayHandler(
         }
 
         var oldPosition = putaway.PalletPosition;
-        if (excluded is not null)
+        if (excluded == PickerExcludedLocations.NoRack)
         {
             putaway.ExcludedLocation = excluded;
             putaway.OverrideReason = $"Set aside as {excluded} by picker";
@@ -228,7 +237,10 @@ public sealed class PickerPlaceInwardPutawayHandler(
         else
         {
             // A pending order goes back to waiting for the supervisor's confirmation; a posted one stays posted.
-            putaway.ExcludedLocation = null;
+            // This now applies to GIT too (it tracks a real, confirmable location, unlike NO RACK above) - a
+            // pending order's GIT stock is only actually posted once the supervisor confirms the GRN
+            // (see InwardPutawayConfirmationLogic.ConfirmAsync), so it must stay unconfirmed until then.
+            putaway.ExcludedLocation = excluded;
             if (postedOrder)
             {
                 putaway.IsConfirmed = true;
@@ -245,18 +257,18 @@ public sealed class PickerPlaceInwardPutawayHandler(
             }
 
             putaway.IsPickerPlaced = true;
-            putaway.OverrideReason = "Location set by picker";
-            if (target!.Id != putaway.PalletPositionId)
+            putaway.OverrideReason = excluded is null ? "Location set by picker" : $"Set aside as {excluded} by picker";
+            if (newPosition!.Id != putaway.PalletPositionId)
             {
-                putaway.PalletPositionId = target.Id;
-                putaway.PalletPosition = target;
+                putaway.PalletPositionId = newPosition.Id;
+                putaway.PalletPosition = newPosition;
             }
         }
 
         oldPosition.RowVersion++;
-        if (target is not null)
+        if (newPosition is not null)
         {
-            target.RowVersion++;
+            newPosition.RowVersion++;
         }
 
         putaway.RowVersion++;
@@ -292,7 +304,7 @@ public sealed class PickerPlaceInwardPutawayHandler(
 
         var toCover = shortfall;
         var covered = 0m;
-        var repointBudget = excluded is null ? Math.Max(0m, newQuantity - Math.Max(0m, shortfall - picks.Sum(p => p.QuantityBoxes))) : 0m;
+        var repointBudget = target is not null ? Math.Max(0m, newQuantity - Math.Max(0m, shortfall - picks.Sum(p => p.QuantityBoxes))) : 0m;
         var repointed = 0m;
         foreach (var pick in picks)
         {

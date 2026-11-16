@@ -41,7 +41,7 @@ public class PickerPutawayPostedTests
     }
 
     private static PickerPlaceInwardPutawayHandler Handler(AppDbContext db) =>
-        new(db, TestServices.Posting(db), TestServices.Uow(db), new PPAllow(), new SvcUser(), new SvcClock());
+        new(db, TestServices.Posting(db), TestServices.Git(db), TestServices.Uow(db), new PPAllow(), new SvcUser(), new SvcClock());
 
     private static decimal OnHand(AppDbContext db, int positionId) =>
         db.StockBatches.AsNoTracking().Where(b => b.PalletPositionId == positionId).Sum(b => (decimal?)b.QuantityBoxes) ?? 0;
@@ -193,21 +193,27 @@ public class PickerPutawayPostedTests
     }
 
     [Fact]
-    public async Task PutawayChange_ToGit_AfterAPulloutTookTheBoxes_CutsThePickBack()
+    public async Task PutawayChange_ToGit_AfterAPulloutTookTheBoxes_MovesTheOpenPickToGit()
     {
+        // GIT is a real, trackable location (unlike NO RACK): an open pullout pick against the old cell
+        // follows the boxes into GIT the same way it follows any other relocation.
         var (db, _, _, putaway) = await SeedAsync();
         using var _ = db;
+        var from = putaway.PalletPositionId;
         await PullOutAsync(db, 30); // all 30 boxes are already allocated to a pullout
+        Assert.Equal(0, OnHand(db, from));
 
-        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "GIT"), default);
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", null, "GIT"), default);
 
-        Assert.Equal(0, db.StockBatches.AsNoTracking().Sum(b => b.QuantityBoxes));
-        Assert.Empty(db.PulloutPicks.AsNoTracking()); // nothing is left to pick: the boxes are set aside
-        var line = db.PulloutTransactionLines.AsNoTracking().Single();
-        Assert.Equal(0, line.PickedQuantityBoxes);
-        Assert.Equal(GodrejWMS.Domain.Enums.AllocationStatus.Failed, line.Status);
-        Assert.Contains("GIT", line.Remarks);
-        Assert.Equal("GIT", db.InwardPutaways.AsNoTracking().Single().ExcludedLocation);
+        var gitLocation = db.PalletPositions.AsNoTracking().Single(p => p.ZoneTypeId == ZoneTypeIds.Git);
+        Assert.Equal(0, OnHand(db, from));
+        Assert.Equal(0, OnHand(db, gitLocation.Id)); // nothing was left on the shelf to hold - it was all already picked
+        var pick = db.PulloutPicks.AsNoTracking().Single();
+        Assert.Equal(gitLocation.Id, pick.PalletPositionId); // the pullout's pick follows the boxes into GIT
+        Assert.Equal(30, pick.QuantityBoxes);
+        var putawayRow = db.InwardPutaways.AsNoTracking().Single();
+        Assert.Equal("GIT", putawayRow.ExcludedLocation); // still labelled GIT even though it now tracks a real location
+        Assert.Equal(gitLocation.Id, putawayRow.PalletPositionId);
     }
 
     [Fact]
@@ -220,9 +226,9 @@ public class PickerPutawayPostedTests
         await PullOutAsync(db, 30); // the pullout's pick waits at the virtual location
         Assert.Equal(VirtualLocationStatus.InUse, db.PalletPositions.AsNoTracking().Single(p => p.Id == virtualLocation.Id).VirtualStatus);
 
-        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "GIT"), default);
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", null, "GIT"), default);
 
-        // The boxes are set aside and the pick is cut back, so nothing is left at the virtual location: it is free for reuse.
+        // The boxes (and the open pick waiting on them) move into GIT, so nothing is left at the old virtual location: it is free for reuse.
         var released = db.PalletPositions.AsNoTracking().Single(p => p.Id == virtualLocation.Id);
         Assert.Equal(VirtualLocationStatus.Free, released.VirtualStatus);
     }

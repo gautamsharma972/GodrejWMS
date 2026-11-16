@@ -23,6 +23,10 @@ public static class ZoneTypeIds
     /// warehouse admin created through the UI before this one was introduced, so Overflow can't
     /// safely assume the next sequential ID is free.</summary>
     public const int Overflow = 9000;
+
+    /// <summary>A picker's "set aside as GIT" location during Inward put-away - same reserved-range
+    /// reasoning as Overflow.</summary>
+    public const int Git = 9001;
 }
 
 public static class ZoneTypeCodes
@@ -32,4 +36,5 @@ public static class ZoneTypeCodes
     public const string Seasonal = "Seasonal";
     public const string DispatchNear = "DispatchNear";
     public const string Overflow = "Overflow";
+    public const string Git = "GIT";
 }

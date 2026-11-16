@@ -11,13 +11,14 @@ import {
   type PickSplit,
 } from "../../components/PulloutPickLocationChangeModal";
 import { PulloutPickConfirmModal, type ConfirmablePick } from "../../components/PulloutPickConfirmModal";
+import { PulloutPickerChangeLocationModal, type PickerActivePick } from "../../components/PulloutPickerChangeLocationModal";
 import { AppIcon } from "../../components/ui/AppIcon";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { LoadingView } from "../../components/ui/LoadingView";
 import { Screen } from "../../components/ui/Screen";
 import { colors, radius, spacing, typography } from "../../theme";
-import type { ConfirmPickResult, PulloutDetailDto } from "../../types/api";
+import type { ConfirmPickResult, PulloutDetailDto, PulloutPickChangeOptionDto } from "../../types/api";
 import { errorPulse, successPulse } from "../../utils/haptics";
 import { formatDateTime } from "../../utils/status";
 
@@ -30,6 +31,7 @@ export default function PulloutDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [activePick, setActivePick] = useState<ActivePick | null>(null);
   const [pickMode, setPickMode] = useState<PickChangeMode>("move");
+  const [pickerChangePick, setPickerChangePick] = useState<PickerActivePick | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmPick, setConfirmPick] = useState<ConfirmablePick | null>(null);
   const [isConfirmingPicklist, setIsConfirmingPicklist] = useState(false);
@@ -79,6 +81,22 @@ export default function PulloutDetailScreen() {
     await load();
   };
 
+  // Ditto of the web app's picker Change location: one location, one quantity (min(this pick's
+  // quantity, what's available there)) - no splitting, same as ChangeLocationAsync in PulloutPicker/Index.razor.
+  const handlePickerLocationChange = async (option: PulloutPickChangeOptionDto, quantityBoxes: number, reason: string) => {
+    if (!pickerChangePick) return;
+    await changePulloutPickLocation(token, {
+      referenceNumber: pickerChangePick.referenceNumber,
+      materialNumber: pickerChangePick.materialNumber,
+      currentLocationCode: pickerChangePick.currentLocationCode,
+      mfgMonthLabel: pickerChangePick.mfgMonthLabel,
+      sources: [{ palletPositionId: option.palletPositionId, mfgMonthLabel: option.mfgMonthLabel, quantityBoxes }],
+      reason,
+    });
+    setPickerChangePick(null);
+    await load();
+  };
+
   const handleConfirm = async () => {
     setIsConfirming(true);
     try {
@@ -119,14 +137,10 @@ export default function PulloutDetailScreen() {
     }
   };
 
-  const handlePickConfirmed = async (result: ConfirmPickResult) => {
+  const handlePickConfirmed = async (_result: ConfirmPickResult) => {
     setConfirmPick(null);
-    const parts = [`Picked ${result.pickedBoxes} box(es).`];
-    if ((result.additionalBoxes ?? 0) > 0) parts.push(`${result.additionalBoxes} extra box(es) are taken from the stock here when you confirm the pick-list.`);
-    if (result.returnedToStockBoxes > 0) parts.push(`${result.returnedToStockBoxes} not found - they go back to stock when you confirm the pick-list.`);
-    if (result.movedBoxes > 0) parts.push(`${result.movedBoxes} remaining box(es) will move to ${result.destinationLocationCode} when you confirm the pick-list.`);
-    else if (result.remainingAtSourceBoxes > 0) parts.push(`${result.remainingAtSourceBoxes} box(es) stay at the pick location.`);
-    Alert.alert("Pick confirmed", parts.join("\n"));
+    // No confirmation dialog - the pick row itself already shows the outcome
+    // (e.g. "Picked 16 - move 1 to A-13-01") once the list reloads below.
     await load();
   };
 
@@ -230,20 +244,18 @@ export default function PulloutDetailScreen() {
                       })}
                     >
                       <AppIcon name="checkmark-circle-outline" size={20} color={colors.textOnPrimary} />
-                      <Text style={styles.pickConfirmText}>{pick.pickedAt ? "Edit pick" : "Confirm pick"}</Text>
+                      <Text style={styles.pickConfirmText}>{pick.pickedAt ? "Edit pick" : "Submit Pick"}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.pickActionButton}
-                      onPress={() => {
-                        setPickMode("change");
-                        setActivePick({
-                          referenceNumber: detail.referenceNumber,
-                          materialNumber: line.materialNumber,
-                          currentLocationCode: pick.locationCode,
-                          mfgMonthLabel: pick.mfgMonthLabel,
-                          quantityBoxes: pick.quantityBoxes,
-                        });
-                      }}
+                      onPress={() => setPickerChangePick({
+                        pickId: pick.pickId!,
+                        referenceNumber: detail.referenceNumber,
+                        materialNumber: line.materialNumber,
+                        currentLocationCode: pick.locationCode,
+                        mfgMonthLabel: pick.mfgMonthLabel,
+                        quantityBoxes: pick.quantityBoxes,
+                      })}
                     >
                       <AppIcon name="swap-horizontal" size={18} color={colors.primary} />
                       <Text style={styles.pickActionText}>Change location</Text>
@@ -335,6 +347,13 @@ export default function PulloutDetailScreen() {
         token={token}
         onClose={() => setActivePick(null)}
         onSubmit={handleLocationChange}
+      />
+
+      <PulloutPickerChangeLocationModal
+        pick={pickerChangePick}
+        token={token}
+        onClose={() => setPickerChangePick(null)}
+        onSubmit={handlePickerLocationChange}
       />
     </Screen>
   );

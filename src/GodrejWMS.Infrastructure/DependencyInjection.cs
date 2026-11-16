@@ -71,6 +71,7 @@ public static class DependencyInjection
         services.Configure<GodrejWMS.Application.Common.PickingOptions>(configuration.GetSection("Picking"));
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped<IVirtualLocationService, VirtualLocationService>();
+        services.AddScoped<IGitLocationService, GitLocationService>();
         services.AddScoped<IStockPostingService, StockPostingService>();
         services.AddScoped<ILogArchiveReader, FileSystemLogArchiveReader>();
 
