@@ -75,12 +75,7 @@ public sealed class ConfirmPulloutPickHandler(
             throw new InvalidOperationException("This pullout has been rejected.");
         }
 
-        if (!transaction.IsConfirmed)
-        {
-            throw new InvalidOperationException("This pullout has not been posted yet; confirm it from the supervisor screen.");
-        }
-
-        if (transaction.ConfirmedAt is not null || transaction.UploadHash is null)
+        if (transaction.IsConfirmed && (transaction.ConfirmedAt is not null || transaction.UploadHash is null))
         {
             throw new InvalidOperationException("This pick-list has already been confirmed, so its picks can no longer be changed.");
         }
@@ -93,18 +88,34 @@ public sealed class ConfirmPulloutPickHandler(
             .Where(b => b.PalletPositionId == source.Id && b.MaterialId == line.MaterialId && b.MfgMonth == pick.MfgMonth)
             .SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;
 
+        // A legacy draft has not deducted its planned picks yet. Respect every other legacy
+        // reservation at this cell when deciding how many boxes this pick may take.
+        var otherLegacyReservations = transaction.IsConfirmed ? 0m : await db.PulloutPicks.AsNoTracking()
+            .Where(p => p.Id != pick.Id
+                && p.PalletPositionId == source.Id
+                && p.MfgMonth == pick.MfgMonth
+                && p.PulloutTransactionLine.MaterialId == line.MaterialId
+                && !p.PulloutTransactionLine.PulloutTransaction.IsConfirmed
+                && !p.PulloutTransactionLine.PulloutTransaction.IsRejected)
+            .SumAsync(p => (decimal?)p.QuantityBoxes, cancellationToken) ?? 0m;
+
         // Fewer boxes than allocated go back to stock; more are taken from what is still on the shelf here (never beyond it).
         var extra = Math.Max(0m, request.PickedQuantityBoxes - planned);
-        if (extra > onHand)
+        var extraAvailable = transaction.IsConfirmed
+            ? onHand
+            : Math.Max(0m, onHand - planned - otherLegacyReservations);
+        if (extra > extraAvailable)
         {
             throw new InvalidOperationException(
-                $"Only {onHand:0.###} more box(es) of this material are in stock at {source.LocationCode}, so at most {planned + onHand:0.###} can be picked here. " +
+                $"Only {extraAvailable:0.###} more box(es) of this material are available at {source.LocationCode}, so at most {planned + extraAvailable:0.###} can be picked here. " +
                 "Use Change location to take the rest from another location.");
         }
 
         var shortfall = Math.Max(0m, planned - request.PickedQuantityBoxes);
         // What will be left on the shelf at the pick location once the pick-list is confirmed.
-        var remaining = onHand + shortfall - extra;
+        var remaining = transaction.IsConfirmed
+            ? onHand + shortfall - extra
+            : Math.Max(0m, onHand - request.PickedQuantityBoxes - otherLegacyReservations);
 
         var moved = 0m;
         string? destinationCode = null;

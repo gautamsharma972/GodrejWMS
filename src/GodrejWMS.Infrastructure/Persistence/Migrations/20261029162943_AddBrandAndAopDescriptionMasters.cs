@@ -110,7 +110,8 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 principalColumn: "Id",
                 onDelete: ReferentialAction.Restrict);
 
-            // Client-supplied master data and material mapping. This is migration data, not a runtime seeder.
+#if INCLUDE_MIGRATION_SEED_DATA
+            // Client-supplied master data and material mapping.
             migrationBuilder.Sql("""
                 INSERT INTO Brands (Code, Description, IsActive, CreatedAt)
                 VALUES
@@ -1236,6 +1237,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 SET material.BrandId = brand.Id,
                     material.AopDescriptionId = aop.Id;
                 """);
+#endif
         }
 
         /// <inheritdoc />

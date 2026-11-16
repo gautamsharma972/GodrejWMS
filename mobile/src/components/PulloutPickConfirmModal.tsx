@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ApiError } from "../api/client";
-import { confirmPulloutPick, getPalletPosition, getPickRemainder, getRelocationSuggestions } from "../api/endpoints";
+import { confirmPulloutPick, getPalletPosition, getPickerLocationOptions, getPickRemainder, getRelocationSuggestions } from "../api/endpoints";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { AppIcon } from "./ui/AppIcon";
 import { Button } from "./ui/Button";
 import { FullScreenModal } from "./ui/FullScreenModal";
+import { SearchField } from "./ui/SearchField";
 import { TextField } from "./ui/TextField";
 import { colors, radius, shadow, spacing, typography } from "../theme";
-import type { ConfirmPickResult, PickRemainderDto, RelocationSuggestionDto } from "../types/api";
+import type { AopLocationOptionDto, ConfirmPickResult, PickRemainderDto, RelocationSuggestionDto } from "../types/api";
 import { errorPulse, lightTap, successPulse } from "../utils/haptics";
 
 export interface ConfirmablePick {
@@ -39,6 +40,8 @@ interface Destination {
   code: string;
 }
 
+const boxesLabel = (quantity: number) => `${quantity} ${quantity === 1 ? "box" : "boxes"}`;
+
 /** Big, thumb-friendly +/- control: the quantity is changed with taps, not typed. */
 function Stepper({ value, min, max, onChange }: { value: number; min: number; max: number; onChange: (value: number) => void }) {
   const set = (next: number) => {
@@ -52,7 +55,7 @@ function Stepper({ value, min, max, onChange }: { value: number; min: number; ma
       </TouchableOpacity>
       <View style={styles.stepValueWrap}>
         <Text style={styles.stepValue}>{value}</Text>
-        <Text style={styles.stepUnit}>BOXES</Text>
+        <Text style={styles.stepUnit}>{value === 1 ? "BOX" : "BOXES"}</Text>
       </View>
       <TouchableOpacity style={[styles.stepButton, value >= max && styles.stepButtonDisabled]} onPress={() => set(value + 1)} disabled={value >= max} accessibilityLabel="Increase quantity">
         <AppIcon name="add" size={26} color={value >= max ? colors.textMuted : colors.primary} />
@@ -82,7 +85,8 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
   const [moveEnabled, setMoveEnabled] = useState(false);
   const [destination, setDestination] = useState<Destination | null>(null);
   const [moveQty, setMoveQty] = useState(0);
-  const [destCode, setDestCode] = useState("");
+  const [destSearch, setDestSearch] = useState("");
+  const [locationOptions, setLocationOptions] = useState<AopLocationOptionDto[]>([]);
   const [scanning, setScanning] = useState<"verify" | "destination" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -97,21 +101,40 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setQty(pick.pickedQuantityBoxes ?? pick.quantityBoxes);
     setVerified(pick.pickedQuantityBoxes != null); // an edit of an already confirmed pick: the location was verified before
-    setTypedCode("");
+    setTypedCode(pick.locationCode); // defaults to the pick's own location - the picker only edits this if the suggested location is wrong
     setRemainder(null);
     setSuggestions([]);
     setMoveEnabled(!!pick.moveToPalletPositionId);
     setDestination(pick.moveToPalletPositionId && pick.moveToLocationCode ? { id: pick.moveToPalletPositionId, code: pick.moveToLocationCode } : null);
-    setDestCode("");
+    setDestSearch("");
     setError(null);
     let cancelled = false;
     getPickRemainder(token, pick.pickId)
       .then((value) => !cancelled && setRemainder(value))
       .catch(() => undefined);
+    getPickerLocationOptions(token)
+      .then((value) => !cancelled && setLocationOptions(value))
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, [pick, token]);
+
+  const destSearchResults = useMemo(() => {
+    const needle = destSearch.trim().toUpperCase();
+    if (!needle || !pick) return [];
+    return locationOptions
+      .filter((option) => option.locationCode.toUpperCase() !== pick.locationCode.toUpperCase() && option.locationCode.toUpperCase().includes(needle))
+      .slice(0, 20);
+  }, [locationOptions, destSearch, pick]);
+
+  // Suggestions for the "verify the location" field - shown only once the picker edits it away
+  // from the prefilled, expected location, so a typo or a genuinely different spot is easy to fix.
+  const verifySearchResults = useMemo(() => {
+    const needle = typedCode.trim().toUpperCase();
+    if (!pick || !needle || needle === pick.locationCode.toUpperCase()) return [];
+    return locationOptions.filter((option) => option.locationCode.toUpperCase().includes(needle)).slice(0, 20);
+  }, [locationOptions, typedCode, pick]);
 
   // Keep the quantity to move within what is left, and refresh the suggested destinations for it.
   useEffect(() => {
@@ -193,7 +216,7 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
           <Text style={styles.heroMaterial}>{pick.materialDescription}</Text>
           <View style={styles.heroMetaRow}>
             <View style={styles.metaPill}><Text style={styles.metaPillLabel}>PKM</Text><Text style={styles.metaPillValue}>{pick.mfgMonthLabel}</Text></View>
-            <View style={styles.metaPill}><Text style={styles.metaPillValue}>{planned} boxes allocated</Text></View>
+            <View style={styles.metaPill}><Text style={styles.metaPillValue}>{boxesLabel(planned)} allocated</Text></View>
           </View>
         </View>
 
@@ -223,6 +246,23 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
                 placeholder={pick.locationCode}
                 onSubmitEditing={() => matches(typedCode) ? setVerified(true) : setError(`That is not ${pick.locationCode}.`)}
               />
+              {verifySearchResults.length > 0 && (
+                <View style={styles.destSearchResults}>
+                  {verifySearchResults.map((option, index) => (
+                    <TouchableOpacity
+                      key={option.id}
+                      style={[styles.destSearchRow, index === verifySearchResults.length - 1 && styles.destSearchRowLast]}
+                      onPress={() => {
+                        setTypedCode(option.locationCode);
+                        lightTap();
+                      }}
+                    >
+                      <Text style={styles.destSearchRowText}>{option.locationCode}</Text>
+                      <AppIcon name="chevron-forward" size={16} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
               <Button
                 title="Verify location"
                 variant="outline"
@@ -242,19 +282,19 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
           <Stepper value={qty} min={1} max={planned + (remainder?.remainingBoxes ?? 0)} onChange={setQty} />
           {qty > planned && (
             <View style={styles.hintBox}><AppIcon name="information-circle-outline" size={18} color={colors.info} /><Text style={styles.hint}>
-              {qty - planned} extra box(es) are taken from the stock still at {pick.locationCode} when you confirm the pick-list. Use Change location to take more from another location.
+              {boxesLabel(qty - planned)} extra {qty - planned === 1 ? "is" : "are"} taken from the stock still at {pick.locationCode} when you confirm the pick-list. Use Change location to take more from another location.
             </Text></View>
           )}
           {qty < planned && (
-            <View style={styles.hintBox}><AppIcon name="information-circle-outline" size={18} color={colors.info} /><Text style={styles.hint}>{planned - qty} box(es) not found go back to stock at {pick.locationCode} when you confirm the pick-list.</Text></View>
+            <View style={styles.hintBox}><AppIcon name="information-circle-outline" size={18} color={colors.info} /><Text style={styles.hint}>{boxesLabel(planned - qty)} not found {planned - qty === 1 ? "goes" : "go"} back to stock at {pick.locationCode} when you confirm the pick-list.</Text></View>
           )}
         </View>
 
         {remainingAfter > 0 && (
           <View style={styles.sectionCard}>
-            <StepHeader number={3} title={`Move the remaining ${remainingAfter} box(es)?`} optional />
+            <StepHeader number={3} title={`Move the remaining ${boxesLabel(remainingAfter)}?`} optional />
             <Text style={styles.sectionIntro}>
-              {remainingAfter} box(es) of this material stay at {pick.locationCode} unless you choose a location. Nothing moves until you confirm the pick-list, so you can still change your mind.
+              {boxesLabel(remainingAfter)} of this material {remainingAfter === 1 ? "stays" : "stay"} at {pick.locationCode} unless you choose a location. Nothing moves until you confirm the pick-list, so you can still change your mind.
             </Text>
 
             <TouchableOpacity
@@ -285,16 +325,31 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
             <View style={styles.otherDestination}>
             <Text style={styles.otherDestinationTitle}>Another destination</Text>
             <Button title="Scan another location" variant="outline" size="lg" onPress={() => setScanning("destination")} icon={<AppIcon name="scan-outline" size={20} color={colors.primary} />} />
-            <TextField
-              label="Or type a location code"
-              value={destCode}
-              onChangeText={setDestCode}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              size="lg"
-              onSubmitEditing={() => destCode.trim() && lookupDestination(destCode)}
-            />
-            <Button title="Use this location" variant="ghost" disabled={destCode.trim().length === 0} onPress={() => lookupDestination(destCode)} />
+            <Text style={styles.orDestinationLabel}>Or search for a location</Text>
+            <SearchField placeholder="Search location" value={destSearch} onChangeText={setDestSearch} autoCapitalize="characters" autoCorrect={false} />
+            {destSearch.trim().length > 0 && (
+              destSearchResults.length === 0 ? (
+                <Text style={styles.destSearchEmpty}>No location matches &ldquo;{destSearch}&rdquo;.</Text>
+              ) : (
+                <View style={styles.destSearchResults}>
+                  {destSearchResults.map((option, index) => (
+                    <TouchableOpacity
+                      key={option.id}
+                      style={[styles.destSearchRow, index === destSearchResults.length - 1 && styles.destSearchRowLast]}
+                      onPress={() => {
+                        setDestination({ id: option.id, code: option.locationCode });
+                        setMoveEnabled(true);
+                        setDestSearch("");
+                        lightTap();
+                      }}
+                    >
+                      <Text style={styles.destSearchRowText}>{option.locationCode}</Text>
+                      <AppIcon name="chevron-forward" size={16} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )
+            )}
             </View>
 
             {moveEnabled && destination && (
@@ -311,10 +366,10 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
       <View style={styles.footer}>
         <View style={styles.footerSummary}>
           <Text style={styles.footerSummaryLabel}>{verified ? "Ready to confirm" : "Location verification required"}</Text>
-          <Text style={styles.footerSummaryValue}>{qty} box(es)</Text>
+          <Text style={styles.footerSummaryValue}>{boxesLabel(qty)}</Text>
         </View>
         <Button
-          title={`Submit pick of ${qty}`}
+          title={`Submit pick · ${boxesLabel(qty)}`}
           size="lg"
           loading={submitting}
           disabled={!verified}
@@ -323,7 +378,7 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
         />
         {!verified && <Text style={styles.footerHint}>Verify the location first.</Text>}
         {moveEnabled && destination && moveQty > 0 && remainingAfter > 0 && (
-          <Text style={styles.footerHint}>{moveQty} box(es) will move to {destination.code} when you confirm the pick-list.</Text>
+          <Text style={styles.footerHint}>{boxesLabel(moveQty)} will move to {destination.code} when you confirm the pick-list.</Text>
         )}
       </View>
 
@@ -350,38 +405,38 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
 
 const styles = StyleSheet.create({
   scroll: { flex: 1, marginHorizontal: -spacing.lg },
-  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl },
-  hero: { backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: "#dfe4ff", borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.md },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs, paddingBottom: spacing.xl },
+  hero: { backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: "#dfe4ff", borderRadius: radius.xl, padding: spacing.md, marginBottom: spacing.md },
   heroTop: { flexDirection: "row", alignItems: "center" },
   heroIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", marginRight: spacing.md },
   heroLocationWrap: { flex: 1 },
   heroLabel: { ...typography.label, color: colors.primary, letterSpacing: 0.8 },
   heroLocationRow: { flexDirection: "row", alignItems: "center", marginTop: 1 },
-  heroLocation: { fontSize: 32, fontWeight: "800", color: colors.textPrimary, letterSpacing: -0.5 },
+  heroLocation: { fontSize: 29, lineHeight: 34, fontWeight: "800", color: colors.textPrimary, letterSpacing: -0.5 },
   virtualBadge: { ...typography.caption, color: colors.primaryText, fontWeight: "800", backgroundColor: colors.surface, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 3, marginLeft: spacing.sm },
-  heroDivider: { height: 1, backgroundColor: "#dfe4ff", marginVertical: spacing.md },
+  heroDivider: { height: 1, backgroundColor: "#dfe4ff", marginVertical: spacing.sm },
   heroMaterialNumber: { ...typography.bodyStrong, color: colors.textPrimary },
   heroMaterial: { ...typography.body, color: colors.textSecondary, marginTop: 2, lineHeight: 19 },
-  heroMetaRow: { flexDirection: "row", flexWrap: "wrap", marginTop: spacing.md, gap: spacing.sm },
-  metaPill: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 7 },
+  heroMetaRow: { flexDirection: "row", flexWrap: "wrap", marginTop: spacing.sm, gap: spacing.sm },
+  metaPill: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 6 },
   metaPillLabel: { ...typography.caption, color: colors.textMuted, fontWeight: "700", marginRight: spacing.xs },
   metaPillValue: { ...typography.caption, color: colors.textPrimary, fontWeight: "700" },
   error: { backgroundColor: colors.dangerSoft, color: colors.dangerText, borderRadius: radius.md, padding: spacing.md, fontWeight: "700", marginBottom: spacing.md },
-  sectionCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.md, ...shadow.card },
-  stepHeader: { flexDirection: "row", alignItems: "center", marginBottom: spacing.lg },
+  sectionCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md, ...shadow.card },
+  stepHeader: { flexDirection: "row", alignItems: "center", marginBottom: spacing.md },
   stepNumber: { width: 28, height: 28, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary },
   stepNumberText: { ...typography.label, color: colors.textOnPrimary, fontSize: 13 },
   stepTitle: { ...typography.subtitle, color: colors.textPrimary, flex: 1, marginLeft: spacing.sm },
   optionalBadge: { ...typography.caption, color: colors.textSecondary, fontWeight: "800", backgroundColor: colors.neutralSoft, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 5 },
-  orRow: { flexDirection: "row", alignItems: "center", marginVertical: spacing.md },
+  orRow: { flexDirection: "row", alignItems: "center", marginVertical: spacing.sm },
   orLine: { flex: 1, height: 1, backgroundColor: colors.border },
   orText: { ...typography.caption, color: colors.textMuted, fontWeight: "800", marginHorizontal: spacing.sm },
   okRow: { flexDirection: "row", alignItems: "center", backgroundColor: colors.successSoft, borderRadius: radius.md, padding: spacing.md },
   okIcon: { width: 34, height: 34, borderRadius: radius.pill, backgroundColor: colors.success, alignItems: "center", justifyContent: "center", marginRight: spacing.md },
   okLabel: { ...typography.caption, color: colors.successText, fontWeight: "800" },
   okText: { color: colors.successText, fontWeight: "700", marginTop: 1 },
-  skip: { alignSelf: "center", padding: spacing.md, minHeight: 48, justifyContent: "center" },
-  skipText: { ...typography.caption, color: colors.textSecondary, textDecorationLine: "underline" },
+  skip: { alignSelf: "center", paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.xs, minHeight: 40, justifyContent: "center" },
+  skipText: { ...typography.caption, color: colors.textSecondary, fontWeight: "700" },
   stepper: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   stepButton: { width: 58, height: 58, borderRadius: radius.lg, backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: "#dfe4ff", alignItems: "center", justifyContent: "center" },
   stepButtonDisabled: { opacity: 0.5 },
@@ -400,6 +455,12 @@ const styles = StyleSheet.create({
   choiceMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   otherDestination: { marginTop: spacing.sm, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
   otherDestinationTitle: { ...typography.label, color: colors.textSecondary, marginBottom: spacing.sm },
+  orDestinationLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: "700", marginTop: spacing.md, marginBottom: spacing.sm },
+  destSearchResults: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: "hidden", marginBottom: spacing.md },
+  destSearchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  destSearchRowLast: { borderBottomWidth: 0 },
+  destSearchRowText: { ...typography.bodyStrong, color: colors.textPrimary },
+  destSearchEmpty: { ...typography.caption, color: colors.textMuted, textAlign: "center", paddingVertical: spacing.md },
   moveBox: { backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: "#dfe4ff", borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md },
   moveEyebrow: { ...typography.caption, color: colors.primary, fontWeight: "800", letterSpacing: 0.6 },
   moveTitle: { ...typography.bodyStrong, color: colors.textPrimary, marginTop: 2, marginBottom: spacing.md },

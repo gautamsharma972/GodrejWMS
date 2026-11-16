@@ -12,6 +12,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             // The Overflow zone owns every virtual location (see PalletPosition.IsVirtual). Idempotent.
             // Id is a fixed, far-out-of-range value (ZoneTypeIds.Overflow), not the next sequential
             // one - a warehouse admin may already have created custom zone types through the UI
@@ -26,6 +27,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 WHERE (RoleName = 'Pickers' AND PermissionKey IN ('Menu.ViewPullout', 'Pullout.View', 'Pullout.Pick'))
                    OR (RoleName = 'Floor Supervisor' AND PermissionKey = 'Pullout.Pick');
             ");
+#endif
 
             migrationBuilder.AddColumn<bool>(
                 name: "IsSystem",
@@ -241,6 +243,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 table: "VirtualLocationLogs",
                 columns: new[] { "PalletPositionId", "ReleasedAt" });
 
+#if INCLUDE_MIGRATION_SEED_DATA
             // After the schema changes above (they need the IsSystem column and the sequence table).
             migrationBuilder.Sql(@"
                 -- Every warehouse gets its hidden overflow rack and number counter up front, so two first-ever
@@ -255,11 +258,13 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 SELECT w.Id, 0 FROM Warehouses w
                 WHERE NOT EXISTS (SELECT 1 FROM VirtualLocationSequences s WHERE s.WarehouseId = w.Id);
             ");
+#endif
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql(@"
                 UPDATE RolePermissions SET IsGranted = 0
                 WHERE (RoleName = 'Pickers' AND PermissionKey IN ('Menu.ViewPullout', 'Pullout.View', 'Pullout.Pick'))
@@ -277,6 +282,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 DELETE FROM Racks WHERE IsSystem = 1 AND NOT EXISTS (SELECT 1 FROM PalletPositions x WHERE x.RackId = Racks.Id);
                 DELETE FROM ZoneTypes WHERE Code = 'Overflow' AND NOT EXISTS (SELECT 1 FROM PalletPositions x WHERE x.ZoneType = ZoneTypes.Id);
             ");
+#endif
 
             migrationBuilder.DropTable(
                 name: "StockLedgerEntries");

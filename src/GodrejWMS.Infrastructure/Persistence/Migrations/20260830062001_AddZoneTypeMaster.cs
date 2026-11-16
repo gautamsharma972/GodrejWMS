@@ -39,21 +39,6 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 })
                 .Annotation("MySql:CharSet", "utf8mb4");
 
-            // Seed the fixed zone-type rows at the same Ids the retired ZoneType enum used
-            // (1=Fast, 2=Reserve, 3=Seasonal, 4=DispatchNear) so the FK constraint added below -
-            // against the existing PalletPositions.ZoneType int column - resolves without
-            // touching any data.
-            migrationBuilder.InsertData(
-                table: "ZoneTypes",
-                columns: new[] { "Id", "Code", "DisplayName", "Description", "SortOrder", "IsActive", "CreatedAt" },
-                values: new object[,]
-                {
-                    { 1, "Fast", "Fast", "Fast moving pick-friendly zone", 10, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { 2, "Reserve", "Reserve", "Reserve storage zone", 20, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { 3, "Seasonal", "Seasonal", "Current-season priority zone", 30, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { 4, "DispatchNear", "Dispatch-near", "Near-dispatch zone", 40, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) }
-                });
-
             migrationBuilder.CreateIndex(
                 name: "IX_PalletPositions_ZoneType",
                 table: "PalletPositions",

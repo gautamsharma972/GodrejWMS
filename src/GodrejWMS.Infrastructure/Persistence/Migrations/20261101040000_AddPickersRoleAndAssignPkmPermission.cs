@@ -15,6 +15,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql(@"
                 INSERT INTO AspNetRoles (Id, Name, NormalizedName, ConcurrencyStamp)
                 SELECT UUID(), 'Pickers', 'PICKERS', UUID()
@@ -39,16 +40,19 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 UPDATE RolePermissions SET IsGranted = 0
                 WHERE RoleName = 'Office Staff' AND PermissionKey = 'Inward.Confirm';
             ");
+#endif
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql(@"
                 UPDATE RolePermissions SET IsGranted = 1 WHERE RoleName = 'Office Staff' AND PermissionKey = 'Inward.Confirm';
                 UPDATE RolePermissions SET IsGranted = 0 WHERE RoleName = 'Office Staff' AND PermissionKey = 'Menu.ViewInwardNoPkm';
                 DELETE FROM RolePermissions WHERE RoleName = 'Pickers' OR PermissionKey = 'Inward.AssignPkm';
                 DELETE FROM AspNetRoles WHERE NormalizedName = 'PICKERS';
             ");
+#endif
         }
     }
 }

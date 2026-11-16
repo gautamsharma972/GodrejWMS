@@ -10,6 +10,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.UpdateData(
                 table: "RolePermissions",
                 keyColumns: new[] { "PermissionKey", "RoleName" },
@@ -93,11 +94,13 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 keyValues: new object[] { "Masters.Edit", "Supervisor" },
                 column: "IsGranted",
                 value: true);
+#endif
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.UpdateData(
                 table: "RolePermissions",
                 keyColumns: new[] { "PermissionKey", "RoleName" },
@@ -181,6 +184,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 keyValues: new object[] { "Masters.Edit", "Supervisor" },
                 column: "IsGranted",
                 value: false);
+#endif
         }
     }
 }

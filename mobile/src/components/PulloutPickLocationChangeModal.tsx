@@ -6,6 +6,7 @@ import { AppIcon } from "./ui/AppIcon";
 import { Button } from "./ui/Button";
 import { FullScreenModal } from "./ui/FullScreenModal";
 import { LoadingView } from "./ui/LoadingView";
+import { SearchField } from "./ui/SearchField";
 import { TextField } from "./ui/TextField";
 import { colors, radius, spacing, typography } from "../theme";
 import type { PulloutPickChangeOptionDto } from "../types/api";
@@ -53,6 +54,7 @@ export function PulloutPickLocationChangeModal({ pick, mode, token, onClose, onS
   // "move" mode: a single destination, full quantity, nothing to split.
   const [moveSplit, setMoveSplit] = useState<PickSplit | null>(null);
   const [isBrowsing, setIsBrowsing] = useState(false);
+  const [browseSearch, setBrowseSearch] = useState("");
   const [reason, setReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +68,7 @@ export function PulloutPickLocationChangeModal({ pick, mode, token, onClose, onS
       setExtraSplits([]);
       setMoveSplit(null);
       setIsBrowsing(false);
+      setBrowseSearch("");
       setReason("");
       setError(null);
       return;
@@ -73,6 +76,7 @@ export function PulloutPickLocationChangeModal({ pick, mode, token, onClose, onS
     setIsLoading(true);
     setExtraSplits([]);
     setMoveSplit(null);
+    setBrowseSearch("");
     getPulloutPickOptions(token, pick)
       .then(setOptions)
       .finally(() => setIsLoading(false));
@@ -117,6 +121,16 @@ export function PulloutPickLocationChangeModal({ pick, mode, token, onClose, onS
   };
 
   const moveBrowsableOptions = useMemo(() => options.filter((option) => !option.isCurrent), [options]);
+
+  const browseNeedle = browseSearch.trim().toUpperCase();
+  const filteredMoveBrowsableOptions = useMemo(
+    () => (browseNeedle ? moveBrowsableOptions.filter((option) => option.locationCode.toUpperCase().includes(browseNeedle)) : moveBrowsableOptions),
+    [moveBrowsableOptions, browseNeedle],
+  );
+  const filteredBrowsableOptions = useMemo(
+    () => (browseNeedle ? browsableOptions.filter((option) => option.locationCode.toUpperCase().includes(browseNeedle)) : browsableOptions),
+    [browsableOptions, browseNeedle],
+  );
 
   const handleScanLocation = (value: string): boolean => {
     const normalized = value.trim().toUpperCase();
@@ -199,8 +213,9 @@ export function PulloutPickLocationChangeModal({ pick, mode, token, onClose, onS
                 <>
                   {renderScanBanner(() => setShowScanner(true))}
                   {moveSplit && <Button title="Cancel" variant="ghost" onPress={() => setIsBrowsing(false)} style={{ marginBottom: spacing.sm }} />}
+                  <SearchField placeholder="Search location" value={browseSearch} onChangeText={setBrowseSearch} autoCapitalize="characters" />
                   <FlatList
-                    data={moveBrowsableOptions}
+                    data={filteredMoveBrowsableOptions}
                     keyExtractor={(item) => optionKey(item)}
                     renderItem={({ item }) => (
                       <TouchableOpacity style={styles.row} onPress={() => addMoveSplit(item)}>
@@ -212,7 +227,7 @@ export function PulloutPickLocationChangeModal({ pick, mode, token, onClose, onS
                         </Text>
                       </TouchableOpacity>
                     )}
-                    ListEmptyComponent={<Text style={styles.empty}>No alternate locations available.</Text>}
+                    ListEmptyComponent={<Text style={styles.empty}>{browseSearch ? `No location matches "${browseSearch}".` : "No alternate locations available."}</Text>}
                   />
                 </>
               )}
@@ -273,8 +288,9 @@ export function PulloutPickLocationChangeModal({ pick, mode, token, onClose, onS
                 <>
                   {renderScanBanner(() => setShowScanner(true))}
                   <Button title="Cancel" variant="ghost" onPress={() => setIsBrowsing(false)} style={{ marginBottom: spacing.sm }} />
+                  <SearchField placeholder="Search location" value={browseSearch} onChangeText={setBrowseSearch} autoCapitalize="characters" />
                   <FlatList
-                    data={browsableOptions}
+                    data={filteredBrowsableOptions}
                     keyExtractor={(item) => optionKey(item)}
                     renderItem={({ item }) => (
                       <TouchableOpacity style={styles.row} onPress={() => addExtraSplit(item)}>
@@ -286,7 +302,7 @@ export function PulloutPickLocationChangeModal({ pick, mode, token, onClose, onS
                         </Text>
                       </TouchableOpacity>
                     )}
-                    ListEmptyComponent={<Text style={styles.empty}>No alternate locations available.</Text>}
+                    ListEmptyComponent={<Text style={styles.empty}>{browseSearch ? `No location matches "${browseSearch}".` : "No alternate locations available."}</Text>}
                   />
                 </>
               )}

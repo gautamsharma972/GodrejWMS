@@ -15,7 +15,7 @@ public class PulloutPickConfirmationTests
 
     /// <summary>A-01-01 (the "level 6" bin) holds 50 boxes; a pullout of 45 has been uploaded, so 45 are deducted and 5 remain.
     /// A-02-01 is an empty ground bin and A-03-01 holds 60 boxes of the same material for correction tests.</summary>
-    private static async Task<Setup> SeedAsync()
+    private static async Task<Setup> SeedAsync(bool legacyDraft = false)
     {
         var db = TestDbContextFactory.Create();
         db.Warehouses.Add(new Warehouse { Id = 1, Code = "GDR1", Name = "Godrej 1" });
@@ -40,7 +40,10 @@ public class PulloutPickConfirmationTests
 
         var submit = new SubmitPulloutHandler(db, new PulloutAllocationService(db), TestServices.Posting(db), TestServices.Uow(db), new SvcClock(), new SvcUser());
         // Allocation is FIFO by rack order, so the 45 come from A-01-01.
-        var result = await submit.Handle(new SubmitPulloutCommand([new SubmitPulloutLine(material.MaterialNumber, 45)], WarehouseId: 1), default);
+        var result = await submit.Handle(new SubmitPulloutCommand(
+            [new SubmitPulloutLine(material.MaterialNumber, 45)],
+            WarehouseId: 1,
+            PreviewOnly: legacyDraft), default);
         return new Setup(db, material, positions[0], positions[1], positions[2], result.ReferenceNumber);
     }
 
@@ -281,6 +284,33 @@ public class PulloutPickConfirmationTests
 
         await new ConfirmPulloutPicklistHandler(s.Db, TestServices.Posting(s.Db), TestServices.Uow(s.Db), new PickAllow(), new SvcClock(), new SvcUser())
             .Handle(new ConfirmPulloutPicklistCommand(s.Db.PulloutTransactions.AsNoTracking().Single().Id), default);
+        Assert.Empty((await list.Handle(new GetPickerPendingPulloutsQuery(), default)).Items);
+    }
+
+    [Fact]
+    public async Task PickerPickList_ListsLegacyDraftWithAllocatedPicks_AndPostsActualQuantityOnFinalConfirm()
+    {
+        var s = await SeedAsync(legacyDraft: true);
+        using var _ = s.Db;
+        var list = new GetPickerPendingPulloutsHandler(s.Db, new PickAllow());
+
+        var pending = Assert.Single((await list.Handle(new GetPickerPendingPulloutsQuery(), default)).Items);
+        Assert.Equal(s.Reference, pending.ReferenceNumber);
+        Assert.False(s.Db.PulloutTransactions.AsNoTracking().Single().IsConfirmed);
+        Assert.Equal(50, OnHand(s.Db, s.TopLevel));
+
+        var detail = await new GetPulloutDetailHandler(s.Db).Handle(new GetPulloutDetailQuery(pending.Id), default);
+        var persistedPick = Assert.Single(Assert.Single(detail.Lines).Picks);
+        Assert.Equal(s.Db.PulloutPicks.AsNoTracking().Single().Id, persistedPick.PickId);
+        Assert.Equal(45, persistedPick.QuantityBoxes);
+
+        await Handler(s.Db).Handle(new ConfirmPulloutPickCommand(s.Db.PulloutPicks.AsNoTracking().Single().Id, 45), default);
+        await ConfirmPicklistAsync(s.Db);
+
+        var saved = s.Db.PulloutTransactions.AsNoTracking().Single();
+        Assert.True(saved.IsConfirmed);
+        Assert.NotNull(saved.ConfirmedAt);
+        Assert.Equal(5, OnHand(s.Db, s.TopLevel));
         Assert.Empty((await list.Handle(new GetPickerPendingPulloutsQuery(), default)).Items);
     }
 

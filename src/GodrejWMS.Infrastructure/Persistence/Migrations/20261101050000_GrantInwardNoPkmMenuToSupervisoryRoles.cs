@@ -13,20 +13,24 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql(@"
                 UPDATE RolePermissions SET IsGranted = 1
                 WHERE PermissionKey = 'Menu.ViewInwardNoPkm'
                   AND RoleName IN ('Superadmin', 'Platform Admin', 'Head Supervisor', 'Supervisor');
             ");
+#endif
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql(@"
                 UPDATE RolePermissions SET IsGranted = 0
                 WHERE PermissionKey = 'Menu.ViewInwardNoPkm'
                   AND RoleName IN ('Superadmin', 'Platform Admin', 'Head Supervisor', 'Supervisor');
             ");
+#endif
         }
     }
 }

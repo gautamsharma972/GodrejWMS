@@ -50,21 +50,6 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 column: "Code",
                 unique: true);
 
-            // Seed the fixed location-type rows at the same Ids the retired LocationType enum
-            // used (1=Rack, 2=Pallet, 3=Floor, 4=Yard) so the FK constraints added below - against
-            // the existing PalletPositions.LocationType and LocationTypeConsolidationLevels.LocationType
-            // int columns - resolve without touching any data.
-            migrationBuilder.InsertData(
-                table: "LocationTypes",
-                columns: new[] { "Id", "Code", "DisplayName", "Description", "SortOrder", "IsActive", "CreatedAt" },
-                values: new object[,]
-                {
-                    { 1, "Rack", "Rack", "Rack storage location", 10, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { 2, "Pallet", "Pallet", "Standalone pallet storage location", 20, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { 3, "Floor", "Floor", "Floor storage location", 30, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { 4, "Yard", "Yard", "Yard storage location", 40, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) }
-                });
-
             migrationBuilder.AddForeignKey(
                 name: "FK_LocationTypeConsolidationLevels_LocationTypes_LocationType",
                 table: "LocationTypeConsolidationLevels",

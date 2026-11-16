@@ -36,7 +36,11 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
             .Select(w => w.Address)
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (!transaction.IsConfirmed && transaction.PreviewJson is not null)
+        // A normal draft is rendered from its saved preview. Legacy drafts can already have
+        // persisted allocations, though, and picker clients need those live rows (especially
+        // PickId) in order to confirm the physical picks.
+        var hasPersistedPicks = transaction.Lines.Any(line => line.Picks.Count != 0);
+        if (!transaction.IsConfirmed && !hasPersistedPicks && transaction.PreviewJson is not null)
         {
             var preview = System.Text.Json.JsonSerializer.Deserialize<PulloutResultDto>(transaction.PreviewJson)!;
             return new PulloutDetailDto(transaction.Id, transaction.ReferenceNumber, transaction.CreatedAt,

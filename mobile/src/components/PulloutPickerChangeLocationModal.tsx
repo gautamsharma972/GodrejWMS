@@ -5,6 +5,7 @@ import { AppIcon } from "./ui/AppIcon";
 import { Button } from "./ui/Button";
 import { FullScreenModal } from "./ui/FullScreenModal";
 import { LoadingView } from "./ui/LoadingView";
+import { SearchField } from "./ui/SearchField";
 import { TextField } from "./ui/TextField";
 import { colors, radius, spacing, typography } from "../theme";
 import type { PulloutPickChangeOptionDto } from "../types/api";
@@ -34,6 +35,7 @@ interface Props {
 export function PulloutPickerChangeLocationModal({ pick, token, onClose, onSubmit }: Props) {
   const [options, setOptions] = useState<PulloutPickChangeOptionDto[] | null>(null);
   const [selected, setSelected] = useState<PulloutPickChangeOptionDto | null>(null);
+  const [search, setSearch] = useState("");
   const [reason, setReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,12 +45,14 @@ export function PulloutPickerChangeLocationModal({ pick, token, onClose, onSubmi
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setOptions(null);
       setSelected(null);
+      setSearch("");
       setReason("");
       setError(null);
       return;
     }
     setOptions(null);
     setSelected(null);
+    setSearch("");
     setReason("");
     setError(null);
     let cancelled = false;
@@ -66,6 +70,8 @@ export function PulloutPickerChangeLocationModal({ pick, token, onClose, onSubmi
   );
 
   if (!pick) return null;
+
+  const filteredOptions = options?.filter((item) => item.locationCode.toUpperCase().includes(search.trim().toUpperCase())) ?? null;
 
   const canSubmit = selected !== null && !selected.isCurrent && (!selected.breaksFifo || reason.trim().length > 0);
 
@@ -97,8 +103,16 @@ export function PulloutPickerChangeLocationModal({ pick, token, onClose, onSubmi
           <Text style={styles.emptyText}>No other location holds this material.</Text>
         </View>
       ) : (
+        <>
+          <SearchField placeholder="Search location" value={search} onChangeText={setSearch} autoCapitalize="characters" />
+          {filteredOptions && filteredOptions.length === 0 ? (
+            <View style={styles.empty}>
+              <AppIcon name="search-outline" size={22} color={colors.textMuted} />
+              <Text style={styles.emptyText}>No location matches &ldquo;{search}&rdquo;.</Text>
+            </View>
+          ) : (
         <FlatList
-          data={options}
+          data={filteredOptions ?? []}
           keyExtractor={(item) => `${item.palletPositionId}|${item.mfgMonthLabel}`}
           contentContainerStyle={{ paddingBottom: spacing.lg }}
           renderItem={({ item }) => {
@@ -118,6 +132,8 @@ export function PulloutPickerChangeLocationModal({ pick, token, onClose, onSubmi
             );
           }}
         />
+          )}
+        </>
       )}
 
       <View style={styles.footer}>

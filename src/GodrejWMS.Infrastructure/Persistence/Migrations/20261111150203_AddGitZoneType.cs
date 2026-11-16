@@ -10,6 +10,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             // The GIT zone owns the one persistent "set aside as GIT" location created per warehouse
             // (see GitLocationService). Idempotent, same pattern as the Overflow zone type seed in
             // 20261108101407_AddVirtualLocationsAndPostOnUpload.cs. Id is a fixed, far-out-of-range
@@ -21,14 +22,17 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 FROM DUAL
                 WHERE NOT EXISTS (SELECT 1 FROM ZoneTypes WHERE Code = 'GIT');
             ");
+#endif
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql(@"
                 DELETE FROM ZoneTypes WHERE Code = 'GIT' AND NOT EXISTS (SELECT 1 FROM PalletPositions x WHERE x.ZoneType = ZoneTypes.Id);
             ");
+#endif
         }
     }
 }

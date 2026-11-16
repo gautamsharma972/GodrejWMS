@@ -39,20 +39,6 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 })
                 .Annotation("MySql:CharSet", "utf8mb4");
 
-            // Seed the fixed subtype rows at the same Ids the retired LocationSubtype enum used
-            // (1=Good, 2=Damage, 3=Expire, 4=Hold) so the FK constraints added below - against the
-            // existing LocationSubtype/StockSubtype int columns - resolve without touching any data.
-            migrationBuilder.InsertData(
-                table: "LocationSubtypes",
-                columns: new[] { "Id", "Code", "DisplayName", "Description", "SortOrder", "IsActive", "CreatedAt" },
-                values: new object[,]
-                {
-                    { 1, "Good", "Good", "Saleable stock location", 10, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { 2, "Damage", "Damage", "Damaged stock location", 20, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { 3, "Expire", "Expire", "Expired or near-expiry stock location", 30, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { 4, "Hold", "Hold", "Quality hold location", 40, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) }
-                });
-
             migrationBuilder.CreateIndex(
                 name: "IX_StockBatches_StockSubtype",
                 table: "StockBatches",

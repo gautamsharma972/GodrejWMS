@@ -14,6 +14,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql(@"
                 INSERT INTO RolePermissions (RoleName, PermissionKey, IsGranted)
                 SELECT r.Name, 'Inward.OverrideGroundFloor',
@@ -21,11 +22,14 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 FROM AspNetRoles r
                 WHERE NOT EXISTS (SELECT 1 FROM RolePermissions p WHERE p.RoleName = r.Name AND p.PermissionKey = 'Inward.OverrideGroundFloor');
             ");
+#endif
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql("DELETE FROM RolePermissions WHERE PermissionKey = 'Inward.OverrideGroundFloor';");
+#endif
         }
     }
 }

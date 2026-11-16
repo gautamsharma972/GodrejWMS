@@ -108,7 +108,7 @@ export function BarcodeScannerModal({ visible, title = "Scan location", onClose,
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.ink },
-  overlay: { flex: 1, justifyContent: "space-between" },
+  overlay: { flex: 1 },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   title: { ...typography.subtitle, color: colors.textOnPrimary },
-  frameWrap: { alignItems: "center", paddingBottom: spacing.xxxl, paddingHorizontal: spacing.xl },
+  frameWrap: { alignItems: "center", marginTop: spacing.lg, paddingHorizontal: spacing.xl },
   frame: {
     width: 260,
     height: 180,

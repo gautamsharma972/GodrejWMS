@@ -28,6 +28,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 })
                 .Annotation("MySql:CharSet", "utf8mb4");
 
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.InsertData(
                 table: "RolePermissions",
                 columns: new[] { "PermissionKey", "RoleName", "IsGranted" },
@@ -264,6 +265,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     { "Users.ResetPassword", "Supervisor", false },
                     { "Users.View", "Supervisor", false }
                 });
+#endif
         }
 
         /// <inheritdoc />

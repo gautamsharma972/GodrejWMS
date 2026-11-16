@@ -54,12 +54,8 @@ public sealed class ConfirmPulloutPicklistHandler(
             throw new InvalidOperationException("This pullout has been rejected.");
         }
 
-        if (!transaction.IsConfirmed || transaction.UploadHash is null)
-        {
-            throw new InvalidOperationException("This pullout was not posted on upload; a supervisor confirms it.");
-        }
-
-        if (transaction.ConfirmedAt is not null)
+        var wasPosted = transaction.IsConfirmed;
+        if (wasPosted && (transaction.ConfirmedAt is not null || transaction.UploadHash is null))
         {
             throw new InvalidOperationException("This pick-list has already been confirmed.");
         }
@@ -77,35 +73,71 @@ public sealed class ConfirmPulloutPicklistHandler(
             throw new InvalidOperationException($"Confirm every pick first - {open} pick(s) of this pick-list have not been confirmed yet.");
         }
 
-        // 1. The picker may have picked fewer or more boxes than allocated. Boxes not found were already taken out of stock at upload:
-        //    they go back where they were. Boxes picked beyond the allocation are taken from what is still on the shelf there.
-        var adjustments = new List<StockChange>();
-        foreach (var (line, pick) in picks)
+        // 1. Current uploads already deducted the planned quantities, so only their differences
+        // are posted here. Legacy drafts still hold reservations; post the actual picked amounts
+        // now, when the picker closes the list.
+        if (!wasPosted)
         {
-            var picked = pick.PickedQuantityBoxes ?? pick.QuantityBoxes;
-            var difference = pick.QuantityBoxes - picked; // positive: shortfall to hand back, negative: extra boxes to take
-            if (difference == 0)
+            var deductions = picks.Select(x => new StockChange(
+                x.Line.MaterialId,
+                x.Pick.MfgMonth,
+                LocationSubtypeIds.Good,
+                x.Pick.PalletPosition,
+                -(x.Pick.PickedQuantityBoxes ?? x.Pick.QuantityBoxes))).ToList();
+            if (deductions.Count > 0)
             {
-                continue;
+                await posting.ApplyAsync(
+                    new StockPostingContext(StockLedgerEntryTypes.PulloutDeduct, "PICK", transaction.ReferenceNumber),
+                    deductions,
+                    cancellationToken);
             }
 
-            adjustments.Add(new StockChange(line.MaterialId, pick.MfgMonth, LocationSubtypeIds.Good, pick.PalletPosition, difference));
-            pick.QuantityBoxes = picked;
-            line.PickedQuantityBoxes -= difference;
-            line.Status = line.PickedQuantityBoxes >= line.RequestedQuantityBoxes
-                ? AllocationStatus.Fulfilled
-                : line.PickedQuantityBoxes > 0 ? AllocationStatus.Partial : AllocationStatus.Failed;
-            line.Remarks = line.Status == AllocationStatus.Fulfilled
-                ? null
-                : $"Picker picked {line.PickedQuantityBoxes:0.###} of {line.RequestedQuantityBoxes:0.###} box(es).";
-        }
+            foreach (var line in transaction.Lines)
+            {
+                line.PickedQuantityBoxes = line.Picks.Sum(p => p.PickedQuantityBoxes ?? p.QuantityBoxes);
+                line.Status = line.PickedQuantityBoxes >= line.RequestedQuantityBoxes
+                    ? AllocationStatus.Fulfilled
+                    : line.PickedQuantityBoxes > 0 ? AllocationStatus.Partial : AllocationStatus.Failed;
+                line.Remarks = line.Status == AllocationStatus.Fulfilled
+                    ? null
+                    : $"Picker picked {line.PickedQuantityBoxes:0.###} of {line.RequestedQuantityBoxes:0.###} box(es).";
+                foreach (var pick in line.Picks)
+                    pick.QuantityBoxes = pick.PickedQuantityBoxes ?? pick.QuantityBoxes;
+            }
 
-        if (adjustments.Count > 0)
-        {
-            await posting.ApplyAsync(
-                new StockPostingContext(StockLedgerEntryTypes.PickChange, "PICK", transaction.ReferenceNumber, "Picked quantity differs from the allocation"),
-                adjustments, cancellationToken);
+            transaction.IsConfirmed = true;
             await db.SaveChangesAsync(cancellationToken);
+        }
+        else
+        {
+            var adjustments = new List<StockChange>();
+            foreach (var (line, pick) in picks)
+            {
+                var picked = pick.PickedQuantityBoxes ?? pick.QuantityBoxes;
+                var difference = pick.QuantityBoxes - picked; // positive: shortfall to hand back, negative: extra boxes to take
+                if (difference == 0)
+                {
+                    continue;
+                }
+
+                adjustments.Add(new StockChange(line.MaterialId, pick.MfgMonth, LocationSubtypeIds.Good, pick.PalletPosition, difference));
+                pick.QuantityBoxes = picked;
+                line.PickedQuantityBoxes -= difference;
+                line.Status = line.PickedQuantityBoxes >= line.RequestedQuantityBoxes
+                    ? AllocationStatus.Fulfilled
+                    : line.PickedQuantityBoxes > 0 ? AllocationStatus.Partial : AllocationStatus.Failed;
+                line.Remarks = line.Status == AllocationStatus.Fulfilled
+                    ? null
+                    : $"Picker picked {line.PickedQuantityBoxes:0.###} of {line.RequestedQuantityBoxes:0.###} box(es).";
+            }
+
+            if (adjustments.Count > 0)
+            {
+                await posting.ApplyAsync(
+                    new StockPostingContext(StockLedgerEntryTypes.PickChange, "PICK", transaction.ReferenceNumber, "Picked quantity differs from the allocation"),
+                    adjustments, cancellationToken);
+                await db.SaveChangesAsync(cancellationToken);
+            }
         }
 
         // 2. The remainders the picker chose to move, validated against the stock as it is now (one at a time, so two moves into the

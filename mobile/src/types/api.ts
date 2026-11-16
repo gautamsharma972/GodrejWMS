@@ -288,7 +288,7 @@ export interface PulloutPickDto {
   mfgMonthLabel: string;
   quantityBoxes: number;
   overrideReason?: string | null;
-  /** Set on picks of a posted pullout: the pick the picker confirms on the floor. */
+  /** Set on persisted allocated picks that the picker confirms on the floor. */
   pickId?: number;
   palletPositionId?: number;
   isVirtual?: boolean;
@@ -300,7 +300,7 @@ export interface PulloutPickDto {
   moveQuantityBoxes?: number | null;
 }
 
-/** A posted pullout the picker still has picks to confirm on (GET /api/pullout/picker/queue). */
+/** A posted pullout or legacy allocated draft with picks to confirm (GET /api/pullout/picker/queue). */
 export interface PickerPulloutDto {
   id: number;
   referenceNumber: string;
@@ -314,7 +314,7 @@ export interface PickerPulloutDto {
   virtualPickCount: number;
 }
 
-/** What is left on the shelf at a pick's location (after the order's own deduction). */
+/** What is available at a pick's location after accounting for any applicable reservation. */
 export interface PickRemainderDto {
   pickId: number;
   locationCode: string;

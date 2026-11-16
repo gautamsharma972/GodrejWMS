@@ -361,7 +361,7 @@
 
     private static IEnumerable<int> YearOptions => Enumerable.Range(DateTime.Today.Year - 3, 5);
 
-    private bool CanSubmit => _qty > 0 && _newLocationId != 0 && (_newLocationId < 0 || (_pkmYear > 0 && _pkmMonth > 0));
+    private bool CanSubmit => _qty > 0 && _newLocationId != 0 && (_newLocationId == NoRackOptionId || (_pkmYear > 0 && _pkmMonth > 0));
 
     private List<PutawayRow> Rows() => _detail is null ? [] :
         _detail.Lines.SelectMany(l => l.Putaways.Select(p => new PutawayRow(l, p, _detail.PostedAt.HasValue)))
@@ -506,7 +506,7 @@
         if (_detail is null || _selectedPutawayId is not { } id || !CanSubmit) return;
 
         var excluded = _newLocationId switch { GitOptionId => "GIT", NoRackOptionId => "NO RACK", _ => null };
-        var pkmText = excluded is null && _pkmYear > 0 && _pkmMonth > 0 ? $"{MonthLabels[_pkmMonth - 1].Label}|{_pkmYear}" : null;
+        var pkmText = excluded != "NO RACK" && _pkmYear > 0 && _pkmMonth > 0 ? $"{MonthLabels[_pkmMonth - 1].Label}|{_pkmYear}" : null;
         _submitting = true;
         _submitError = null;
         try

@@ -25,9 +25,11 @@ public sealed class GetPickerPendingCountsHandler(IApplicationDbContext db)
         var pkm = await open
             .CountAsync(t => t.IsPkmless && t.Lines.Any(l => l.MfgMonth == null && l.Putaways.Any(p => !p.IsConfirmed)), cancellationToken);
 
-        // Posted pullouts that still have a pick the picker has not confirmed.
+        // Posted pullouts plus legacy saved drafts that already have allocated picks.
         var picklists = await db.PulloutTransactions.AsNoTracking()
-            .CountAsync(t => t.IsConfirmed && !t.IsRejected && t.UploadHash != null && t.ConfirmedAt == null, cancellationToken);
+            .CountAsync(t => !t.IsRejected
+                && ((t.IsConfirmed && t.UploadHash != null && t.ConfirmedAt == null)
+                    || (!t.IsConfirmed && t.Lines.Any(l => l.Picks.Any()))), cancellationToken);
 
         return new PickerPendingCountsDto(putaway, pkm, picklists);
     }
