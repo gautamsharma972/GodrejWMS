@@ -129,7 +129,8 @@ public sealed record InwardDetailLineDto(
     decimal AllocatedQuantityBoxes,
     AllocationStatus Status,
     string? Remarks,
-    IReadOnlyList<InwardPutawayDto> Putaways);
+    IReadOnlyList<InwardPutawayDto> Putaways,
+    bool MaterialIsActive = true);
 
 public sealed record InwardDetailDto(
     int Id,

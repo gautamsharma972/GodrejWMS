@@ -219,7 +219,7 @@ public class RefreshInwardDeactivatedMaterialTests
         var line = Assert.Single(db.InwardTransactionLines);
         Assert.Equal(0, line.AllocatedQuantityBoxes);
         Assert.Equal(AllocationStatus.Failed, line.Status);
-        Assert.Equal("Material code not found in Material Master.", line.Remarks);
+        Assert.Equal("Material code is inactive in Material Master - no location allocated.", line.Remarks);
         Assert.Empty(db.InwardPutaways);
 
         await new ReallocateInwardHandler(db, allocator).Handle(new ReallocateInwardCommand(submitted.Id), default);

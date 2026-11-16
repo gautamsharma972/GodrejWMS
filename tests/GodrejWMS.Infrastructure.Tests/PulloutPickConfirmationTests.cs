@@ -309,10 +309,13 @@ public class PulloutPickConfirmationTests
         Assert.NotNull(detail.PickingConfirmedByUserName);
         Assert.True(Assert.Single((await history.Handle(new GetPulloutHistoryQuery(), default)).Items).IsConfirmed);
 
-        // Confirmed means shipped: it can no longer be confirmed again or rejected.
+        // It can no longer be confirmed again; rejecting it is allowed and puts the picked boxes back.
         await Assert.ThrowsAsync<InvalidOperationException>(() => confirm.Handle(new ConfirmPulloutPicklistCommand(pulloutId), default));
+        var stockBefore = s.Db.StockBatches.AsNoTracking().Sum(b => b.QuantityBoxes);
         var reject = new RejectPulloutHandler(s.Db, TestServices.Posting(s.Db), TestServices.Uow(s.Db), new SvcClock(), new SvcUser());
-        await Assert.ThrowsAsync<InvalidOperationException>(() => reject.Handle(new RejectPulloutCommand(detail.ReferenceNumber, "Too late"), default));
+        await reject.Handle(new RejectPulloutCommand(detail.ReferenceNumber, "Cancelled after pick"), default);
+        Assert.True(s.Db.PulloutTransactions.AsNoTracking().Single().IsRejected);
+        Assert.Equal(stockBefore + 45, s.Db.StockBatches.AsNoTracking().Sum(b => b.QuantityBoxes));
     }
 
     [Fact]

@@ -54,26 +54,28 @@ public sealed class RejectInwardHandler(
             throw new InvalidOperationException("This GRN has already been rejected.");
         }
 
-        // Stock posted on upload is taken back out where it was placed (a picker's relocation is followed). That only
-        // works while it is still there: boxes that were picked or moved elsewhere cannot be reversed by a rejection.
+        // Stock posted on upload is taken back out where it was placed (a picker's relocation is followed). Boxes that were
+        // picked, moved or reloaded since can no longer be taken from that cell: the rejection still goes ahead, takes back
+        // what is still in place, and records how many boxes could not be reversed.
+        // NO RACK put-aways hold no stock (it was cut back when the picker set them aside); GIT ones hold real stock at the GIT location.
         var posted = transaction.Lines
-            .SelectMany(l => l.Putaways.Where(p => p.IsConfirmed && p.ExcludedLocation is null).Select(p => (Line: l, Putaway: p)))
+            .SelectMany(l => l.Putaways.Where(p => p.IsConfirmed && (p.ExcludedLocation is null || p.ExcludedLocation == PickerExcludedLocations.Git)).Select(p => (Line: l, Putaway: p)))
             .Where(x => x.Line.MfgMonth is not null)
             .ToList();
+        decimal notReversed = 0;
         if (posted.Count > 0)
         {
-            try
+            var plan = await PostedStockReversal.PlanAsync(
+                db,
+                posted.Select(x => new StockReversalItem(x.Line.MaterialId, x.Line.MfgMonth!.Value, x.Putaway.PalletPosition, x.Putaway.QuantityBoxes)).ToList(),
+                cancellationToken);
+            notReversed = plan.ShortfallBoxes;
+            if (plan.Changes.Count > 0)
             {
                 await posting.ApplyAsync(
                     new StockPostingContext(StockLedgerEntryTypes.Reversal, "GRN", transaction.ReferenceNumber, "GRN rejected"),
-                    posted.Select(x => new StockChange(
-                        x.Line.MaterialId, x.Line.MfgMonth!.Value, LocationSubtypeIds.Good, x.Putaway.PalletPosition, -x.Putaway.QuantityBoxes)).ToList(),
+                    plan.Changes,
                     cancellationToken);
-            }
-            catch (InvalidOperationException ex)
-            {
-                throw new InvalidOperationException(
-                    $"This GRN can't be rejected because its stock is no longer where it was placed ({ex.Message}).");
             }
         }
 
@@ -94,7 +96,14 @@ public sealed class RejectInwardHandler(
         transaction.RejectedAt = clock.UtcNow;
         transaction.RejectedByUserId = currentUser.UserId;
         transaction.RejectedByUserName = currentUser.UserName;
-        transaction.RejectionReason = request.Reason.Trim();
+        var reason = request.Reason.Trim();
+        if (notReversed > 0)
+        {
+            var note = $" [{notReversed:0.###} box(es) were no longer at their put-away location (picked/moved) and were not reversed]";
+            reason = reason.Length + note.Length > 500 ? reason[..Math.Max(0, 500 - note.Length)] + note : reason + note;
+        }
+
+        transaction.RejectionReason = reason;
 
         await db.SaveChangesAsync(cancellationToken);
 

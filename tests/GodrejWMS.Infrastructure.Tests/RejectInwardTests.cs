@@ -99,7 +99,7 @@ public class RejectInwardTests
     }
 
     [Fact]
-    public async Task Reject_Throws_WhenThePostedStockIsNoLongerWhereItWasPlaced()
+    public async Task Reject_StillRejects_AndTakesBackOnlyWhatIsInPlace_WhenSomeStockMoved()
     {
         var (db, position, transaction, putaway) = SeedScenario();
         putaway.IsConfirmed = true;
@@ -107,13 +107,50 @@ public class RejectInwardTests
         await db.SaveChangesAsync();
         var handler = new RejectInwardHandler(db, TestServices.Posting(db), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            handler.Handle(new RejectInwardCommand(transaction.Id, "Too late"), CancellationToken.None));
-        Assert.Contains("no longer where it was placed", ex.Message);
+        await handler.Handle(new RejectInwardCommand(transaction.Id, "Late"), CancellationToken.None);
 
-        // Nothing should have been touched.
-        Assert.False(db.InwardTransactions.Single(t => t.Id == transaction.Id).IsRejected);
-        Assert.Equal(5, db.StockBatches.Single().QuantityBoxes);
+        var saved = db.InwardTransactions.Single(t => t.Id == transaction.Id);
+        Assert.True(saved.IsRejected);
+        Assert.Contains("15 box(es)", saved.RejectionReason);
+        Assert.Equal(0, db.StockBatches.Single().QuantityBoxes);
+    }
+
+    [Fact]
+    public async Task Reject_TakesBackStockThePickerSetAsideAsGit_ButNotNoRack()
+    {
+        var (db, position, transaction, putaway) = SeedScenario();
+        putaway.IsConfirmed = true;
+        putaway.IsPickerPlaced = true;
+        putaway.ExcludedLocation = "GIT";
+        db.StockBatches.Add(new StockBatch { MaterialId = putaway.InwardTransactionLine.MaterialId, PalletPositionId = position.Id, MfgMonth = 201001, QuantityBoxes = 20 });
+        await db.SaveChangesAsync();
+        var handler = new RejectInwardHandler(db, TestServices.Posting(db), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
+
+        await handler.Handle(new RejectInwardCommand(transaction.Id, "Cancelled"), CancellationToken.None);
+        Assert.Equal(0, db.StockBatches.Single().QuantityBoxes);
+
+        // NO RACK: nothing was ever stocked, so nothing is taken back.
+        var (db2, position2, transaction2, putaway2) = SeedScenario();
+        putaway2.IsConfirmed = true;
+        putaway2.ExcludedLocation = "NO RACK";
+        db2.StockBatches.Add(new StockBatch { MaterialId = putaway2.InwardTransactionLine.MaterialId, PalletPositionId = position2.Id, MfgMonth = 201001, QuantityBoxes = 7 });
+        await db2.SaveChangesAsync();
+        await new RejectInwardHandler(db2, TestServices.Posting(db2), TestServices.Uow(db2), new TestClock(), new TestCurrentUser())
+            .Handle(new RejectInwardCommand(transaction2.Id, "Cancelled"), CancellationToken.None);
+        Assert.Equal(7, db2.StockBatches.Single().QuantityBoxes);
+    }
+
+    [Fact]
+    public async Task Reject_StillRejects_WhenThereIsNoStockAtAllAtTheLocation()
+    {
+        var (db, _, transaction, putaway) = SeedScenario();
+        putaway.IsConfirmed = true;
+        await db.SaveChangesAsync();
+        var handler = new RejectInwardHandler(db, TestServices.Posting(db), TestServices.Uow(db), new TestClock(), new TestCurrentUser());
+
+        await handler.Handle(new RejectInwardCommand(transaction.Id, "Inventory reloaded"), CancellationToken.None);
+
+        Assert.True(db.InwardTransactions.Single(t => t.Id == transaction.Id).IsRejected);
     }
 
     [Fact]

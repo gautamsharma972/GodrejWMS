@@ -80,6 +80,14 @@
                             Upload changes
                         </button>
                     }
+                    @if ((CanReleaseInactive || CanRefreshPosted) && (_detail.IsConfirmed || !CanRefreshPutaway))
+                    {
+                        <button type="button" class="btn btn-outline-primary" @onclick="RefreshPutawayAsync" disabled="@_refreshingPutaway"
+                                title="Re-allocate the put-aways the picker has not acted on (e.g. after a pallet size change) and release locations of inactive materials. Put-aways the picker already submitted stay as they are.">
+                            <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+                            @(_refreshingPutaway ? "Refreshing..." : "Refresh Put-away")
+                        </button>
+                    }
                     @if (CanReallocate)
                     {
                         <button type="button" class="btn btn-outline-secondary" @onclick="ReallocateAsync" disabled="@_reallocating">
@@ -210,7 +218,7 @@
                 <span class="putaway-step-icon"><i class="bi @(_detail.IsRejected ? "bi-x-circle" : "bi-check2-circle")" aria-hidden="true"></i></span>
                 <div>
                     <strong>@(_detail.IsRejected ? "Rejected" : _detail.PostedAt.HasValue ? "Posted to inventory" : "Stock confirmed")</strong>
-                    <span>@(_detail.IsRejected ? "No stock was put away" : _detail.PostedAt.HasValue ? "Posted when the GRN was uploaded - visible in Inventory Master and available for picking" : _detail.IsConfirmed ? "Dashboard and inventory updated" : "Waiting for the picker to confirm the put-away")</span>
+                    <span>@(_detail.IsRejected ? "No stock was put away" : _detail.PostedAt.HasValue ? "Posted when the GRN was uploaded - visible in Current Inventory and available for picking" : _detail.IsConfirmed ? "Dashboard and inventory updated" : "Waiting for the picker to confirm the put-away")</span>
                 </div>
             </div>
         </div>
@@ -1295,8 +1303,7 @@
     /// rejectable to clear it out of the pending queue.
     /// </summary>
     private bool CanReject =>
-        _detail is not null && !_detail.IsRejected &&
-        (_detail.PostedAt.HasValue || !_detail.Lines.SelectMany(l => l.Putaways).Any(p => p.IsConfirmed));
+        _detail is not null && !_detail.IsRejected;
 
     /// <summary>
     /// Offered whenever any line still has an allocation gap (Partial or Failed) and the GRN
@@ -1307,7 +1314,20 @@
     /// </summary>
     private bool CanReallocate =>
         _detail is not null && !_detail.IsRejected &&
-        _detail.Lines.Any(l => l.Status != AllocationStatus.Fulfilled);
+        !_detail.PostedAt.HasValue && _detail.Lines.Any(l => l.Status != AllocationStatus.Fulfilled);
+
+    /// <summary>Only for a GRN with a line whose material was made inactive after upload but still holds locations.</summary>
+    private bool CanReleaseInactive =>
+        _detail is not null && !_detail.IsRejected &&
+        _detail.Lines.Any(l => !l.MaterialIsActive
+            && l.Putaways.Any(p => !p.IsPickerPlaced && !p.IsExcludedLocked && p.ExcludedLocation is null));
+
+    /// <summary>A posted GRN that still has put-aways the picker has not acted on (they can be re-allocated).</summary>
+    private bool CanRefreshPosted =>
+        _detail is not null && !_detail.IsRejected && _detail.PostedAt.HasValue &&
+        _detail.Lines.Any(l => l.MaterialIsActive
+            && (l.AllocatedQuantityBoxes < l.RequestedQuantityBoxes
+                || l.Putaways.Any(p => !p.IsPickerPlaced && !p.IsExcludedLocked && p.ExcludedLocation is null)));
 
     private bool CanRefreshPutaway =>
         _detail is not null && !_detail.IsRejected &&
@@ -1316,9 +1336,21 @@
 
     private async Task RefreshPutawayAsync()
     {
-        if (_detail is null || !CanRefreshPutaway || _refreshingPutaway)
+        if (_detail is null || !(CanRefreshPutaway || CanReleaseInactive || CanRefreshPosted) || _refreshingPutaway)
         {
             return;
+        }
+
+        string? inactiveCodes = null;
+        if (CanReleaseInactive)
+        {
+            // An inactive material must not keep any location, including already-confirmed ones: take that stock back out first.
+            inactiveCodes = string.Join(", ", _detail.Lines.Where(l => !l.MaterialIsActive && l.Putaways.Any(p => !p.IsPickerPlaced && !p.IsExcludedLocked && p.ExcludedLocation is null)).Select(l => l.MaterialNumber));
+            if (!await JsRuntime.InvokeAsync<bool>("confirm",
+                    $"Material {inactiveCodes} is inactive. Put-aways the picker has not submitted will be taken back out of their locations and not re-allocated. Continue?"))
+            {
+                return;
+            }
         }
 
         _refreshingPutaway = true;
@@ -1326,6 +1358,25 @@
         _refreshPutawayError = null;
         try
         {
+            if (inactiveCodes is not null)
+            {
+                await Mediator.Send(new ReleaseInactiveMaterialPutawayCommand(_detail.Id));
+            }
+
+            if (_detail.PostedAt.HasValue)
+            {
+                // Posted to inventory on upload: put-aways the picker already actioned stay; the untouched ones are re-allocated.
+                if (CanRefreshPosted)
+                {
+                    await Mediator.Send(new RefreshPostedInwardPutawayCommand(_detail.Id));
+                }
+                _detail = await Mediator.Send(new GetInwardDetailQuery(TransactionId));
+                _refreshPutawayMessage = "Put-away refreshed. Locations the picker already submitted were not changed.";
+                _selectedPutawayIds.Clear();
+                await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Put-away refreshed.");
+                return;
+            }
+
             await Mediator.Send(new RefreshInwardPutawayCommand(_detail.Id));
             _detail = await Mediator.Send(new GetInwardDetailQuery(TransactionId));
             var reserved = _detail.Lines.SelectMany(x => x.Putaways).Where(x => !x.IsConfirmed).Sum(x => x.QuantityBoxes);

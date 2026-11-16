@@ -166,7 +166,7 @@ public sealed class RefreshInwardPutawayHandler(
         {
             cancellationToken.ThrowIfCancellationRequested();
             var allocation = quantityToAllocate > 0 && !materialActive
-                ? new InwardAllocationResult(AllocationStatus.Failed, 0, [], "Material code not found in Material Master.")
+                ? new InwardAllocationResult(AllocationStatus.Failed, 0, [], "Material code is inactive in Material Master - no location allocated.")
                 : quantityToAllocate > 0
                 ? await allocator.AllocateAsync(
                     line.MaterialId,

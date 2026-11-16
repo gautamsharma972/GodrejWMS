@@ -14,10 +14,10 @@ public static class AppSearchCatalog
     public static readonly IReadOnlyList<SearchCatalogEntry> Entries =
     [
         new("Dashboard", "", "Operate", "bi-speedometer2", ["home", "overview"]),
-        new("Inventory Master", "inventory-master", "Operate", "bi-database-check", ["stock", "current stock", "sku stock", "pkm"]),
+        new("Current Inventory", "inventory-master", "Operate", "bi-database-check", ["inventory master", "stock", "current stock", "sku stock", "pkm"]),
         new("Racks & Pallets", "racks", "Operate", "bi-grid-3x3-gap", ["rack", "pallet", "layout"]),
         new("Location Master", "locations", "Operate", "bi-geo-alt", ["location", "bin", "position", "pallet position"]),
-        new("Materials", "materials", "Operate", "bi-boxes", ["material", "sku", "product", "material master"]),
+        new("Material Master", "materials", "Operate", "bi-boxes", ["materials", "material", "sku", "product"]),
 
         new("Design Types", "design-types", "Master Data", "bi-tags", ["design"]),
         new("Brand Master", "brands", "Master Data", "bi-bookmark", ["brand", "brand code"]),

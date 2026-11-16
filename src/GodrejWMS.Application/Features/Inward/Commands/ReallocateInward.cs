@@ -52,6 +52,12 @@ public sealed class ReallocateInwardHandler(
             throw new InvalidOperationException("This GRN has been rejected and can't be reallocated.");
         }
 
+        if (transaction.PostedAt is not null)
+        {
+            // Reallocate only reserves boxes; on a GRN posted to inventory nothing would ever turn that reservation into stock.
+            throw new InvalidOperationException("This GRN is already posted to inventory. Use Refresh Put-away, which allocates the missing boxes and posts them.");
+        }
+
         var shortLines = transaction.Lines.Where(l => l.Status != AllocationStatus.Fulfilled).ToList();
         if (shortLines.Count == 0)
         {
@@ -93,7 +99,7 @@ public sealed class ReallocateInwardHandler(
         {
             cancellationToken.ThrowIfCancellationRequested();
             var allocation = !materialActive
-                ? new InwardAllocationResult(AllocationStatus.Failed, 0, [], "Material code not found in Material Master.")
+                ? new InwardAllocationResult(AllocationStatus.Failed, 0, [], "Material code is inactive in Material Master - no location allocated.")
                 : await allocator.AllocateAsync(line.MaterialId, remaining, line.MfgMonth, warehouseId, cancellationToken: cancellationToken);
 
             var addedPutaways = new List<InwardPutaway>();

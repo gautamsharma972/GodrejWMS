@@ -54,7 +54,7 @@
             id: 'nav-inventory-master',
             target: '[data-tour="nav-inventory-master"]',
             placement: 'right',
-            title: 'Inventory Master',
+            title: 'Current Inventory',
             body: 'The stock register: what is stored, where it is, and how much, by SKU and manufacturing month.'
         },
         {
@@ -75,7 +75,7 @@
             id: 'nav-materials',
             target: '[data-tour="nav-materials"]',
             placement: 'right',
-            title: 'Materials',
+            title: 'Material Master',
             body: 'The SKU catalogue: pack sizes, design types, seasons and movement classes.'
         },
         {
@@ -146,7 +146,7 @@
             plain: true,
             icon: 'bi-check2-circle',
             title: 'You\'re all set',
-            body: 'A good first move: open Inward to receive stock, or Racks & Pallets to see where things are stored. Inward, Pullout and Inventory Master each have their own Page tour button too.'
+            body: 'A good first move: open Inward to receive stock, or Racks & Pallets to see where things are stored. Inward, Pullout and Current Inventory each have their own Page tour button too.'
         }
     ];
 

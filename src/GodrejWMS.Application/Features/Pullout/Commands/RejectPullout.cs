@@ -9,10 +9,8 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Application.Features.Pullout.Commands;
 
 /// <summary>
-/// Rejects a saved pullout that has not been confirmed yet - e.g. the request was raised in error
-/// or is no longer needed. Only possible before confirmation: a confirmed pullout has already
-/// reduced real <see cref="StockBatch"/> inventory, and undoing that is a different problem (a
-/// return/reversal), not a rejection of the request.
+/// Rejects a pullout - e.g. the request was raised in error or is no longer needed. A confirmed pullout has already
+/// reduced real <see cref="StockBatch"/> inventory, so rejecting it returns those boxes to the locations they were picked from.
 /// </summary>
 [RequiresPermission(PermissionKeys.Pullout.Reject)]
 public sealed record RejectPulloutCommand(string ReferenceNumber, string Reason) : IRequest<Unit>;
@@ -53,14 +51,9 @@ public sealed class RejectPulloutHandler(
 
         if (transaction.IsConfirmed)
         {
-            // An older confirmed pullout, or one whose pick-list the picker has confirmed, has been shipped.
-            if (transaction.ConfirmedAt != null || transaction.UploadHash == null)
-            {
-                throw new InvalidOperationException("This pullout can't be rejected because it has already been confirmed and inventory was updated.");
-            }
-
-            // Posted on upload: the stock was already taken out, so cancelling puts it back. That is possible until the picker confirms the
-            // pick-list (the picks and anything chosen with them only take effect then).
+            // The stock was already taken out (on upload, or at confirmation for an older pullout), so rejecting puts it back into the
+            // locations it was picked from - also after the picker confirmed the pick-list. A location that was emptied, or a virtual
+            // location that was freed, simply receives the boxes again.
             var returns = transaction.Lines
                 .SelectMany(l => l.Picks.Select(p => new StockChange(l.MaterialId, p.MfgMonth, LocationSubtypeIds.Good, p.PalletPosition, p.QuantityBoxes)))
                 .ToList();

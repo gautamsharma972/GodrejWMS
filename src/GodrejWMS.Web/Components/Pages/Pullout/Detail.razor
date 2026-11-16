@@ -82,10 +82,10 @@
                         Reject Pullout
                     </button>
                 }
-                @if (_detail.IsConfirmed && !_detail.PickingConfirmed)
+                @if (_detail.IsConfirmed)
                 {
                     <button type="button" class="btn btn-outline-danger" @onclick="ToggleRejectPanel" disabled="@(_saving || _rejecting)"
-                            title="Puts the picked-out stock back into inventory (possible until the picker confirms the pick-list)">
+                            title="Puts the picked-out stock back into the locations it was picked from">
                         <i class="bi bi-x-circle" aria-hidden="true"></i>
                         Cancel / Reverse Pullout
                     </button>

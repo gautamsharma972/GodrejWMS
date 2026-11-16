@@ -50,7 +50,8 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
                         p.ExcludedLocation ?? p.PalletPosition.LocationCode, p.QuantityBoxes, p.IsConfirmed, p.Id, p.AllocationReason,
                         p.OverrideReason, p.ConfirmedAt, p.ConfirmedByUserName, p.ExcludedLocation, p.PalletPosition.Id, p.IsPickerPlaced, p.IsExcludedLocked,
                         p.PalletPosition.IsVirtual))
-                    .ToList()))
+                    .ToList(),
+                l.Material.IsActive))
             .ToList();
 
         return new InwardDetailDto(

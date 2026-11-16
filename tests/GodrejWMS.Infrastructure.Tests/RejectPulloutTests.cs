@@ -81,18 +81,17 @@ public class RejectPulloutTests
     }
 
     [Fact]
-    public async Task Reject_Throws_OnceThePickListIsConfirmed()
+    public async Task Reject_OfAConfirmedPullout_PutsTheStockBack()
     {
         var (db, submit, reference) = await SeedPendingPulloutAsync();
         var saved = GetSavedPreview(db, reference);
         await submit.Handle(new([new SubmitPulloutLine(123, 4)], saved), CancellationToken.None); // legacy confirm: ConfirmedAt is set
-
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            Reject(db).Handle(new RejectPulloutCommand(reference, "Too late"), CancellationToken.None));
-
-        Assert.Contains("already been confirmed", exception.Message);
-        Assert.False(db.PulloutTransactions.Single().IsRejected);
         Assert.Equal(6, db.StockBatches.Single().QuantityBoxes);
+
+        await Reject(db).Handle(new RejectPulloutCommand(reference, "Wrong request"), CancellationToken.None);
+
+        Assert.True(db.PulloutTransactions.Single().IsRejected);
+        Assert.Equal(10, db.StockBatches.Single().QuantityBoxes);
     }
 
     [Fact]

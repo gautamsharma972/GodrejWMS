@@ -25,13 +25,13 @@
 @inject IRealtimeNotificationService Notifications
 @inject ICurrentUserService CurrentUser
 
-<PageTitle>Inventory Master - Godrej WMS</PageTitle>
+<PageTitle>Current Inventory - Godrej WMS</PageTitle>
 
 <div class="page-shell">
     <div class="page-header">
         <div>
             <div class="eyebrow">Inventory Control</div>
-            <h1>Inventory Master</h1>
+            <h1>Current Inventory</h1>
             <p class="page-kicker">Search current stock by material, manufacturing month, and pallet position.</p>
         </div>
         <div class="header-actions">
@@ -42,6 +42,10 @@
                 <button class="btn btn-outline-secondary" @onclick="DownloadTemplateAsync">
                     <i class="bi bi-file-earmark-arrow-down" aria-hidden="true"></i>
                     Sample Format
+                </button>
+                <button type="button" class="btn btn-outline-primary" @onclick="OpenAddRecord">
+                    <i class="bi bi-plus-circle" aria-hidden="true"></i>
+                    Add Inventory
                 </button>
                 <button type="button" class="btn btn-outline-primary" @onclick="OpenImport" disabled="@_importing">
                     @if (_importing)
@@ -212,6 +216,48 @@
         </nav>
     }
 
+    @if (_showAddRecord)
+    {
+        <div class="slide-over-backdrop" role="presentation" @onclick="CloseAddRecord">
+            <div class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="add-record-title" @onclick:stopPropagation="true">
+                <div class="slide-over-header">
+                    <div>
+                        <div class="eyebrow">Inventory Control</div>
+                        <h2 id="add-record-title" class="slide-over-title">Add Inventory</h2>
+                        <p class="slide-over-subtitle">Adds boxes of one material to one location. Existing stock there is kept and increased.</p>
+                    </div>
+                    <button type="button" class="slide-over-close" aria-label="Close" @onclick="CloseAddRecord">
+                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="slide-over-body">
+                    @if (!string.IsNullOrWhiteSpace(_addError))
+                    {
+                        <div class="alert alert-danger" role="alert">@_addError</div>
+                    }
+                    <label class="form-label">Material</label>
+                    <div class="mb-3">
+                        <SearchableMaterialSelect Options="_materials" @bind-Value="_addMaterialId" Placeholder="Search material code or description" />
+                    </div>
+                    <label class="form-label">Pallet Position</label>
+                    <div class="mb-3">
+                        <SearchableLocationSelect Options="_addLocations" @bind-Value="_addLocationId" Placeholder="Search location, e.g. A-03-01" AriaLabel="Search and select pallet position" />
+                    </div>
+                    <label class="form-label" for="add-month">Mfg Month (PKM)</label>
+                    <input id="add-month" class="form-control mb-3" placeholder="e.g. NOV|2026" @bind="_addMonth" @bind:event="oninput" />
+                    <label class="form-label" for="add-qty">Quantity (boxes)</label>
+                    <input id="add-qty" class="form-control" inputmode="decimal" placeholder="e.g. 40" @bind="_addQuantity" @bind:event="oninput" />
+                </div>
+                <div class="slide-over-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseAddRecord">Cancel</button>
+                    <button type="button" class="btn btn-primary" disabled="@_addSaving" @onclick="AddRecordAsync">
+                        <i class="bi bi-plus-circle" aria-hidden="true"></i> @(_addSaving ? "Adding..." : "Add inventory")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
     @if (_showImport)
     {
         <div class="slide-over-backdrop" role="presentation" @onclick="CloseImport">
@@ -219,7 +265,7 @@
                 <div class="slide-over-header">
                     <div>
                         <div class="eyebrow">Inventory Control</div>
-                        <h2 id="import-title" class="slide-over-title">Upload Inventory Master</h2>
+                        <h2 id="import-title" class="slide-over-title">Upload Current Inventory</h2>
                         <p class="slide-over-subtitle">The file replaces the stock of the locations it lists.</p>
                     </div>
                     <button type="button" class="slide-over-close" aria-label="Close upload" @onclick="CloseImport">
@@ -614,6 +660,88 @@
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
 
+    private bool _showAddRecord;
+    private bool _addSaving;
+    private int _addMaterialId;
+    private int _addLocationId;
+    private IReadOnlyList<GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Dtos.AopLocationOptionDto> _addLocations = [];
+    private string _addMonth = string.Empty;
+    private string _addQuantity = string.Empty;
+    private string? _addError;
+
+    private async Task OpenAddRecord()
+    {
+        _addMaterialId = 0;
+        _addLocationId = 0;
+        _addMonth = _addQuantity = string.Empty;
+        _addError = null;
+        _showAddRecord = true;
+        try
+        {
+            _addLocations = await Mediator.Send(new GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Queries.GetAopLocationOptionsQuery());
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load locations for Add Inventory");
+            _addError = "The location list could not be loaded. Close and try again.";
+        }
+    }
+
+    private void CloseAddRecord() => _showAddRecord = false;
+
+    private async Task AddRecordAsync()
+    {
+        if (_addSaving) return;
+        _addError = null;
+        var material = _materials.FirstOrDefault(m => m.Id == _addMaterialId);
+        var location = _addLocations.FirstOrDefault(l => l.Id == _addLocationId);
+        if (material is null)
+        {
+            _addError = "Select a material from the list.";
+            return;
+        }
+
+        if (location is null)
+        {
+            _addError = "Select a pallet position from the list.";
+            return;
+        }
+
+        if (!decimal.TryParse(_addQuantity.Trim(), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var quantity))
+        {
+            _addError = "Enter the quantity as a number.";
+            return;
+        }
+
+        _addSaving = true;
+        try
+        {
+            var result = await Mediator.Send(new AddStockRecordCommand(material.MaterialNumber, location.LocationCode, _addMonth, quantity));
+            _showAddRecord = false;
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast",
+                $"Added {result.AddedBoxes:0.###} box(es) of {result.MaterialNumber} at {result.LocationCode} ({result.MfgMonthLabel}); it now holds {result.NewQuantityBoxes:0.###}."
+                + (result.Warning is null ? string.Empty : " " + result.Warning));
+            await LoadPage(_pageNumber);
+        }
+        catch (FluentValidation.ValidationException ex)
+        {
+            _addError = string.Join(" ", ex.Errors.Select(e => e.ErrorMessage).Distinct());
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _addError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to add inventory record");
+            _addError = "The inventory could not be added. Please try again.";
+        }
+        finally
+        {
+            _addSaving = false;
+        }
+    }
+
     private void OpenImport()
     {
         _importFile = null;
@@ -644,7 +772,7 @@
             if (_importResult.Created + _importResult.Updated > 0)
             {
                 await JsRuntime.InvokeVoidAsync("godrejWms.showToast",
-                    $"Inventory Master replaced: {_importResult.Created} created, {_importResult.Updated} updated, {_importResult.Cleared} cleared.");
+                    $"Current Inventory replaced: {_importResult.Created} created, {_importResult.Updated} updated, {_importResult.Cleared} cleared.");
             }
 
             await LoadPage(1);
