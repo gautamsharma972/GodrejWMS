@@ -6,6 +6,7 @@ import { AppIcon } from "./ui/AppIcon";
 import { Button } from "./ui/Button";
 import { FullScreenModal } from "./ui/FullScreenModal";
 import { LoadingView } from "./ui/LoadingView";
+import { SearchField } from "./ui/SearchField";
 import { TextField } from "./ui/TextField";
 import { colors, radius, spacing, typography } from "../theme";
 import type { InwardPalletChangeOptionDto } from "../types/api";
@@ -21,6 +22,7 @@ export function InwardLocationChangeModal({ putawayId, token, onClose, onSubmit 
   const [options, setOptions] = useState<InwardPalletChangeOptionDto[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selected, setSelected] = useState<InwardPalletChangeOptionDto | null>(null);
+  const [search, setSearch] = useState("");
   const [reason, setReason] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +33,7 @@ export function InwardLocationChangeModal({ putawayId, token, onClose, onSubmit 
       // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset each time the modal opens/closes
       setOptions([]);
       setSelected(null);
+      setSearch("");
       setReason("");
       setError(null);
       return;
@@ -81,8 +84,9 @@ export function InwardLocationChangeModal({ putawayId, token, onClose, onSubmit 
             </View>
             <AppIcon name="chevron-forward" size={18} color={colors.primary} />
           </TouchableOpacity>
+          <SearchField placeholder="Search location" value={search} onChangeText={setSearch} autoCapitalize="characters" />
           <FlatList
-          data={options}
+          data={options.filter((item) => item.locationCode.toUpperCase().includes(search.trim().toUpperCase()))}
           keyExtractor={(item) => String(item.id)}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.row} onPress={() => setSelected(item)}>
@@ -95,7 +99,7 @@ export function InwardLocationChangeModal({ putawayId, token, onClose, onSubmit 
               </Text>
             </TouchableOpacity>
           )}
-            ListEmptyComponent={<Text style={styles.empty}>No alternate locations available.</Text>}
+            ListEmptyComponent={<Text style={styles.empty}>{search ? `No location matches "${search}".` : "No alternate locations available."}</Text>}
           />
         </>
       )}

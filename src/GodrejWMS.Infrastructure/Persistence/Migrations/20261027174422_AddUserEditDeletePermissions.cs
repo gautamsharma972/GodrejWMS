@@ -12,6 +12,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.InsertData(
                 table: "RolePermissions",
                 columns: new[] { "PermissionKey", "RoleName", "IsGranted" },
@@ -30,11 +31,13 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     { "Users.Delete", "Supervisor", false },
                     { "Users.Edit", "Supervisor", false }
                 });
+#endif
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.DeleteData(
                 table: "RolePermissions",
                 keyColumns: new[] { "PermissionKey", "RoleName" },
@@ -94,6 +97,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 table: "RolePermissions",
                 keyColumns: new[] { "PermissionKey", "RoleName" },
                 keyValues: new object[] { "Users.Edit", "Supervisor" });
+#endif
         }
     }
 }

@@ -110,12 +110,23 @@ public sealed class GetPickRemainderHandler(IApplicationDbContext db) : IRequest
     {
         var pick = await db.PulloutPicks.AsNoTracking()
             .Include(p => p.PalletPosition)
-            .Include(p => p.PulloutTransactionLine)
+            .Include(p => p.PulloutTransactionLine).ThenInclude(l => l.PulloutTransaction)
             .FirstOrDefaultAsync(p => p.Id == request.PickId, cancellationToken)
             ?? throw new NotFoundException(nameof(PulloutPick), request.PickId);
         var remaining = await db.StockBatches.AsNoTracking()
             .Where(b => b.PalletPositionId == pick.PalletPositionId && b.MaterialId == pick.PulloutTransactionLine.MaterialId && b.MfgMonth == pick.MfgMonth)
             .SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;
+        if (!pick.PulloutTransactionLine.PulloutTransaction.IsConfirmed)
+        {
+            var legacyReservations = await db.PulloutPicks.AsNoTracking()
+                .Where(p => p.PalletPositionId == pick.PalletPositionId
+                    && p.MfgMonth == pick.MfgMonth
+                    && p.PulloutTransactionLine.MaterialId == pick.PulloutTransactionLine.MaterialId
+                    && !p.PulloutTransactionLine.PulloutTransaction.IsConfirmed
+                    && !p.PulloutTransactionLine.PulloutTransaction.IsRejected)
+                .SumAsync(p => (decimal?)p.QuantityBoxes, cancellationToken) ?? 0m;
+            remaining = Math.Max(0m, remaining - legacyReservations);
+        }
         return new PickRemainderDto(pick.Id, pick.PalletPosition.LocationCode, pick.QuantityBoxes, remaining, pick.PickedAt is not null);
     }
 }

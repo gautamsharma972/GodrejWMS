@@ -144,7 +144,7 @@ export function changePulloutPickLocation(token: string, request: ChangePulloutP
   return apiRequest<PulloutResultDto>("/api/pullout/picker/change-pick-location", { token, method: "POST", body: request });
 }
 
-/** Posted pullouts that still have a pick the picker has not confirmed. */
+/** Posted pullouts and legacy allocated drafts with a pick the picker has not confirmed. */
 export function getPickerPulloutQueue(
   token: string,
   options: { search?: string; pageNumber?: number; pageSize?: number } = {},
@@ -169,7 +169,7 @@ export function getRelocationSuggestions(token: string, pickId: number, quantity
   return apiRequest<RelocationSuggestionDto[]>(`/api/pullout/picks/${pickId}/relocation-suggestions`, { token, query: { quantity } });
 }
 
-/** Confirms one pick of a posted pullout; with moveRemaining the boxes left at that location move in the same transaction. */
+/** Confirms one persisted pick; with moveRemaining the boxes left at that location move in the same transaction. */
 export function confirmPulloutPick(token: string, pickId: number, request: ConfirmPickRequest): Promise<ConfirmPickResult> {
   return apiRequest<ConfirmPickResult>(`/api/pullout/picks/${pickId}/confirm`, { token, method: "POST", body: request });
 }

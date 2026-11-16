@@ -148,38 +148,6 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 })
                 .Annotation("MySql:CharSet", "utf8mb4");
 
-            migrationBuilder.InsertData(
-                table: "Regions",
-                columns: new[] { "Id", "Code", "CreatedAt", "CreatedByUserId", "Description", "IsActive", "Name", "UpdatedAt", "UpdatedByUserId" },
-                values: new object[] { 1, "West", new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), null, null, true, "West", null, null });
-
-            migrationBuilder.InsertData(
-                table: "WarehouseCategories",
-                columns: new[] { "Id", "Code", "CreatedAt", "CreatedByUserId", "Description", "IsActive", "Name", "UpdatedAt", "UpdatedByUserId" },
-                values: new object[,]
-                {
-                    { 1, "RWH", new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), null, null, true, "RWH", null, null },
-                    { 2, "CFA", new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), null, null, true, "CFA", null, null },
-                    { 3, "Plant", new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), null, null, true, "Plant", null, null }
-                });
-
-            migrationBuilder.UpdateData(
-                table: "Warehouses",
-                keyColumn: "Id",
-                keyValue: 1,
-                columns: new[] { "Address", "CityId", "WarehouseCategoryId" },
-                values: new object[] { null, 1, 1 });
-
-            migrationBuilder.InsertData(
-                table: "States",
-                columns: new[] { "Id", "Code", "CreatedAt", "CreatedByUserId", "IsActive", "Name", "RegionId", "UpdatedAt", "UpdatedByUserId" },
-                values: new object[] { 1, "MH", new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), null, true, "Maharashtra", 1, null, null });
-
-            migrationBuilder.InsertData(
-                table: "Cities",
-                columns: new[] { "Id", "Code", "CreatedAt", "CreatedByUserId", "IsActive", "Name", "StateId", "UpdatedAt", "UpdatedByUserId" },
-                values: new object[] { 1, "TH", new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)), null, true, "Thane", 1, null, null });
-
             migrationBuilder.CreateIndex(
                 name: "IX_Warehouses_CityId",
                 table: "Warehouses",

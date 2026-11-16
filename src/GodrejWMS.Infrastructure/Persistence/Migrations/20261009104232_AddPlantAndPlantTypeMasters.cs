@@ -44,16 +44,6 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 })
                 .Annotation("MySql:CharSet", "utf8mb4");
 
-            migrationBuilder.InsertData(
-                table: "PlantTypes",
-                columns: new[] { "Id", "Code", "Name", "SortOrder", "IsActive", "CreatedAt" },
-                values: new object[,]
-                {
-                    { 1, "CFA", "CFA", 10, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { 2, "RWH", "RWH", 20, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { 3, "Plant", "plant", 30, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) }
-                });
-
             migrationBuilder.CreateTable(
                 name: "Plants",
                 columns: table => new
@@ -86,51 +76,6 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         onDelete: ReferentialAction.Restrict);
                 })
                 .Annotation("MySql:CharSet", "utf8mb4");
-
-            // Only Purna and Pune have a Type in the source list; every other plant's Type was left
-            // blank there and is seeded as null (PlantTypeId) here rather than guessed.
-            migrationBuilder.InsertData(
-                table: "Plants",
-                columns: new[] { "Code", "Name", "PlantTypeId", "Description", "IsActive", "CreatedAt" },
-                values: new object[,]
-                {
-                    { "C042", "Purna", 2, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C043", "Pune", 1, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C044", "N-Pur", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C046", "Indore", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C047", "Raipur", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C048", "A-bad", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C121", "Purna RWH", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C021", "Kolkata", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C022", "Siliguri", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C023", "Cuttack", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C024", "Patna", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C025", "Ranchi", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C027", "G-hati", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C111", "Kol-RWH", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C113", "G-hati-PWH", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C001", "Delhi", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C015", "Kundli", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C002", "G-bad", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C014", "Lucknow", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C004", "Varanasi", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C007", "Jaipur", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C008", "Z-Pur", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C010", "Jammu", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C102", "Z-Pur PWH", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C071", "Chennai", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C085", "Trichy", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C073", "Salem", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C083", "Panchaw", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C075", "Cochin", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C076", "Bangalore", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C077", "Hubli", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C078", "H-bad", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C079", "Vijayawada", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C131", "Panchaw-RWH", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C132", "H-bad RWH", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { "C133", "Pondy-PWH", null, null, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) }
-                });
 
             migrationBuilder.CreateIndex(
                 name: "IX_Plants_Code",

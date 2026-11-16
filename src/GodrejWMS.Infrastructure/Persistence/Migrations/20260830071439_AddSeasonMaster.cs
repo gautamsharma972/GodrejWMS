@@ -53,21 +53,6 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 column: "Code",
                 unique: true);
 
-            // Seed the fixed season rows at explicit, non-auto-generated Ids matching the retired
-            // Season enum's values (0=Rainy, 1=Summer, 2=Winter) so the FK constraints added below -
-            // against the existing Materials.Season and SeasonMonthMaps.Season int columns -
-            // resolve without touching any data. Rainy's 0 is why Season.Id (unlike the other
-            // converted masters) is a plain, non-identity column - see SeasonConfiguration.
-            migrationBuilder.InsertData(
-                table: "Seasons",
-                columns: new[] { "Id", "Code", "DisplayName", "Description", "SortOrder", "IsActive", "CreatedAt" },
-                values: new object[,]
-                {
-                    { 0, "Rainy", "Rainy", "Rainy season demand", 10, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { 1, "Summer", "Summer", "Summer season demand", 20, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
-                    { 2, "Winter", "Winter", "Winter season demand", 30, true, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) }
-                });
-
             migrationBuilder.AddForeignKey(
                 name: "FK_Materials_Seasons_Season",
                 table: "Materials",

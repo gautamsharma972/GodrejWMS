@@ -26,6 +26,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 })
                 .Annotation("MySql:CharSet", "utf8mb4");
 
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.InsertData(
                 table: "OrganizationSettings",
                 columns: new[] { "Id", "MaxUsers", "MaxWarehouses" },
@@ -93,6 +94,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     { "Users.ResetPassword", "Platform Admin", true },
                     { "Users.View", "Platform Admin", true }
                 });
+#endif
         }
 
         /// <inheritdoc />
@@ -101,6 +103,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
             migrationBuilder.DropTable(
                 name: "OrganizationSettings");
 
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql("DELETE FROM AspNetRoles WHERE Name = 'Platform Admin';");
 
             migrationBuilder.DeleteData(
@@ -332,6 +335,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 table: "RolePermissions",
                 keyColumns: new[] { "PermissionKey", "RoleName" },
                 keyValues: new object[] { "Users.View", "Platform Admin" });
+#endif
         }
     }
 }

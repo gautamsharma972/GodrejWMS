@@ -18,6 +18,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql(@"
                 INSERT INTO AspNetRoles (Id, Name, NormalizedName, ConcurrencyStamp)
                 SELECT UUID(), 'Floor Supervisor', 'FLOOR SUPERVISOR', UUID()
@@ -37,14 +38,17 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     'Menu.ViewPullout', 'Pullout.View', 'Pullout.Edit', 'Pullout.Confirm'
                   );
             ");
+#endif
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql(@"
                 DELETE FROM RolePermissions WHERE RoleName = 'Floor Supervisor';
                 DELETE FROM AspNetRoles WHERE NormalizedName = 'FLOOR SUPERVISOR';
             ");
+#endif
         }
     }
 }

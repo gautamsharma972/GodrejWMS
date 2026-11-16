@@ -18,16 +18,20 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql(@"
                 UPDATE RolePermissions SET IsGranted = 0 WHERE RoleName = 'Platform Admin';
             ");
+#endif
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql(@"
                 UPDATE RolePermissions SET IsGranted = 1 WHERE RoleName = 'Platform Admin';
             ");
+#endif
         }
     }
 }

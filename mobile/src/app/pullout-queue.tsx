@@ -26,7 +26,8 @@ export default function PulloutQueueScreen() {
   const { token, permissions } = useAuth();
   const router = useRouter();
   const navigation = useNavigation();
-  // A picker works the posted pullouts' picks; a supervisor without the pick permission still sees the old pending ones.
+  // A picker works posted pullouts and legacy allocated drafts; a supervisor without the
+  // pick permission still sees the general pending queue.
   const isPicker = permissions.includes("Pullout.Pick");
 
   // Matches the web app's naming: the picker's queue is "Picker Pick-list" (/pullout-picker page title),

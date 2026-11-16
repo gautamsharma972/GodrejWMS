@@ -18,8 +18,8 @@ public sealed record PickerPulloutDto(
     decimal TotalBoxes,
     int VirtualPickCount);
 
-/// <summary>The Picker's pick-lists: posted pullouts the picker has not confirmed yet. A pullout leaves the list once every pick is
-/// confirmed and the picker has confirmed the pick-list itself; a rejected one never shows.</summary>
+/// <summary>The Picker's pick-lists: posted pullouts plus legacy saved drafts that already have allocated picks.
+/// A pullout leaves the list once the picker confirms the whole pick-list; a rejected one never shows.</summary>
 public sealed record GetPickerPendingPulloutsQuery(string? Search = null, int PageNumber = 1, int PageSize = 10)
     : IRequest<PaginatedList<PickerPulloutDto>>;
 
@@ -34,8 +34,11 @@ public sealed class GetPickerPendingPulloutsHandler(IApplicationDbContext db, IP
         }
 
         var transactions = db.PulloutTransactions.AsNoTracking()
-            // A posted pullout stays here until the picker has pressed Confirm on it (every pick confirmed first).
-            .Where(t => t.IsConfirmed && !t.IsRejected && t.UploadHash != null && t.ConfirmedAt == null);
+            // Current uploads are posted before picking. Older saved drafts predate that workflow,
+            // but their allocated picks are valid reservations and must also be worked by the picker.
+            .Where(t => !t.IsRejected
+                && ((t.IsConfirmed && t.UploadHash != null && t.ConfirmedAt == null)
+                    || (!t.IsConfirmed && t.Lines.Any(l => l.Picks.Any()))));
 
         if (!string.IsNullOrWhiteSpace(request.Search))
         {

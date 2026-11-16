@@ -97,11 +97,6 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 })
                 .Annotation("MySql:CharSet", "utf8mb4");
 
-            migrationBuilder.InsertData(
-                table: "Warehouses",
-                columns: new[] { "Id", "Code", "IsActive", "Name" },
-                values: new object[] { 1, "GCPL", true, "GCPL" });
-
             migrationBuilder.Sql("UPDATE PulloutTransactions SET ConfirmedAt = CreatedAt WHERE IsConfirmed = 1 AND ConfirmedAt IS NULL");
 
             migrationBuilder.CreateIndex(

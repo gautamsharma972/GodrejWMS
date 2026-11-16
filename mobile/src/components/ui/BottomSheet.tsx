@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, spacing, typography } from "../../theme";
 
@@ -22,26 +22,29 @@ export function BottomSheet({ visible, title, onClose, children, maxHeightPercen
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity
-          activeOpacity={1}
-          style={[styles.sheet, { maxHeight: `${maxHeightPercent}%`, paddingBottom: spacing.xl + insets.bottom }]}
-        >
-          <View style={styles.header}>
-            <Text style={styles.title}>{title}</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={10}>
-              <Text style={styles.close}>Close</Text>
-            </TouchableOpacity>
-          </View>
-          {children}
+      <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <TouchableOpacity style={styles.backdropTouch} activeOpacity={1} onPress={onClose}>
+          <TouchableOpacity
+            activeOpacity={1}
+            style={[styles.sheet, { maxHeight: `${maxHeightPercent}%`, paddingBottom: spacing.xl + insets.bottom }]}
+          >
+            <View style={styles.header}>
+              <Text style={styles.title}>{title}</Text>
+              <TouchableOpacity onPress={onClose} hitSlop={10}>
+                <Text style={styles.close}>Close</Text>
+              </TouchableOpacity>
+            </View>
+            {children}
+          </TouchableOpacity>
         </TouchableOpacity>
-      </TouchableOpacity>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: "flex-end" },
+  backdrop: { flex: 1 },
+  backdropTouch: { flex: 1, backgroundColor: colors.overlay, justifyContent: "flex-end" },
   sheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.xl,

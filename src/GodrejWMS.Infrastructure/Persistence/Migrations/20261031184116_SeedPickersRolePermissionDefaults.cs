@@ -10,6 +10,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             // Menu.ViewDashboard and Menu.ViewInwardNoPkm are brand-new permission keys - no
             // RolePermission row exists for them on any role yet (new roles get every key seeded
             // by RoleManagementService.CreateRoleAsync at creation time, but existing roles only
@@ -64,11 +65,13 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 keyValues: new object[] { "Menu.ViewOrgMasters", "Logistic Manager" },
                 column: "IsGranted",
                 value: true);
+#endif
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+#if INCLUDE_MIGRATION_SEED_DATA
             migrationBuilder.Sql(@"
                 DELETE FROM RolePermissions WHERE PermissionKey IN ('Menu.ViewDashboard', 'Menu.ViewInwardNoPkm');
             ");
@@ -92,6 +95,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                 keyValues: new object[] { "Menu.ViewOrgMasters", "Logistic Manager" },
                 column: "IsGranted",
                 value: false);
+#endif
         }
     }
 }
