@@ -8,9 +8,15 @@ using Microsoft.Extensions.Options;
 namespace GodrejWMS.Infrastructure.Services;
 
 /// <summary>
-/// FIFO pick engine: drains the oldest manufacturing month first, and within a PKM works through
-/// locations in Rack -> Column -> Level order - a column is emptied from Level 1 upward
-/// (A-01-01, A-01-02, ...) before moving to the next column - mirroring the put-away fill order.
+/// FIFO pick engine: drains the oldest manufacturing month first; within a PKM, virtual (overflow)
+/// locations go before physical ones when configured. Within that, locations are preferred by
+/// whether they are themselves a full pallet or a partial one - full-pallet locations are
+/// preferred while the remaining quantity still needs at least one more full pallet, and
+/// partial-pallet locations are preferred once it doesn't, re-evaluated after every pick so the
+/// preference can flip mid-allocation. If the preferred kind runs out within the current
+/// PKM/virtual-tier group, the other kind is used instead rather than skipping ahead. Finally,
+/// locations are drained ground level first (across all columns), then upward, then by rack and
+/// column - mirroring the put-away fill order.
 /// Only good stock in active good locations is pickable; damage, expired, and hold stock remain isolated.
 /// </summary>
 public class PulloutAllocationService(IApplicationDbContext db, IOptions<PickingOptions>? options = null) : IPulloutAllocationService
@@ -41,13 +47,14 @@ public class PulloutAllocationService(IApplicationDbContext db, IOptions<Picking
                 // (Change Pick Location), never the automatic FIFO allocator.
                 && b.PalletPosition.ZoneTypeId != ZoneTypeIds.Git)
             .Include(b => b.PalletPosition)
+            .Include(b => b.Material)
             // 1. FIFO: oldest PKM first - never broken by anything below.
             .OrderBy(b => b.MfgMonth)
-            // 2. Partial pallets before full ones (a cell holding less than a full pallet of the material), so they get cleared.
-            .ThenBy(b => b.QuantityBoxes < b.Material.PalletCapacityBoxes * b.PalletPosition.MaxPallets ? 0 : 1)
-            // 3. Same PKM and fullness: virtual overflow locations first (when configured) so they empty out and get reused.
+            // 2. Same PKM: virtual overflow locations first (when configured) so they empty out and get reused.
             .ThenBy(b => virtualFirst && b.PalletPosition.IsVirtual ? 0 : 1)
-            // 4. Ground level (level 1) first, then upward; then rack and column.
+            // 3. Full-vs-partial preference is dynamic (depends on the live remaining quantity) and is
+            // applied in memory below, within each (PKM, virtual-tier) group.
+            // 4. Ground level (level 1) first across all columns, then upward; then rack and column.
             .ThenBy(b => b.PalletPosition.Level)
             .ThenBy(b => b.PalletPosition.Rack.Code)
             .ThenBy(b => b.PalletPosition.Column)
@@ -70,26 +77,60 @@ public class PulloutAllocationService(IApplicationDbContext db, IOptions<Picking
             })
             .ToDictionaryAsync(x => (x.PalletPositionId, x.MfgMonth), x => x.QuantityBoxes, cancellationToken);
 
-        foreach (var batch in batches)
+        // All batches are for one material, so its pallet capacity is one constant for this whole call.
+        // Requirement-side check: "is what's still needed itself a full pallet's worth" - a
+        // material/order trait, independent of any one location's MaxPallets.
+        var palletCapacityBoxes = batches.Count > 0 ? (decimal)batches[0].Material.PalletCapacityBoxes : 0m;
+
+        // Recover the (PKM, virtual-tier) buckets the static sort already produced - a grouping,
+        // not a re-sort, since the list is already sorted contiguously by this key.
+        var buckets = batches.GroupBy(b => (b.MfgMonth, Tier: virtualFirst && b.PalletPosition.IsVirtual ? 0 : 1));
+
+        foreach (var bucket in buckets)
         {
-            if (remaining <= 0)
+            if (remaining <= 0) break;
+
+            // Location-side check (unchanged formula): is this specific batch, at its own
+            // position with its own MaxPallets, itself fully loaded. Sub-lists keep the bucket's
+            // existing Level -> Rack -> Column -> LocationCode order.
+            var full = new List<StockBatch>();
+            var partial = new List<StockBatch>();
+            foreach (var batch in bucket)
             {
-                break;
+                if (batch.QuantityBoxes >= batch.Material.PalletCapacityBoxes * batch.PalletPosition.MaxPallets)
+                    full.Add(batch);
+                else
+                    partial.Add(batch);
             }
 
-            var available = Math.Max(0, batch.QuantityBoxes
-                - reserved.GetValueOrDefault((batch.PalletPositionId, batch.MfgMonth)));
-            var take = Math.Min(remaining, available);
-            if (take <= 0) continue;
-            batch.QuantityBoxes -= take;
-            batch.RowVersion++;
-            remaining -= take;
-
-            picks.Add(new PulloutPickLine(batch.PalletPosition.LocationCode, batch.MfgMonth, take));
-
-            if (!preview && batch.QuantityBoxes <= 0)
+            var fi = 0;
+            var pi = 0;
+            while (remaining > 0 && (fi < full.Count || pi < partial.Count))
             {
-                db.StockBatches.Remove(batch);
+                // 3. Re-decided after every take: prefer a full-pallet location while the
+                // remainder still needs at least one full pallet, otherwise prefer a
+                // partial-pallet location. Soft fallback: if the preferred kind is exhausted
+                // within this (PKM, virtual-tier) bucket, use the other kind from the same bucket
+                // rather than failing or skipping ahead.
+                var preferFull = remaining >= palletCapacityBoxes;
+                var batch = preferFull
+                    ? (fi < full.Count ? full[fi++] : partial[pi++])
+                    : (pi < partial.Count ? partial[pi++] : full[fi++]);
+
+                var available = Math.Max(0, batch.QuantityBoxes
+                    - reserved.GetValueOrDefault((batch.PalletPositionId, batch.MfgMonth)));
+                var take = Math.Min(remaining, available);
+                if (take <= 0) continue;
+                batch.QuantityBoxes -= take;
+                batch.RowVersion++;
+                remaining -= take;
+
+                picks.Add(new PulloutPickLine(batch.PalletPosition.LocationCode, batch.MfgMonth, take));
+
+                if (!preview && batch.QuantityBoxes <= 0)
+                {
+                    db.StockBatches.Remove(batch);
+                }
             }
         }
 

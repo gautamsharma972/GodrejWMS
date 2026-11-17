@@ -65,6 +65,7 @@
                             <th class="history-col-reference">Reference</th>
                             <th class="history-col-created">Created</th>
                             <th class="history-col-vehicle">Vehicle No.</th>
+                            <th class="history-col-vehicle">Driver No.</th>
                             <th class="history-col-lr">Destination</th>
                             <th class="history-col-status">Picks</th>
                             <th class="text-end history-number-column history-col-lines">Lines</th>
@@ -82,6 +83,7 @@
                                 </td>
                                 <td class="history-created history-col-created">@item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</td>
                                 <td class="history-col-vehicle">@(string.IsNullOrWhiteSpace(item.VehicleNumber) ? "-" : item.VehicleNumber)</td>
+                                <td class="history-col-vehicle">@(string.IsNullOrWhiteSpace(item.DriverNumber) ? "-" : item.DriverNumber)</td>
                                 <td class="history-col-lr">@(string.IsNullOrWhiteSpace(item.Destination) ? "-" : item.Destination)</td>
                                 <td class="history-col-status"><span class="status-pill @(item.PickedCount == 0 ? "danger" : "warning")">@item.PickedCount of @item.PickCount picked</span></td>
                                 <td class="text-end history-number-column history-col-lines">@item.LineCount</td>
@@ -111,6 +113,8 @@
                             <span><strong>@item.LineCount</strong> line(s)</span>
                             <span><strong>@item.TotalBoxes.ToString("N0")</strong> boxes</span>
                             @if (!string.IsNullOrWhiteSpace(item.Destination)) { <span>@item.Destination</span> }
+                            @if (!string.IsNullOrWhiteSpace(item.VehicleNumber)) { <span>@item.VehicleNumber</span> }
+                            @if (!string.IsNullOrWhiteSpace(item.DriverNumber)) { <span>@item.DriverNumber</span> }
                             @if (item.VirtualPickCount > 0) { <span class="status-pill info">@item.VirtualPickCount virtual</span> }
                         </div>
                         <div class="no-pkm-mobile-history-actions">
@@ -358,6 +362,11 @@
     private bool _loading;
     private bool _reloadQueued;
 
+    // A Blazor Server circuit shares one scoped DbContext. Quantity input, suggestion loading,
+    // confirmation and list refresh callbacks can interleave while they are awaiting I/O, so every
+    // mediator operation on this page must use the same gate (not just list refreshes).
+    private readonly SemaphoreSlim _dbOperationGate = new(1, 1);
+
     private bool _isDetailOpen;
     private PulloutDetailDto? _detail;
     private string? _detailError;
@@ -404,11 +413,10 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _locationOptions = await Mediator.Send(new GetAopLocationOptionsQuery());
+        _locationOptions = await RunDbOperationAsync(() => Mediator.Send(new GetAopLocationOptionsQuery()));
         await LoadPageAsync(1);
     }
 
-    // Blazor Server shares one DbContext per circuit: never run two queries at once.
     private async Task LoadPageAsync(int page)
     {
         if (page < 1) return;
@@ -425,7 +433,8 @@
             do
             {
                 _reloadQueued = false;
-                _list = await Mediator.Send(new GetPickerPendingPulloutsQuery(_search, _pageNumber, 10));
+                _list = await RunDbOperationAsync(() =>
+                    Mediator.Send(new GetPickerPendingPulloutsQuery(_search, _pageNumber, 10)));
             }
             while (_reloadQueued);
         }
@@ -445,7 +454,7 @@
         _isDetailOpen = true;
         try
         {
-            _detail = await Mediator.Send(new GetPulloutDetailQuery(id));
+            _detail = await RunDbOperationAsync(() => Mediator.Send(new GetPulloutDetailQuery(id)));
         }
         catch (Exception ex)
         {
@@ -488,7 +497,7 @@
         _remainder = null;
         try
         {
-            _remainder = await Mediator.Send(new GetPickRemainderQuery(row.Pick.PickId));
+            _remainder = await RunDbOperationAsync(() => Mediator.Send(new GetPickRemainderQuery(row.Pick.PickId)));
             _moveQty = _moveEnabled ? row.Pick.MoveQuantityBoxes ?? RemainingAfter : RemainingAfter;
             await LoadSuggestionsAsync();
         }
@@ -506,7 +515,8 @@
             return;
         }
 
-        _suggestions = await Mediator.Send(new GetRelocationSuggestionsQuery(_selected.Pick.PickId, RemainingAfter));
+        _suggestions = await RunDbOperationAsync(() =>
+            Mediator.Send(new GetRelocationSuggestionsQuery(_selected.Pick.PickId, RemainingAfter)));
         foreach (var suggestion in _suggestions)
         {
             _destinationCodes[suggestion.PalletPositionId] = suggestion.LocationCode;
@@ -551,15 +561,24 @@
         _formError = null;
         try
         {
+            var selected = _selected;
+            var quantity = _qty;
             var move = _moveEnabled && _destinationId > 0 && _moveQty > 0 ? new PulloutRemainderMove(_destinationId, _moveQty) : null;
-            var result = await Mediator.Send(new ConfirmPulloutPickCommand(_selected.Pick.PickId, _qty, move));
+            var pulloutId = _detail.Id;
+            var update = await RunDbOperationAsync(async () =>
+            {
+                var result = await Mediator.Send(new ConfirmPulloutPickCommand(selected.Pick.PickId, quantity, move));
+                var detail = await Mediator.Send(new GetPulloutDetailQuery(pulloutId));
+                return (Result: result, Detail: detail);
+            });
+            ApplyChangedDetail(update.Detail);
+            var result = update.Result;
             var message = result.MovedBoxes > 0
                 ? $"Pick confirmed. {result.MovedBoxes:0.###} box(es) will move to {result.DestinationLocationCode} when you confirm the pick-list."
                 : result.ReturnedToStockBoxes > 0 ? $"Pick confirmed. The {result.ReturnedToStockBoxes:0.###} box(es) not found go back to stock when you confirm the pick-list."
                 : result.AdditionalBoxes > 0 ? $"Pick confirmed. {result.AdditionalBoxes:0.###} extra box(es) are taken from the stock at this location when you confirm the pick-list."
                 : "Pick confirmed.";
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast", message, "success");
-            await AfterChangeAsync(_detail.Id);
         }
         catch (Exception ex)
         {
@@ -582,8 +601,8 @@
         _changeOptions = null;
         try
         {
-            _changeOptions = await Mediator.Send(new GetPulloutPickChangeOptionsQuery(
-                _detail.ReferenceNumber, _selected.Line.MaterialNumber, _selected.Pick.LocationCode, _selected.Pick.MfgMonthLabel));
+            _changeOptions = await RunDbOperationAsync(() => Mediator.Send(new GetPulloutPickChangeOptionsQuery(
+                _detail.ReferenceNumber, _selected.Line.MaterialNumber, _selected.Pick.LocationCode, _selected.Pick.MfgMonthLabel)));
         }
         catch (Exception ex)
         {
@@ -600,13 +619,23 @@
         _formError = null;
         try
         {
-            var quantity = Math.Min(_selected.Pick.QuantityBoxes, _changeTo.AvailableBoxes);
-            await Mediator.Send(new ChangePulloutPickLocationCommand(
-                _detail.ReferenceNumber, _selected.Line.MaterialNumber, _selected.Pick.LocationCode, _selected.Pick.MfgMonthLabel,
-                [new PulloutPickSource(_changeTo.PalletPositionId, _changeTo.MfgMonthLabel, quantity)],
-                _changeTo.BreaksFifo ? _fifoReason.Trim() : string.Empty));
-            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Pick moved to {_changeTo.LocationCode}.", "success");
-            await AfterChangeAsync(_detail.Id);
+            var selected = _selected;
+            var changeTo = _changeTo;
+            var referenceNumber = _detail.ReferenceNumber;
+            var quantity = Math.Min(selected.Pick.QuantityBoxes, changeTo.AvailableBoxes);
+            var pulloutId = _detail.Id;
+            var changedLocationCode = changeTo.LocationCode;
+            var overrideReason = changeTo.BreaksFifo ? _fifoReason.Trim() : string.Empty;
+            var detail = await RunDbOperationAsync(async () =>
+            {
+                await Mediator.Send(new ChangePulloutPickLocationCommand(
+                    referenceNumber, selected.Line.MaterialNumber, selected.Pick.LocationCode, selected.Pick.MfgMonthLabel,
+                    [new PulloutPickSource(changeTo.PalletPositionId, changeTo.MfgMonthLabel, quantity)],
+                    overrideReason));
+                return await Mediator.Send(new GetPulloutDetailQuery(pulloutId));
+            });
+            ApplyChangedDetail(detail);
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Pick moved to {changedLocationCode}.", "success");
         }
         catch (Exception ex)
         {
@@ -618,11 +647,11 @@
         }
     }
 
-    private async Task AfterChangeAsync(int pulloutId)
+    private void ApplyChangedDetail(PulloutDetailDto detail)
     {
         _selected = null;
         _changing = false;
-        _detail = await Mediator.Send(new GetPulloutDetailQuery(pulloutId));
+        _detail = detail;
     }
 
     private async Task ConfirmPicklistAsync()
@@ -633,7 +662,7 @@
         _confirmError = null;
         try
         {
-            var result = await Mediator.Send(new ConfirmPulloutPicklistCommand(_detail.Id));
+            var result = await RunDbOperationAsync(() => Mediator.Send(new ConfirmPulloutPicklistCommand(_detail.Id)));
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"{result.ReferenceNumber} confirmed.", "success");
             CloseDetail();
             await LoadPageAsync(_pageNumber);
@@ -645,6 +674,19 @@
         finally
         {
             _confirmingPicklist = false;
+        }
+    }
+
+    private async Task<T> RunDbOperationAsync<T>(Func<Task<T>> operation)
+    {
+        await _dbOperationGate.WaitAsync();
+        try
+        {
+            return await operation();
+        }
+        finally
+        {
+            _dbOperationGate.Release();
         }
     }
 }

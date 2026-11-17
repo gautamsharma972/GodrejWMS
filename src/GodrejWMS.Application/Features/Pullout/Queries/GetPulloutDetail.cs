@@ -60,7 +60,13 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
                 l.PickedQuantityBoxes,
                 l.Status,
                 l.Remarks,
-                MergePicks(l.Picks
+                // One row per real PulloutPick, never merged: "Confirm pick" always acts on exactly
+                // one PickId, so the quantity shown here must always be that same record's own
+                // QuantityBoxes - merging two picks that land at the same location/PKM into one
+                // summed row let the picker edit a quantity that didn't match what Confirm actually
+                // touched, and left the merged row stuck showing "To pick" whenever only the first
+                // underlying pick got confirmed.
+                l.Picks
                     .OrderBy(p => p.MfgMonth)
                     .ThenBy(p => p.PalletPosition.LocationCode)
                     .Select(p => new PulloutPickDto(
@@ -76,7 +82,7 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
                         p.MoveToPalletPositionId,
                         p.MoveToPalletPosition != null ? p.MoveToPalletPosition.LocationCode : null,
                         p.MoveQuantityBoxes))
-                    .ToList()),
+                    .ToList(),
                 l.PlantName,
                 l.Priority))
             .ToList();

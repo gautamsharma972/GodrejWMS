@@ -7,17 +7,23 @@
 
 <PageTitle>Pending Confirmation - Godrej WMS</PageTitle>
 
-<div class="page-shell report-page">
+<div class="page-shell report-page pending-confirmation-report">
     <div class="page-header">
         <div>
             <div class="eyebrow">Reports / Exceptions</div>
             <h1>Pending Confirmation</h1>
-            <p class="page-kicker">Inward and pullout orders already posted to inventory that the picker has not finished. Until then the system is ahead of the shelf (inward) or behind it (pullout). Overdue items should be chased first.</p>
+            <p class="page-kicker">Track posted inward and pullout orders that are still waiting for floor confirmation. Prioritise overdue work to keep system stock aligned with the shelf.</p>
         </div>
     </div>
 
-    <section class="filter-bar" aria-label="Filters">
-        <div class="filter-grid">
+    <section class="report-filter-card" aria-labelledby="pending-confirmation-filters">
+        <div class="report-filter-heading">
+            <div>
+                <h2 id="pending-confirmation-filters"><i class="bi bi-funnel" aria-hidden="true"></i> Filters</h2>
+                <p class="panel-subtitle">Narrow the queue by warehouse and define when an item becomes overdue.</p>
+            </div>
+        </div>
+        <div class="pending-filter-grid">
             <label class="filter-field">
                 <span>Warehouse</span>
                 <select class="form-select" @bind="_warehouseText">
@@ -30,11 +36,22 @@
             </label>
             <label class="filter-field">
                 <span>Overdue after (hours)</span>
-                <input class="form-control" type="number" min="1" @bind="_overdueHours" />
+                <div class="input-group">
+                    <input class="form-control" type="number" min="1" @bind="_overdueHours" aria-label="Overdue after hours" />
+                    <span class="input-group-text">hours</span>
+                </div>
             </label>
             <button type="button" class="btn btn-primary filter-apply" @onclick="LoadAsync" disabled="@_loading">
-                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
-                <span>Apply filters</span>
+                @if (_loading)
+                {
+                    <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                    <span>Refreshing…</span>
+                }
+                else
+                {
+                    <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+                    <span>Apply filters</span>
+                }
             </button>
         </div>
     </section>
@@ -44,14 +61,49 @@
         <div class="alert alert-danger" role="alert">@_error</div>
     }
 
-    <div class="panel">
+    @if (_report is not null)
+    {
+        <section class="pending-summary-grid" aria-label="Pending confirmation summary">
+            <div class="summary-card">
+                <span class="summary-icon primary"><i class="bi bi-hourglass-split" aria-hidden="true"></i></span>
+                <span class="summary-copy"><small>Pending orders</small><strong>@_report.Rows.Count.ToString("N0")</strong></span>
+            </div>
+            <div class="summary-card @(_report.OverdueCount > 0 ? "attention" : null)">
+                <span class="summary-icon danger"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i></span>
+                <span class="summary-copy"><small>Overdue</small><strong>@_report.OverdueCount.ToString("N0")</strong></span>
+                <span class="summary-note">over @_report.OverdueHours h</span>
+            </div>
+            <div class="summary-card">
+                <span class="summary-icon inward"><i class="bi bi-box-arrow-in-down" aria-hidden="true"></i></span>
+                <span class="summary-copy"><small>Inward not placed</small><strong>@_report.WaitingInwardBoxes.ToString("N0")</strong></span>
+                <span class="summary-note">boxes</span>
+            </div>
+            <div class="summary-card">
+                <span class="summary-icon pullout"><i class="bi bi-box-arrow-up" aria-hidden="true"></i></span>
+                <span class="summary-copy"><small>Pullout not picked</small><strong>@_report.WaitingPulloutBoxes.ToString("N0")</strong></span>
+                <span class="summary-note">boxes</span>
+            </div>
+        </section>
+    }
+
+    <div class="panel pending-report-panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Confirmation queue</h2>
+                <p class="panel-subtitle">Oldest and overdue exceptions appear first. Open a reference to review its floor activity.</p>
+            </div>
+            @if (_report is not null)
+            {
+                <span class="sync-chip"><i class="bi bi-clock-history" aria-hidden="true"></i> Overdue threshold: @_report.OverdueHours h</span>
+            }
+        </div>
         @if (_loading)
         {
-            <div class="loading-panel"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Loading...</div>
+            <div class="loading-panel pending-report-loading"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Loading confirmation queue...</div>
         }
         else if (_report is null || _report.Rows.Count == 0)
         {
-            <div class="empty-state">
+            <div class="empty-state pending-report-empty">
                 <i class="bi bi-check2-circle" aria-hidden="true"></i>
                 <strong>Nothing is waiting for the picker</strong>
                 <span>Every posted GRN and pullout has been confirmed on the floor.</span>
@@ -59,33 +111,55 @@
         }
         else
         {
-            <p class="mb-3">
-                <strong>@_report.Rows.Count</strong> pending
-                · <strong class="@(_report.OverdueCount > 0 ? "text-danger" : null)">@_report.OverdueCount</strong> overdue (over @_report.OverdueHours h)
-                · inward not yet placed: <strong>@_report.WaitingInwardBoxes.ToString("N0")</strong> boxes
-                · pullout not yet picked: <strong>@_report.WaitingPulloutBoxes.ToString("N0")</strong> boxes
-            </p>
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
+                <table class="table table-hover align-middle mb-0 pending-confirmation-table">
                     <thead>
                         <tr>
-                            <th>Type</th><th>Reference</th><th>Warehouse</th><th>Waiting since</th><th class="text-end">Age (h)</th>
-                            <th class="text-end">Locations / picks waiting</th><th class="text-end">Boxes waiting</th><th class="text-end">PICK-RESERVED boxes</th><th>Status</th>
+                            <th>Order</th>
+                            <th>Warehouse</th>
+                            <th>Waiting since</th>
+                            <th>Age</th>
+                            <th class="text-end">Work waiting</th>
+                            <th class="text-end">Boxes waiting</th>
+                            <th class="text-end">Pick-reserved</th>
+                            <th>Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach (var row in _report.Rows)
                         {
-                            <tr class="@(row.IsOverdue ? "table-warning" : null)">
-                                <td><span class="status-pill neutral">@row.Kind</span></td>
-                                <td><a class="record-code" href="@(row.Kind == "GRN" ? $"/inward/{row.Id}" : $"/pullout/{row.Id}")">@row.ReferenceNumber</a></td>
-                                <td>@row.WarehouseCode</td>
-                                <td>@row.Since.ToLocalTime().ToString("dd MMM yyyy HH:mm")</td>
-                                <td class="text-end"><strong>@row.AgeHours.ToString("N0")</strong>@(row.IsOverdue ? " ⚠" : null)</td>
-                                <td class="text-end">@row.WaitingCount</td>
+                            <tr class="pending-row @(row.IsOverdue ? "overdue-row" : null)">
+                                <td>
+                                    <div class="order-identity">
+                                        <span class="status-pill @(row.Kind == "GRN" ? "info" : "violet")">@row.Kind</span>
+                                        <a class="record-code" href="@(row.Kind == "GRN" ? $"/inward/{row.Id}" : $"/pullout/{row.Id}")">
+                                            @row.ReferenceNumber <i class="bi bi-arrow-up-right" aria-hidden="true"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                                <td><span class="warehouse-code">@row.WarehouseCode</span></td>
+                                <td>
+                                    <span class="waiting-date">@row.Since.ToLocalTime().ToString("dd MMM yyyy")</span>
+                                    <span class="waiting-time">@row.Since.ToLocalTime().ToString("hh:mm tt")</span>
+                                </td>
+                                <td>
+                                    <span class="age-badge @(row.IsOverdue ? "overdue" : null)">
+                                        @if (row.IsOverdue) { <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> }
+                                        @row.AgeHours.ToString("N0") h
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <strong>@row.WaitingCount.ToString("N0")</strong>
+                                    <span class="cell-note">@(row.Kind == "GRN" ? "locations" : "picks")</span>
+                                </td>
                                 <td class="text-end"><strong>@row.WaitingBoxes.ToString("N0")</strong></td>
                                 <td class="text-end">@(row.PickReservedBoxes > 0 ? row.PickReservedBoxes.ToString("N0") : "-")</td>
-                                <td>@row.Status</td>
+                                <td>
+                                    <div class="status-copy">
+                                        <i class="bi @(row.Kind == "GRN" ? "bi-box-arrow-in-down" : "bi-box-arrow-up")" aria-hidden="true"></i>
+                                        <span>@row.Status</span>
+                                    </div>
+                                </td>
                             </tr>
                         }
                     </tbody>
