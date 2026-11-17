@@ -1,6 +1,7 @@
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Features.Pullout.Commands;
 using GodrejWMS.Application.Features.Pullout.Dtos;
 using GodrejWMS.Domain.Entities;
 using MediatR;
@@ -86,9 +87,16 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
             transaction.WeightText, transaction.VolumeText);
 
         var pickingConfirmed = transaction.IsConfirmed && (transaction.ConfirmedAt != null || transaction.UploadHash == null);
+        var canRefreshPick = false;
+        if (transaction.IsConfirmed && !transaction.IsRejected && transaction.ConfirmedAt == null && transaction.UploadHash != null)
+        {
+            canRefreshPick = transaction.Lines.Any(l => l.PickedQuantityBoxes < l.RequestedQuantityBoxes)
+                || (await RefreshPulloutPicksHandler.FindInvalidAsync(db, transaction.ReferenceNumber, cancellationToken)).Count > 0;
+        }
+
         return new PulloutDetailDto(transaction.Id, transaction.ReferenceNumber, transaction.CreatedAt, lines, transaction.IsConfirmed,
             transaction.IsRejected, transaction.RejectedAt, transaction.RejectedByUserName, transaction.RejectionReason,
-            headerFields, warehouseAddress, pickingConfirmed, transaction.ConfirmedAt, transaction.ConfirmedByUserName);
+            headerFields, warehouseAddress, pickingConfirmed, transaction.ConfirmedAt, transaction.ConfirmedByUserName, canRefreshPick);
     }
 
     private static IReadOnlyList<PulloutPickDto> MergePicks(IEnumerable<PulloutPickDto> picks) =>

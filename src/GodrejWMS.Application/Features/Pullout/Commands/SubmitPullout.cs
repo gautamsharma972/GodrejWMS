@@ -243,6 +243,8 @@ public sealed class SubmitPulloutHandler(
                 if (reference is null) db.PulloutTransactions.Add(transaction);
                 if (reference is null && !request.PreviewOnly)
                 {
+                    // Boxes of inward put-aways the picker has not placed yet become PICK-RESERVED (read before the deduction).
+                    await PutawayPickReservation.ReserveAsync(db, transaction.ReferenceNumber, proposedLines, clock.UtcNow, cancellationToken);
                     // Posted on upload: the picks are deducted from inventory right now, in this order's transaction.
                     await DeductAsync(transaction, proposedLines, cancellationToken);
                     // Posted, but the pick-list is only "confirmed" (ConfirmedAt) once the picker has confirmed every pick and

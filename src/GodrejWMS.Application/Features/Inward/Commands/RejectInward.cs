@@ -103,6 +103,17 @@ public sealed class RejectInwardHandler(
             reason = reason.Length + note.Length > 500 ? reason[..Math.Max(0, 500 - note.Length)] + note : reason + note;
         }
 
+        // Boxes a pullout already holds (PICK-RESERVED) are not reversed here: that pullout needs Refresh Pick to find other stock.
+        var reservedRows = transaction.Lines.SelectMany(l => l.Putaways)
+            .Where(p => p.ExcludedLocation == PutawayPickReservation.Label && p.OverrideReason is not null && !p.OverrideReason.Contains("released"))
+            .ToList();
+        if (reservedRows.Count > 0)
+        {
+            var references = string.Join(", ", reservedRows.Select(p => p.OverrideReason!.Replace("Reserved for pullout ", "")).Distinct());
+            var note = $" [{reservedRows.Sum(p => p.QuantityBoxes):0.###} box(es) are PICK-RESERVED for pullout {references} - use Refresh Pick there]";
+            reason = reason.Length + note.Length > 500 ? reason[..Math.Max(0, 500 - note.Length)] + note : reason + note;
+        }
+
         transaction.RejectionReason = reason;
 
         await db.SaveChangesAsync(cancellationToken);

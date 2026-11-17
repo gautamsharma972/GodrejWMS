@@ -169,4 +169,6 @@ public sealed record PulloutDetailDto(
     /// <see cref="IsConfirmed"/> only says the stock was posted.</summary>
     bool PickingConfirmed = false,
     DateTimeOffset? PickingConfirmedAt = null,
-    string? PickingConfirmedByUserName = null);
+    string? PickingConfirmedByUserName = null,
+    /// <summary>The pick-list is still open and some picks sit on boxes of a rejected GRN, or a line is short: Refresh Pick can re-allocate.</summary>
+    bool CanRefreshPick = false);

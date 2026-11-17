@@ -1,0 +1,154 @@
+@page "/reports/reconciliation"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewReports)]
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Features.Reports.Core
+@using GodrejWMS.Application.Features.Reports.Queries
+@inject IMediator Mediator
+
+<PageTitle>Stock Reconciliation - Godrej WMS</PageTitle>
+
+<div class="page-shell report-page">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Reports / Exceptions</div>
+            <h1>Stock Reconciliation</h1>
+            <p class="page-kicker">Compares Current Inventory with the stock ledger and with what posted GRNs say should be on the shelf. Read-only: it lists every disagreement and what to do about it, and never changes stock.</p>
+        </div>
+    </div>
+
+    <section class="filter-bar" aria-label="Filters">
+        <div class="filter-grid">
+            <label class="filter-field">
+                <span>Warehouse</span>
+                <select class="form-select" @bind="_warehouseText">
+                    <option value="">All assigned warehouses</option>
+                    @foreach (var warehouse in _warehouses)
+                    {
+                        <option value="@warehouse.Id">@warehouse.Code — @warehouse.Name</option>
+                    }
+                </select>
+            </label>
+            <label class="filter-field">
+                <span>Check</span>
+                <select class="form-select" @bind="_checkFilter">
+                    <option value="">All checks</option>
+                    @foreach (var check in ReconciliationChecks.All)
+                    {
+                        <option value="@check">@check (@(_report?.CountsByCheck.GetValueOrDefault(check) ?? 0))</option>
+                    }
+                </select>
+            </label>
+            <label class="filter-field">
+                <span>Show</span>
+                <select class="form-select" @bind="_severityFilter">
+                    <option value="">All, including information</option>
+                    <option value="issues">Problems only (High and Medium)</option>
+                </select>
+            </label>
+            <button type="button" class="btn btn-primary filter-apply" @onclick="LoadAsync" disabled="@_loading">
+                <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+                <span>Run check</span>
+            </button>
+        </div>
+    </section>
+
+    @if (_error is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_error</div>
+    }
+
+    <div class="panel">
+        @if (_loading)
+        {
+            <div class="loading-panel"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Checking...</div>
+        }
+        else if (_report is not null)
+        {
+            var rows = Filtered();
+            <p class="mb-3">
+                Checked <strong>@_report.BatchesChecked.ToString("N0")</strong> stock rows and <strong>@_report.GrnLinesChecked.ToString("N0")</strong> posted GRN lines
+                · <strong class="@(_report.Issues.Any(i => i.Severity != "Info") ? "text-danger" : "text-success")">@_report.Issues.Count(i => i.Severity != "Info")</strong> problem(s)
+                · @_report.Issues.Count(i => i.Severity == "Info") information
+            </p>
+            @if (rows.Count == 0)
+            {
+                <div class="empty-state">
+                    <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                    <strong>Everything reconciles</strong>
+                    <span>No difference found for the selected checks.</span>
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Severity</th><th>Check</th><th>Reference</th><th>Location</th><th>Material</th><th>PKM</th>
+                                <th class="text-end">Expected</th><th class="text-end">Actual</th><th class="text-end">Difference</th><th>What to do</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var issue in rows)
+                            {
+                                <tr>
+                                    <td><span class="status-pill @(issue.Severity == "High" ? "danger" : issue.Severity == "Medium" ? "warning" : "neutral")">@issue.Severity</span></td>
+                                    <td>@issue.Check</td>
+                                    <td>@issue.Reference</td>
+                                    <td>@issue.Location</td>
+                                    <td>@(issue.MaterialNumber?.ToString() ?? "-")</td>
+                                    <td>@(issue.Pkm ?? "-")</td>
+                                    <td class="text-end">@issue.Expected.ToString("N0")</td>
+                                    <td class="text-end">@issue.Actual.ToString("N0")</td>
+                                    <td class="text-end"><strong>@issue.Difference.ToString("+#,##0;-#,##0;0")</strong></td>
+                                    <td>@issue.Detail</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private StockReconciliationReportDto? _report;
+    private IReadOnlyList<WarehouseOption> _warehouses = [];
+    private string _warehouseText = string.Empty;
+    private string _checkFilter = string.Empty;
+    private string _severityFilter = "issues";
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _warehouses = await Mediator.Send(new GetAccessibleWarehousesQuery());
+        await LoadAsync();
+    }
+
+    private IReadOnlyList<ReconciliationIssueDto> Filtered() =>
+        _report!.Issues
+            .Where(i => string.IsNullOrEmpty(_checkFilter) || i.Check == _checkFilter)
+            .Where(i => _severityFilter != "issues" || i.Severity != "Info")
+            .ToList();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            int? warehouseId = int.TryParse(_warehouseText, out var id) ? id : null;
+            _report = await Mediator.Send(new GetStockReconciliationReportQuery(warehouseId));
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

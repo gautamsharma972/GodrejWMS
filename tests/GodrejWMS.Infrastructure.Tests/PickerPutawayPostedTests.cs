@@ -173,47 +173,90 @@ public class PickerPutawayPostedTests
     }
 
     [Fact]
-    public async Task PutawayChange_AfterAPulloutTookTheBoxes_MovesTheOpenPickWithTheStock()
+    public async Task Pullout_TakingPartOfAnUnplacedPutaway_SplitsItAndMarksThoseBoxesPickReserved()
     {
         var (db, _, positions, putaway) = await SeedAsync();
         using var _ = db;
         var from = putaway.PalletPositionId;
         var to = positions.First(p => p.Id != from).Id;
-        await PullOutAsync(db, 20); // 20 of the 30 posted boxes are already picked for a pullout
+
+        await PullOutAsync(db, 20); // 20 of the 30 posted boxes go to a pullout before the picker placed them
+
+        var rows = db.InwardPutaways.AsNoTracking().OrderBy(p => p.Id).ToList();
+        Assert.Equal(2, rows.Count);
+        var reserved = rows.Single(r => r.ExcludedLocation == "PICK-RESERVED");
+        Assert.Equal(20, reserved.QuantityBoxes);
+        Assert.True(reserved.IsPickerPlaced && reserved.IsExcludedLocked);
+        var rest = rows.Single(r => r.ExcludedLocation is null);
+        Assert.Equal(10, rest.QuantityBoxes);
         Assert.Equal(10, OnHand(db, from));
 
-        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", to, null), default);
-
+        // The reserved boxes are closed for the picker; the remainder is still a normal put-away.
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Handler(db).Handle(new PickerPlaceInwardPutawayCommand(reserved.Id, 20, "OCT|2026", to, null), default));
+        Assert.Contains("PICK-RESERVED", ex.Message);
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(rest.Id, 10, "OCT|2026", to, null, AcknowledgeWarning: true), default);
         Assert.Equal(0, OnHand(db, from));
-        Assert.Equal(10, OnHand(db, to)); // only what was left on the shelf is there to hold
-        var pick = db.PulloutPicks.AsNoTracking().Single();
-        Assert.Equal(to, pick.PalletPositionId); // the pullout's pick follows the boxes to where the picker put them
-        Assert.Equal(20, pick.QuantityBoxes);
-        Assert.Empty(db.StockBatches.AsNoTracking().Where(b => b.QuantityBoxes < 0));
+        Assert.Equal(10, OnHand(db, to));
     }
 
     [Fact]
-    public async Task PutawayChange_ToGit_AfterAPulloutTookTheBoxes_MovesTheOpenPickToGit()
+    public async Task Pullout_TakingAWholePutaway_RelabelsIt_AndRejectingThePulloutLeavesAPendingReservationForRefreshPutaway()
     {
-        // GIT is a real, trackable location (unlike NO RACK): an open pullout pick against the old cell
-        // follows the boxes into GIT the same way it follows any other relocation.
         var (db, _, _, putaway) = await SeedAsync();
         using var _ = db;
         var from = putaway.PalletPositionId;
-        await PullOutAsync(db, 30); // all 30 boxes are already allocated to a pullout
+        await PullOutAsync(db, 30);
+
+        var row = db.InwardPutaways.AsNoTracking().Single();
+        Assert.Equal("PICK-RESERVED", row.ExcludedLocation);
+        Assert.Equal(from, row.PalletPositionId);
         Assert.Equal(0, OnHand(db, from));
 
-        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", null, "GIT"), default);
+        var reference = db.PulloutTransactions.AsNoTracking().Single().ReferenceNumber;
+        await new RejectPulloutHandler(db, TestServices.Posting(db), TestServices.Uow(db), new SvcClock(), new SvcUser())
+            .Handle(new RejectPulloutCommand(reference, "Raised in error"), default);
 
-        var gitLocation = db.PalletPositions.AsNoTracking().Single(p => p.ZoneTypeId == ZoneTypeIds.Git);
-        Assert.Equal(0, OnHand(db, from));
-        Assert.Equal(0, OnHand(db, gitLocation.Id)); // nothing was left on the shelf to hold - it was all already picked
-        var pick = db.PulloutPicks.AsNoTracking().Single();
-        Assert.Equal(gitLocation.Id, pick.PalletPositionId); // the pullout's pick follows the boxes into GIT
-        Assert.Equal(30, pick.QuantityBoxes);
-        var putawayRow = db.InwardPutaways.AsNoTracking().Single();
-        Assert.Equal("GIT", putawayRow.ExcludedLocation); // still labelled GIT even though it now tracks a real location
-        Assert.Equal(gitLocation.Id, putawayRow.PalletPositionId);
+        // Nothing is restored automatically: the row waits as a reservation with no stock behind it.
+        row = db.InwardPutaways.AsNoTracking().Single();
+        Assert.Null(row.ExcludedLocation);
+        Assert.False(row.IsConfirmed);
+        Assert.False(row.IsPickerPlaced);
+        Assert.False(row.IsExcludedLocked);
+        Assert.Equal(0, db.StockBatches.AsNoTracking().Sum(b => (decimal?)b.QuantityBoxes) ?? 0);
+
+        // Refresh Put-away allocates the locations and posts the stock once.
+        var transactionId = db.InwardTransactions.AsNoTracking().Single().Id;
+        await new RefreshPostedInwardPutawayHandler(
+                db, new PalletAllocationService(db, new SvcClock()), TestServices.Posting(db), TestServices.Virtuals(db),
+                TestServices.Uow(db), new SvcClock(), new SvcUser())
+            .Handle(new RefreshPostedInwardPutawayCommand(transactionId), default);
+        Assert.Equal(30, db.StockBatches.AsNoTracking().Sum(b => (decimal?)b.QuantityBoxes) ?? 0);
+        Assert.Equal(30, db.InwardPutaways.AsNoTracking().Sum(p => p.QuantityBoxes));
+    }
+
+    [Fact]
+    public async Task PickReservedRows_NeedNoPickerSubmit_AndAGrnWithOnlyReservedRowsLeavesThePickerList()
+    {
+        var (db, _, positions, putaway) = await SeedAsync();
+        using var _ = db;
+        var pending = new GetPickerPendingInwardHandler(db);
+        var transactionId = db.InwardTransactions.AsNoTracking().Single().Id;
+        var to = positions.First(p => p.Id != putaway.PalletPositionId).Id;
+
+        await PullOutAsync(db, 20); // splits: 20 PICK-RESERVED + 10 still to place
+        var list = await pending.Handle(new GetPickerPendingInwardQuery(), default);
+        var item = Assert.Single(list.Items);
+        Assert.Equal(2, item.LocationCount);
+        Assert.Equal(1, item.SubmittedLocationCount); // the reserved row already counts as done
+
+        var rest = db.InwardPutaways.AsNoTracking().Single(p => p.ExcludedLocation == null);
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(rest.Id, 10, "OCT|2026", to, null, AcknowledgeWarning: true), default);
+
+        // Only the remaining row needed the picker: Confirm now succeeds without touching the reserved one.
+        var confirm = new ConfirmPickerPutawayHandler(db, new PPAllow(), TestServices.Posting(db), new SvcClock(), new SvcUser());
+        await confirm.Handle(new ConfirmPickerPutawayCommand(transactionId), default);
+        Assert.Empty((await pending.Handle(new GetPickerPendingInwardQuery(), default)).Items);
     }
 
     [Fact]

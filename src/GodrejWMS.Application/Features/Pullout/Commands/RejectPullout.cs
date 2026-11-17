@@ -2,6 +2,7 @@ using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Features.Inward;
 using GodrejWMS.Domain.Entities;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -54,9 +55,29 @@ public sealed class RejectPulloutHandler(
             // The stock was already taken out (on upload, or at confirmation for an older pullout), so rejecting puts it back into the
             // locations it was picked from - also after the picker confirmed the pick-list. A location that was emptied, or a virtual
             // location that was freed, simply receives the boxes again.
-            var returns = transaction.Lines
-                .SelectMany(l => l.Picks.Select(p => new StockChange(l.MaterialId, p.MfgMonth, LocationSubtypeIds.Good, p.PalletPosition, p.QuantityBoxes)))
-                .ToList();
+            // PICK-RESERVED put-aways become pending reservations (the user runs Refresh Put-away on the GRN); those boxes are not put back into stock here.
+            var skip = await PutawayPickReservation.ReleaseAsync(db, transaction.ReferenceNumber, cancellationToken);
+            var returns = new List<StockChange>();
+            foreach (var l in transaction.Lines)
+            {
+                foreach (var p in l.Picks)
+                {
+                    var key = (l.MaterialId, p.MfgMonth, p.PalletPositionId);
+                    var quantity = p.QuantityBoxes;
+                    if (skip.TryGetValue(key, out var skipBoxes) && skipBoxes > 0)
+                    {
+                        var cut = Math.Min(quantity, skipBoxes);
+                        quantity -= cut;
+                        skip[key] = skipBoxes - cut;
+                    }
+
+                    if (quantity > 0)
+                    {
+                        returns.Add(new StockChange(l.MaterialId, p.MfgMonth, LocationSubtypeIds.Good, p.PalletPosition, quantity));
+                    }
+                }
+            }
+
             if (returns.Count > 0)
             {
                 await posting.ApplyAsync(

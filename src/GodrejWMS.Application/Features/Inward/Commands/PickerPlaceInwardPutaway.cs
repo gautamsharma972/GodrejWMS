@@ -101,6 +101,11 @@ public sealed class PickerPlaceInwardPutawayHandler(
             throw new InvalidOperationException($"{putaway.PalletPosition.LocationCode} is already confirmed and can no longer be changed.");
         }
 
+        if (putaway.ExcludedLocation == PutawayPickReservation.Label)
+        {
+            throw new InvalidOperationException($"These boxes are PICK-RESERVED for a pullout ({putaway.OverrideReason}) and are not put away on the shelf.");
+        }
+
         // A GIT / NO RACK entry can be corrected until a supervisor confirms the GRN, or it is rejected.
         if (putaway.IsExcludedLocked)
         {
