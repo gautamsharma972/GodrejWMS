@@ -122,6 +122,29 @@ export interface InwardPutawayDto {
   isVirtual?: boolean;
 }
 
+export const InwardVarianceType = { Damage: 1, Shortage: 2, Mismatch: 3, Excess: 4 } as const;
+export type InwardVarianceTypeValue = (typeof InwardVarianceType)[keyof typeof InwardVarianceType];
+
+/** A damage / shortage / mismatch / excess record a supervisor made against a GRN while reviewing the put-away. */
+export interface InwardVarianceDto {
+  id: number;
+  type: InwardVarianceTypeValue;
+  materialNumber: number;
+  materialDescription: string;
+  mfgMonthLabel: string;
+  locationCode: string;
+  quantityBoxes: number;
+  remarks: string;
+  createdByUserName?: string | null;
+  createdAt: string;
+}
+
+export interface RecordExcessMaterialResult {
+  saved: boolean;
+  warning?: string | null;
+  record?: InwardVarianceDto | null;
+}
+
 export interface InwardDetailLineDto {
   materialNumber: number;
   materialDescription: string;
@@ -132,6 +155,8 @@ export interface InwardDetailLineDto {
   status: AllocationStatus;
   remarks?: string | null;
   putaways: InwardPutawayDto[];
+  /** Boxes recorded as damage / shortage / mismatch against this line (accounted for, neither put away nor missing). */
+  varianceBoxes?: number;
 }
 
 export interface InwardDetailDto {
@@ -151,6 +176,8 @@ export interface InwardDetailDto {
   unsavedLines?: InwardUnsavedLineDto[] | null;
   /** Set when the GRN's stock was posted to inventory on upload: the picker only confirms or changes each location. */
   postedAt?: string | null;
+  /** Damage / shortage / mismatch / excess records a supervisor made against this GRN. */
+  variances?: InwardVarianceDto[] | null;
 }
 
 export const InwardSheetImportStatus = {
@@ -422,6 +449,24 @@ export interface PulloutPickChangeOptionDto {
   isCurrent: boolean;
   /** Taking from this cell skips older stock still available (FIFO): a reason is then required. */
   breaksFifo?: boolean;
+}
+
+/** A location holding Good stock of a material that a supervisor can add to an open pick-list (oldest PKM first). */
+export interface PulloutAddOptionDto {
+  palletPositionId: number;
+  locationCode: string;
+  mfgMonthLabel: string;
+  quantityBoxes: number;
+  isVirtual: boolean;
+  /** Picking from a newer PKM than the oldest in stock breaks FIFO: a reason is then required. */
+  breaksFifo: boolean;
+}
+
+export interface AddPulloutPickResult {
+  referenceNumber: string;
+  locationCode: string;
+  addedBoxes: number;
+  breaksFifo: boolean;
 }
 
 export interface PulloutPickSource {

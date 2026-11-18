@@ -34,6 +34,26 @@ public class InventoryAdjustmentTests
     }
 
     [Fact]
+    public async Task ApprovedAdjustment_WritesAnAdjustmentLedgerEntryForTheChange()
+    {
+        var supervisor = new AdjustmentUser("supervisor", "supervisor@test", "Supervisor");
+        await using var db = CreateDb(Guid.NewGuid().ToString(), supervisor);
+        var batchId = await SeedAsync(db, 20);
+
+        await new SubmitInventoryAdjustmentHandler(
+                db, new AdjustmentClock(), supervisor, new AdjustmentNotifications(), new FakeAdjustmentPermissions(supervisor))
+            .Handle(new SubmitInventoryAdjustmentCommand(
+                batchId, 0, InventoryAdjustmentReasonCodes.PhysicalCountVariance, "Boxes are not on the shelf"),
+                CancellationToken.None);
+
+        var entry = Assert.Single(db.StockLedgerEntries.AsNoTracking());
+        Assert.Equal(StockLedgerEntryTypes.Adjustment, entry.EntryType);
+        Assert.Equal(-20, entry.QuantityBoxes);
+        Assert.Equal(0, entry.BalanceAfterBoxes);
+        Assert.StartsWith("ADJ", entry.ReferenceNumber);
+    }
+
+    [Fact]
     public async Task MaterialCorrection_WaitsForApproval_ThenReplacesSystemSkuAtSameLocation()
     {
         var databaseName = Guid.NewGuid().ToString();

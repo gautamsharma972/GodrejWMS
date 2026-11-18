@@ -168,7 +168,7 @@ public sealed class GetStockReconciliationReportHandler(IApplicationDbContext db
                 Reference = p.InwardTransactionLine.InwardTransaction.ReferenceNumber
             })
             .ToListAsync(cancellationToken);
-        var onHand = batches.GroupBy(b => (b.MaterialId, b.MfgMonth, b.PalletPositionId))
+        var onHand = batches.Where(b => b.StockSubtypeId == LocationSubtypeIds.Good).GroupBy(b => (b.MaterialId, b.MfgMonth, b.PalletPositionId))
             .ToDictionary(g => g.Key, g => g.Sum(b => b.QuantityBoxes));
         foreach (var g in untouched.GroupBy(u => (u.MaterialId, u.Mfg, u.PalletPositionId)))
         {

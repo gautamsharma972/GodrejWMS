@@ -183,7 +183,7 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
     try {
       const result = await confirmPulloutPick(token, pick.pickId, {
         pickedQuantityBoxes: qty,
-        moveRemaining: moveEnabled && destination && moveQty > 0
+        moveRemaining: qty > 0 && moveEnabled && destination && moveQty > 0
           ? { destinationPalletPositionId: destination.id, quantityBoxes: moveQty }
           : null,
       });
@@ -279,13 +279,16 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
 
         <View style={styles.sectionCard}>
           <StepHeader number={2} title="Quantity picked" />
-          <Stepper value={qty} min={1} max={planned + (remainder?.remainingBoxes ?? 0)} onChange={setQty} />
+          <Stepper value={qty} min={0} max={planned + (remainder?.remainingBoxes ?? 0)} onChange={setQty} />
           {qty > planned && (
             <View style={styles.hintBox}><AppIcon name="information-circle-outline" size={18} color={colors.info} /><Text style={styles.hint}>
               {boxesLabel(qty - planned)} extra {qty - planned === 1 ? "is" : "are"} taken from the stock still at {pick.locationCode} when you confirm the pick-list. Use Change location to take more from another location.
             </Text></View>
           )}
-          {qty < planned && (
+          {qty === 0 && (
+            <View style={styles.hintBox}><AppIcon name="information-circle-outline" size={18} color={colors.info} /><Text style={styles.hint}>Nothing picked: all {boxesLabel(planned)} go back to stock at {pick.locationCode} when you confirm the pick-list. Use this when the material is not available yet (for example still on the inward vehicle) so it is skipped for loading.</Text></View>
+          )}
+          {qty > 0 && qty < planned && (
             <View style={styles.hintBox}><AppIcon name="information-circle-outline" size={18} color={colors.info} /><Text style={styles.hint}>{boxesLabel(planned - qty)} not found {planned - qty === 1 ? "goes" : "go"} back to stock at {pick.locationCode} when you confirm the pick-list.</Text></View>
           )}
         </View>
@@ -365,18 +368,18 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
 
       <View style={styles.footer}>
         <View style={styles.footerSummary}>
-          <Text style={styles.footerSummaryLabel}>{verified ? "Ready to confirm" : "Location verification required"}</Text>
+          <Text style={styles.footerSummaryLabel}>{verified || qty === 0 ? "Ready to confirm" : "Location verification required"}</Text>
           <Text style={styles.footerSummaryValue}>{boxesLabel(qty)}</Text>
         </View>
         <Button
-          title={`Submit pick · ${boxesLabel(qty)}`}
+          title={qty === 0 ? "Submit · nothing picked (skip)" : `Submit pick · ${boxesLabel(qty)}`}
           size="lg"
           loading={submitting}
-          disabled={!verified}
+          disabled={!verified && qty > 0}
           onPress={submit}
           icon={<AppIcon name="checkmark-circle-outline" size={22} color={colors.textOnPrimary} />}
         />
-        {!verified && <Text style={styles.footerHint}>Verify the location first.</Text>}
+        {!verified && qty > 0 && <Text style={styles.footerHint}>Verify the location first.</Text>}
         {moveEnabled && destination && moveQty > 0 && remainingAfter > 0 && (
           <Text style={styles.footerHint}>{boxesLabel(moveQty)} will move to {destination.code} when you confirm the pick-list.</Text>
         )}

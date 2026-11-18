@@ -1,0 +1,125 @@
+@page "/inward/{TransactionId:int}/print"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInward)]
+@using GodrejWMS.Application.Features.Inward
+@using GodrejWMS.Application.Features.Inward.Dtos
+@using GodrejWMS.Application.Features.Inward.Queries
+@inject IMediator Mediator
+
+<PageTitle>Print GRN - Godrej WMS</PageTitle>
+
+<div class="grn-print">
+    @if (_loading)
+    {
+        <div class="loading-panel"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Preparing the print view...</div>
+    }
+    else if (_error is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_error</div>
+    }
+    else if (_download is not null)
+    {
+        <div class="grn-print-toolbar">
+            <button type="button" class="btn btn-primary" data-print>
+                <i class="bi bi-printer" aria-hidden="true"></i> Print / Save as PDF
+            </button>
+            <a class="btn btn-outline-secondary" href="/inward/@TransactionId">Back to GRN</a>
+            <span class="grn-print-hint">In the print window choose <strong>Save as PDF</strong> (or your printer), paper <strong>A4</strong>, <strong>Landscape</strong>. Page 1 is the put-away sheet, page 2 the unloading sheet.</span>
+        </div>
+
+        <section class="grn-print-sheet">
+            @RenderHeader(_putawayHeader, "PUTAWAY SHEET")
+            <div class="grn-print-ref">GRN Reference: <strong>@_download.Header.ReferenceNumber</strong></div>
+            <table class="grn-print-table">
+                <thead><tr>@foreach (var h in InwardPrintSheets.PutawayHeaders) { <th>@h</th> }</tr></thead>
+                <tbody>
+                    @foreach (var row in InwardPrintSheets.PutawayRows(_download))
+                    {
+                        <tr>@for (var i = 0; i < row.Length; i++) { <td class="@(i is 3 or 4 or 7 ? "num" : null)">@row[i]</td> }</tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+
+        <section class="grn-print-sheet grn-print-break">
+            @RenderHeader(_unloadingHeader, "UNLOADING SHEET")
+            <div class="grn-print-ref">GRN Reference: <strong>@_download.Header.ReferenceNumber</strong></div>
+            <table class="grn-print-table">
+                <thead><tr>@foreach (var h in InwardPrintSheets.UnloadingHeaders) { <th>@h</th> }</tr></thead>
+                <tbody>
+                    @foreach (var row in InwardPrintSheets.UnloadingRows(_download))
+                    {
+                        <tr>
+                            @for (var i = 0; i < row.Length; i++)
+                            {
+                                <td class="@(i == 2 ? "num" : i == 6 ? RemarkClass(row[i]) : null)">@row[i]</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public int TransactionId { get; set; }
+
+    private InwardDownloadDto? _download;
+    private PrintHeaderBlock? _putawayHeader;
+    private PrintHeaderBlock? _unloadingHeader;
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        try
+        {
+            var detail = await Mediator.Send(new GetInwardDetailQuery(TransactionId));
+            _download = InwardDownloadMapper.PackageFromDetail(detail);
+            // The put-away sheet leaves out Vehicle No. and LR No.; the unloading sheet keeps the client's header as uploaded.
+            _putawayHeader = InwardPrintSheets.HeaderBlock(_download, hideVehicleAndLr: true);
+            _unloadingHeader = InwardPrintSheets.HeaderBlock(_download, hideVehicleAndLr: false);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string RemarkClass(string remark) => remark switch
+    {
+        "Fully allocated" => "remark-ok",
+        "Partially allocated" => "remark-partial",
+        _ => "remark-failed"
+    };
+
+    private static RenderFragment RenderHeader(PrintHeaderBlock? block, string fallbackTitle) => __builder =>
+    {
+        if (block is null)
+        {
+            <h1 class="grn-print-title">@fallbackTitle</h1>
+            return;
+        }
+
+        <table class="grn-print-header">
+            <tbody>
+                @for (var r = 0; r < block.Rows.Count; r++)
+                {
+                    <tr>
+                        @foreach (var cell in block.Rows[r])
+                        {
+                            // The client's own title ("UNLOADING SHEET") becomes the put-away sheet's title there.
+                            var text = r == 0 && fallbackTitle == "PUTAWAY SHEET" && cell.Text.Trim().Equals("UNLOADING SHEET", StringComparison.OrdinalIgnoreCase) ? fallbackTitle : cell.Text;
+                            <td rowspan="@cell.RowSpan" colspan="@cell.ColSpan" class="@(r == 0 ? "title" : cell.Bold ? "label" : null)">@text</td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+}

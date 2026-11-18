@@ -72,6 +72,11 @@
                             <i class="bi bi-file-earmark-arrow-down" aria-hidden="true"></i>
                             Download allocation
                         </button>
+                        <a class="btn btn-outline-secondary" href="/inward/@_detail.Id/print" target="_blank" rel="noopener"
+                           title="Open the put-away sheet and unloading sheet as an A4 landscape print view (print or save as PDF)">
+                            <i class="bi bi-printer" aria-hidden="true"></i>
+                            Print / PDF
+                        </a>
                     }
                     @if (CanUploadLocationChanges)
                     {
@@ -359,6 +364,37 @@
             </div>
         </div>
 
+        @if (_detail.Variances is { Count: > 0 } _variances)
+        {
+            <div class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2 class="panel-title">Damage, shortage, mismatch and excess</h2>
+                        <p class="panel-subtitle">Recorded by the supervisor while reviewing the put-away. Damage stays in its location as Damage stock; excess is extra material beyond the inbound volume.</p>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead><tr><th>Type</th><th>Material</th><th>PKM</th><th>Location</th><th class="text-end">Boxes</th><th>Remark</th><th>Recorded by</th></tr></thead>
+                        <tbody>
+                            @foreach (var record in _variances)
+                            {
+                                <tr>
+                                    <td><span class="status-pill @(record.Type == GodrejWMS.Domain.Entities.InwardVarianceType.Excess ? "info" : record.Type == GodrejWMS.Domain.Entities.InwardVarianceType.Damage ? "danger" : "warning")">@record.Type</span></td>
+                                    <td>@record.MaterialNumber <span class="text-muted">@record.MaterialDescription</span></td>
+                                    <td>@record.MfgMonthLabel</td>
+                                    <td>@record.LocationCode</td>
+                                    <td class="text-end">@record.QuantityBoxes.ToString("N0")</td>
+                                    <td>@record.Remarks</td>
+                                    <td>@record.CreatedByUserName <span class="text-muted">@record.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
         <div class="panel">
             <div class="panel-header">
                 <div>
@@ -425,7 +461,27 @@
                                 <td>
                                     @if (row.ShortfallBoxes is { } shortfall)
                                     {
-                                        <span class="text-danger">No location reserved for @shortfall.ToString("N0") box(es)</span>
+                                        @if (row.Line.UnplacedBoxes > 0)
+                                        {
+                                            <span class="text-danger d-block">No location reserved for @row.Line.UnplacedBoxes.ToString("N0") box(es) - the warehouse had no suitable free location. Use Refresh Put-away to try again.</span>
+                                        }
+                                        @if (row.Line.LeftInventoryBoxes > 0)
+                                        {
+                                            var pickedBoxes = row.Line.LeftByPickBoxes;
+                                            var otherBoxes = row.Line.LeftInventoryBoxes - pickedBoxes;
+                                            @if (pickedBoxes > 0)
+                                            {
+                                                <span class="text-warning-emphasis d-block">@pickedBoxes.ToString("N0") box(es) were put away and then picked against @string.Join(", ", row.Line.PickReferences ?? []). No location is held for them and they are not given a new location.</span>
+                                            }
+                                            @if (otherBoxes > 0)
+                                            {
+                                                <span class="text-warning-emphasis d-block">@otherBoxes.ToString("N0") box(es) were put away and then moved or adjusted away from their put-away location. No location is held for them and they are not given a new location. See Stock Reconciliation or the stock ledger for what happened.</span>
+                                            }
+                                        }
+                                        @if (row.Line.UnplacedBoxes <= 0 && row.Line.LeftInventoryBoxes <= 0)
+                                        {
+                                            <span class="text-danger">No location reserved for @shortfall.ToString("N0") box(es)</span>
+                                        }
                                     }
                                     else if (row.Putaway is null)
                                     {
@@ -1113,8 +1169,8 @@
             line.Putaways.Count == 0
                 ? [new PutawayDetailRow(line, null)]
                 : line.Putaways.Select(putaway => new PutawayDetailRow(line, putaway))
-                    .Concat(line.RequestedQuantityBoxes - line.AllocatedQuantityBoxes > 0
-                        ? [new PutawayDetailRow(line, null, line.RequestedQuantityBoxes - line.AllocatedQuantityBoxes)]
+                    .Concat(line.RequestedQuantityBoxes - line.AllocatedQuantityBoxes - line.VarianceBoxes > 0
+                        ? [new PutawayDetailRow(line, null, line.RequestedQuantityBoxes - line.AllocatedQuantityBoxes - line.VarianceBoxes)]
                         : []));
 
             return (_sortBy, _sortDescending) switch
@@ -1326,7 +1382,7 @@
     private bool CanRefreshPosted =>
         _detail is not null && !_detail.IsRejected && _detail.PostedAt.HasValue &&
         _detail.Lines.Any(l => l.MaterialIsActive
-            && (l.AllocatedQuantityBoxes < l.RequestedQuantityBoxes
+            && (l.UnplacedBoxes > 0
                 || l.Putaways.Any(p => !p.IsPickerPlaced && !p.IsExcludedLocked && p.ExcludedLocation is null)));
 
     private bool CanRefreshPutaway =>

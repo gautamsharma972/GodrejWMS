@@ -8296,3 +8296,37 @@ h2 {
     line-height: 1.25rem;
     text-align: center;
 }
+
+/* ---- Printable GRN allocation (put-away sheet + unloading sheet): A4 landscape ---- */
+@page grn-landscape { size: A4 landscape; margin: 10mm; }
+.grn-print { page: grn-landscape; }
+.grn-print-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+.grn-print-hint { color: var(--bs-secondary-color, #64748b); font-size: 0.9rem; }
+.grn-print-sheet { background: #fff; padding: 1rem; margin-bottom: 1.5rem; border: 1px solid #e2e6f0; border-radius: 8px; }
+.grn-print-title { font-size: 1.4rem; text-align: center; margin: 0 0 0.5rem; }
+.grn-print-ref { margin: 0.5rem 0; font-size: 0.9rem; }
+.grn-print-header { width: 100%; border-collapse: collapse; margin-bottom: 0.25rem; }
+.grn-print-header td { border: 1px solid #111; padding: 2px 6px; font-size: 10pt; }
+.grn-print-header td.title { text-align: center; font-weight: 700; font-size: 14pt; }
+.grn-print-header td.label { font-weight: 700; }
+.grn-print-table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+.grn-print-table th, .grn-print-table td { border: 1px solid #333; padding: 3px 6px; vertical-align: top; }
+.grn-print-table th { background: #f1f5f9; text-align: left; }
+.grn-print-table td.num { text-align: right; }
+.grn-print-table td.remark-ok { background: #dcfce7; }
+.grn-print-table td.remark-partial { background: #fef3c7; }
+.grn-print-table td.remark-failed { background: #fee2e2; }
+@media print {
+    .grn-print-toolbar { display: none !important; }
+    .grn-print-sheet { border: 0; padding: 0; margin: 0; border-radius: 0; }
+    .grn-print-break { break-before: page; page-break-before: always; }
+    .grn-print-table thead { display: table-header-group; }
+    .grn-print-table tr { break-inside: avoid; page-break-inside: avoid; }
+    .grn-print-table, .grn-print-header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+.grn-print-header td.company { font-size: 12pt; }
+.grn-print-header td.address { font-size: 10pt; }
+.grn-print-footer { margin-top: 0.75rem; }
+.grn-print-footer td { height: 28px; }
+.grn-print-delivery { width: 60%; margin-top: 0.5rem; }

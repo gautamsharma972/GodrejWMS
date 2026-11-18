@@ -87,4 +87,43 @@ public class RefreshPulloutPicksTests
             new RefreshPulloutPicksHandler(db, new PulloutAllocationService(db), TestServices.Posting(db), TestServices.Uow(db), new SvcClock())
                 .Handle(new RefreshPulloutPicksCommand(pullout.ReferenceNumber), default));
     }
+
+    [Fact]
+    public async Task PickingZero_SkipsTheMaterial_ReturnsEveryBoxToStock_AndOpensTheReservedPutawayAgain()
+    {
+        var (db, _) = await SeedAsync();
+        using var _ = db;
+        await UploadInwardAsync(db, 30, "OCT|2026"); // posted, still on the vehicle (picker has not placed it)
+        await PullOutAsync(db, 30);                  // the pullout took all of it: the put-away becomes PICK-RESERVED
+        Assert.Equal("PICK-RESERVED", db.InwardPutaways.AsNoTracking().Single().ExcludedLocation);
+        Assert.Equal(0, Total(db));
+
+        // Zero is a valid confirmation: the picker skips the material.
+        var pick = db.PulloutPicks.AsNoTracking().Single();
+        var result = await new ConfirmPulloutPickHandler(db, new AllowPicks(), new SvcClock(), new SvcUser())
+            .Handle(new ConfirmPulloutPickCommand(pick.Id, 0), default);
+        Assert.Equal(30, result.ReturnedToStockBoxes);
+        Assert.True(new ConfirmPulloutPickValidator().Validate(new ConfirmPulloutPickCommand(pick.Id, 0)).IsValid);
+        Assert.False(new ConfirmPulloutPickValidator().Validate(new ConfirmPulloutPickCommand(pick.Id, -1)).IsValid);
+
+        var pulloutId = db.PulloutTransactions.AsNoTracking().Single().Id;
+        await new ConfirmPulloutPicklistHandler(db, TestServices.Posting(db), TestServices.Uow(db), new AllowPicks(), new SvcClock(), new SvcUser())
+            .Handle(new ConfirmPulloutPicklistCommand(pulloutId), default);
+
+        // Every allocated box is back on the shelf and the put-away is an ordinary, unplaced one again.
+        Assert.Equal(30, Total(db));
+        var line = db.PulloutTransactionLines.AsNoTracking().Single();
+        Assert.Equal(0, line.PickedQuantityBoxes);
+        Assert.Equal(GodrejWMS.Domain.Enums.AllocationStatus.Failed, line.Status);
+        var putaway = db.InwardPutaways.AsNoTracking().Single();
+        Assert.Null(putaway.ExcludedLocation);
+        Assert.False(putaway.IsPickerPlaced);
+        Assert.False(putaway.IsExcludedLocked);
+        Assert.Equal(30, putaway.QuantityBoxes);
+    }
+}
+
+file sealed class AllowPicks : GodrejWMS.Application.Common.Permissions.IPermissionService
+{
+    public Task<bool> HasPermissionAsync(string permissionKey, CancellationToken cancellationToken = default) => Task.FromResult(true);
 }

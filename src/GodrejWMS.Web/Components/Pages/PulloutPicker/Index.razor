@@ -8,6 +8,7 @@
 @using GodrejWMS.Application.Features.Pullout.Dtos
 @using GodrejWMS.Application.Features.Pullout.Queries
 @inject IMediator Mediator
+@inject GodrejWMS.Application.Common.Permissions.IPermissionService PermissionService
 @inject IJSRuntime JsRuntime
 @inject ILogger<Index> Logger
 
@@ -180,6 +181,17 @@
                                 </button>
                             }
                         </div>
+                        @if (!_canConfirm)
+                        {
+                            <div class="alert alert-info mt-3 mb-0" role="status">
+                                <i class="bi bi-hourglass-split" aria-hidden="true"></i>
+                                @(rows.Any(r => !r.Done)
+                                    ? "Submit every pick. A supervisor reviews and confirms the pick-list afterwards."
+                                    : "Every pick is submitted. Waiting for the supervisor to review and confirm the pick-list.")
+                            </div>
+                        }
+                        else
+                        {
                         <div class="mt-3">
                             @if (_confirmError is not null)
                             {
@@ -195,6 +207,7 @@
                                     : "Every pick is confirmed. Confirm the pick-list to close this pick reference.")
                             </p>
                         </div>
+                        }
                     }
                     else
                     {
@@ -241,6 +254,10 @@
                                     @if (_qty > pick.QuantityBoxes)
                                     {
                                         <div class="pullout-inline-note"><i class="bi bi-info-circle" aria-hidden="true"></i><span>@((_qty - pick.QuantityBoxes).ToString("0.###")) extra box(es) are taken from the stock still at @pick.LocationCode when you confirm the pick-list (up to @MaxPickable.ToString("0.###") here). Use Change location to take more from another location.</span></div>
+                                    }
+                                    else if (_qty == 0)
+                                    {
+                                        <div class="pullout-inline-note"><i class="bi bi-info-circle" aria-hidden="true"></i><span>Nothing picked - all @pick.QuantityBoxes.ToString("0.###") box(es) go back to stock at @pick.LocationCode when you confirm the pick-list. Use this when the material is not available yet (for example still on the inward vehicle) so it can be skipped for loading.</span></div>
                                     }
                                     else if (_qty > 0 && _qty < pick.QuantityBoxes)
                                     {
@@ -292,9 +309,9 @@
                                 <div class="pullout-pick-actions">
                                     <button type="button" class="btn btn-outline-secondary btn-lg" @onclick="BackToList">Cancel</button>
                                     <div>
-                                        <button type="button" class="btn btn-primary btn-lg pullout-confirm-button" disabled="@(_submitting || _qty <= 0)" @onclick="ConfirmPickAsync">
+                                        <button type="button" class="btn btn-primary btn-lg pullout-confirm-button" disabled="@(_submitting || _qty < 0)" @onclick="ConfirmPickAsync">
                                             <i class="bi bi-check2-circle" aria-hidden="true"></i>
-                                            @(_submitting ? "Saving..." : $"Confirm pick of {_qty:0.###}")
+                                            @(_submitting ? "Saving..." : _qty == 0 ? "Confirm - nothing picked (skip)" : $"Confirm pick of {_qty:0.###}")
                                         </button>
                                         @if (_moveEnabled && _destinationId > 0 && RemainingAfter > 0)
                                         {
@@ -376,6 +393,7 @@
     private bool _changing;
     private string? _confirmError;
     private bool _confirmingPicklist;
+    private bool _canConfirm;
 
     // Confirm form
     private decimal _qty;
@@ -413,6 +431,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _canConfirm = await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Pullout.Confirm);
         _locationOptions = await RunDbOperationAsync(() => Mediator.Send(new GetAopLocationOptionsQuery()));
         await LoadPageAsync(1);
     }
@@ -563,7 +582,7 @@
         {
             var selected = _selected;
             var quantity = _qty;
-            var move = _moveEnabled && _destinationId > 0 && _moveQty > 0 ? new PulloutRemainderMove(_destinationId, _moveQty) : null;
+            var move = _moveEnabled && _destinationId > 0 && _moveQty > 0 && quantity > 0 ? new PulloutRemainderMove(_destinationId, _moveQty) : null;
             var pulloutId = _detail.Id;
             var update = await RunDbOperationAsync(async () =>
             {

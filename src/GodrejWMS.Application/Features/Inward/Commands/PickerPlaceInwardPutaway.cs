@@ -161,6 +161,21 @@ public sealed class PickerPlaceInwardPutawayHandler(
             }
         }
 
+        // The put-away of a material + PKM can never exceed what the inbound asked for: boxes found beyond it are recorded as excess material, not put away.
+        var capLines = transaction.Lines.Where(l => l.MaterialId == line.MaterialId && l.MfgMonth == pkm).ToList();
+        if (capLines.Count > 0)
+        {
+            var inboundQuantity = capLines.Sum(l => l.RequestedQuantityBoxes);
+            var recorded = (await InwardVariances.AccountedAsync(db, transaction.Id, cancellationToken)).GetValueOrDefault((line.MaterialId, pkm ?? 0));
+            var otherRows = capLines.SelectMany(l => l.Putaways).Where(p => p != putaway).Sum(p => p.QuantityBoxes) + recorded;
+            if (otherRows + request.QuantityBoxes > inboundQuantity)
+            {
+                throw new InvalidOperationException(
+                    $"The put-away of material {line.Material.MaterialNumber} would total {otherRows + request.QuantityBoxes:0.###} box(es), more than the {inboundQuantity:0.###} box(es) on the inbound. "
+                    + $"At most {Math.Max(0, inboundQuantity - otherRows):0.###} can be entered here; record any extra boxes as excess material.");
+            }
+        }
+
         // Quantity actually put away: only the line's allocated total follows it. The requested quantity is the inward
         // order's own figure (the GRN's inbound volume) and is never changed by the picker.
         var originalQuantity = putaway.QuantityBoxes;
@@ -179,9 +194,10 @@ public sealed class PickerPlaceInwardPutawayHandler(
             MovePutawayToPkmLine(transaction, line, putaway, originalQuantity, pkm!.Value);
         }
 
+        var accountedByRecords = await InwardVariances.AccountedAsync(db, transaction.Id, cancellationToken);
         foreach (var touched in transaction.Lines.Where(l => l == line || l.Putaways.Any(p => p == putaway)).ToList())
         {
-            RefreshLineStatus(touched);
+            InwardVariances.RefreshLineStatus(touched, touched.MfgMonth is { } m ? accountedByRecords.GetValueOrDefault((touched.MaterialId, m)) : 0m);
         }
 
         // Posted stock follows the picker's decision through the shared posting service: out of the old cell, into the new one
@@ -290,7 +306,7 @@ public sealed class PickerPlaceInwardPutawayHandler(
         PalletPosition? target, int? newPkm, decimal newQuantity, string? excluded, CancellationToken cancellationToken)
     {
         var onHand = await db.StockBatches.AsNoTracking()
-            .Where(b => b.PalletPositionId == oldPosition.Id && b.MaterialId == line.MaterialId && b.MfgMonth == oldPkm)
+            .Where(b => b.PalletPositionId == oldPosition.Id && b.MaterialId == line.MaterialId && b.MfgMonth == oldPkm && b.StockSubtypeId == LocationSubtypeIds.Good)
             .SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;
         var shortfall = Math.Max(0m, originalQuantity - onHand);
         if (shortfall <= 0)

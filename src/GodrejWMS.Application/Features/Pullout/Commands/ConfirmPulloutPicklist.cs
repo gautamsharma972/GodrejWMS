@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.Pullout.Commands;
 
-/// <summary>The picker's final Confirm of a pullout posted on upload, once every pick has been confirmed. Only now does stock change for
+/// <summary>The supervisor's final Confirm of a pullout posted on upload (the picker only submits picks), once every pick has been submitted. Only now does stock change for
 /// what the picker decided: boxes not found go back to stock and the remainders the picker chose to move are moved, all in one
 /// transaction. It sets the pick reference to confirmed, takes it off the picker's list, and the picks can no longer be edited.</summary>
 public sealed record ConfirmPulloutPicklistCommand(int PulloutId) : IRequest<ConfirmPulloutPicklistResult>;
@@ -32,9 +32,10 @@ public sealed class ConfirmPulloutPicklistHandler(
 {
     public async Task<ConfirmPulloutPicklistResult> Handle(ConfirmPulloutPicklistCommand request, CancellationToken cancellationToken)
     {
-        if (!await permissions.HasPermissionAsync(PermissionKeys.Pullout.Pick, cancellationToken))
+        // The picker only submits picks; confirming the whole pick-list belongs to a supervisor.
+        if (!await permissions.HasPermissionAsync(PermissionKeys.Pullout.Confirm, cancellationToken))
         {
-            throw new InvalidOperationException("You do not have permission to confirm pick-lists.");
+            throw new InvalidOperationException("Only a supervisor can confirm the pick-list. The picker submits the picks; a supervisor reviews and confirms them.");
         }
 
         return await InwardSubmissionLogic.RunOrderAsync(uow, ct => RunAsync(request, ct), cancellationToken);
@@ -121,6 +122,9 @@ public sealed class ConfirmPulloutPicklistHandler(
                 }
 
                 adjustments.Add(new StockChange(line.MaterialId, pick.MfgMonth, LocationSubtypeIds.Good, pick.PalletPosition, difference));
+                // Boxes handed back to the cell (e.g. still on the inward vehicle): their put-away is open again for the picker.
+                await PutawayPickReservation.ReleaseShortfallAsync(
+                    db, transaction.ReferenceNumber, line.MaterialId, pick.MfgMonth, pick.PalletPositionId, difference, cancellationToken);
                 pick.QuantityBoxes = picked;
                 line.PickedQuantityBoxes -= difference;
                 line.Status = line.PickedQuantityBoxes >= line.RequestedQuantityBoxes
@@ -149,7 +153,7 @@ public sealed class ConfirmPulloutPicklistHandler(
             var source = pick.PalletPosition;
             var destination = pick.MoveToPalletPosition!;
             var onHand = await db.StockBatches.AsNoTracking()
-                .Where(b => b.PalletPositionId == source.Id && b.MaterialId == line.MaterialId && b.MfgMonth == pick.MfgMonth)
+                .Where(b => b.PalletPositionId == source.Id && b.MaterialId == line.MaterialId && b.MfgMonth == pick.MfgMonth && b.StockSubtypeId == LocationSubtypeIds.Good)
                 .SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;
             if (quantity > onHand)
             {

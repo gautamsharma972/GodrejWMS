@@ -55,4 +55,7 @@ public static class StockLedgerEntryTypes
     public const string Adjustment = "ADJUSTMENT";
     public const string Reversal = "REVERSAL";
     public const string StockImport = "STOCK_IMPORT";
+    public const string DamageReclass = "DAMAGE_RECLASS";
+    public const string VarianceWriteOff = "VARIANCE_WRITE_OFF";
+    public const string ExcessReceived = "EXCESS_RECEIVED";
 }

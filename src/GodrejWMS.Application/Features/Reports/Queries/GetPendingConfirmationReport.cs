@@ -100,7 +100,7 @@ public sealed class GetPendingConfirmationReportHandler(IApplicationDbContext db
                 g.WaitingCount, g.WaitingBoxes, g.AwaitingConfirmCount, g.Reserved,
                 g.WaitingCount > 0
                     ? $"{g.WaitingCount} location(s) not placed - system stock is ahead of the shelf"
-                    : "All locations placed - picker must press Confirm"));
+                    : "All locations submitted - waiting for the supervisor to confirm"));
         }
 
         foreach (var p in pullouts)
@@ -111,7 +111,7 @@ public sealed class GetPendingConfirmationReportHandler(IApplicationDbContext db
                 p.Unsubmitted, p.UnsubmittedBoxes, 0, 0m,
                 p.Unsubmitted > 0
                     ? $"{p.Unsubmitted} pick(s) not picked - system stock is already deducted"
-                    : "All picks submitted - picker must press Confirm"));
+                    : "All picks submitted - waiting for the supervisor to confirm"));
         }
 
         rows = rows.OrderByDescending(r => r.AgeHours).ToList();

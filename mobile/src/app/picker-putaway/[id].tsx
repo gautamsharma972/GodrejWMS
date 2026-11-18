@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ApiError } from "../../api/client";
+import { SupervisorPutawayReview } from "../../components/SupervisorPutawayReview";
 import { confirmPickerPutaway, getInwardDetail, getPickerLocationOptions, placePickerPutaway } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { BarcodeScannerModal } from "../../components/BarcodeScannerModal";
@@ -58,7 +59,9 @@ function parseMfgMonthLabel(label: string): { year: number; month: number } | nu
 
 export default function PickerPutawayDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { token } = useAuth();
+  const { token, permissions } = useAuth();
+  // The picker only submits; the final Confirm belongs to a supervisor.
+  const canConfirm = permissions.includes("Inward.Confirm");
   const router = useRouter();
 
   const [detail, setDetail] = useState<InwardDetailDto | null>(null);
@@ -210,7 +213,19 @@ export default function PickerPutawayDetailScreen() {
             keyExtractor={(row) => String(row.putaway.id)}
             contentContainerStyle={{ paddingBottom: 24 }}
             ListFooterComponent={
-              rows.some((r) => !r.putaway.isExcludedLocked) ? (
+              <>
+              {canConfirm && detail?.postedAt && (
+                <SupervisorPutawayReview token={token} detail={detail} locationOptions={locationOptions} onChanged={load} />
+              )}
+              {rows.some((r) => !r.putaway.isExcludedLocked) && !canConfirm ? (
+                <View style={styles.confirmFooter}>
+                  <Text style={styles.confirmHint}>
+                    {rows.some((r) => !r.done)
+                      ? "Submit every location. A supervisor reviews and confirms the put-away afterwards."
+                      : "Every location is submitted. Waiting for the supervisor to review and confirm."}
+                  </Text>
+                </View>
+              ) : rows.some((r) => !r.putaway.isExcludedLocked) ? (
                 <View style={styles.confirmFooter}>
                   {confirmError && <Text style={styles.confirmError}>{confirmError}</Text>}
                   <Button
@@ -240,7 +255,8 @@ export default function PickerPutawayDetailScreen() {
                       : "Until you confirm you can still change any location, its PKM or GIT / NO RACK."}
                   </Text>
                 </View>
-              ) : null
+              ) : null}
+              </>
             }
             renderItem={({ item }) => (
               <TouchableOpacity

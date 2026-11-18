@@ -11,18 +11,23 @@ import type {
   InwardPalletChangeOptionDto,
   InwardResultDto,
   InwardSheetImportOutcome,
+  InwardVarianceDto,
+  InwardVarianceTypeValue,
   LoginResponse,
   MaterialDto,
   PaginatedList,
   PalletPositionDto,
   PickRemainderDto,
   PickerPulloutDto,
+  PulloutAddOptionDto,
+  AddPulloutPickResult,
   PickerPlaceInwardPutawayRequest,
   PickerPlaceInwardPutawayResult,
   PulloutDetailDto,
   PulloutHistoryDto,
   PulloutPickChangeOptionDto,
   PulloutResultDto,
+  RecordExcessMaterialResult,
   RelocationSuggestionDto,
   SubmitInwardWithoutPkmRequest,
   WarehouseOption,
@@ -213,4 +218,54 @@ export function placePickerPutaway(
     method: "POST",
     body: request,
   });
+}
+
+// ---- Supervisor review (Inward.Confirm)
+
+/** Boxes of a put-away that are damaged / short / do not match the inbound. The put-away row shrinks by that many boxes. */
+export function recordInwardVariance(
+  token: string,
+  putawayId: number,
+  request: { type: InwardVarianceTypeValue; quantityBoxes: number; remarks: string },
+): Promise<InwardVarianceDto> {
+  return apiRequest<InwardVarianceDto>(`/api/supervisor/putaway/putaways/${putawayId}/variances`, { token, method: "POST", body: request });
+}
+
+export function removeInwardVariance(token: string, varianceId: number): Promise<void> {
+  return apiRequest<void>(`/api/supervisor/putaway/variances/${varianceId}/remove`, { token, method: "POST" });
+}
+
+/** Extra material found while unloading: posted to stock at the chosen location straight away. */
+export function recordExcessMaterial(
+  token: string,
+  transactionId: number,
+  request: {
+    materialId: number;
+    mfgMonthText: string;
+    palletPositionId: number;
+    quantityBoxes: number;
+    remarks: string;
+    acknowledgeWarning?: boolean;
+  },
+): Promise<RecordExcessMaterialResult> {
+  return apiRequest<RecordExcessMaterialResult>(`/api/supervisor/putaway/${transactionId}/excess`, { token, method: "POST", body: request });
+}
+
+export function searchSupervisorMaterials(token: string, search: string, pageNumber = 1, pageSize = 15): Promise<PaginatedList<MaterialDto>> {
+  const query = `search=${encodeURIComponent(search)}&pageNumber=${pageNumber}&pageSize=${pageSize}`;
+  return apiRequest<PaginatedList<MaterialDto>>(`/api/supervisor/materials?${query}`, { token });
+}
+
+// ---- Supervisor: add material to an open pick-list (Pullout.Edit)
+
+export function getPulloutAddOptions(token: string, pulloutId: number, materialId: number): Promise<PulloutAddOptionDto[]> {
+  return apiRequest<PulloutAddOptionDto[]>(`/api/pullout/${pulloutId}/add-options?materialId=${materialId}`, { token });
+}
+
+export function addPulloutPick(
+  token: string,
+  pulloutId: number,
+  request: { materialId: number; palletPositionId: number; quantityBoxes: number; overrideReason?: string | null },
+): Promise<AddPulloutPickResult> {
+  return apiRequest<AddPulloutPickResult>(`/api/pullout/${pulloutId}/add-pick`, { token, method: "POST", body: request });
 }

@@ -33,6 +33,63 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
             .Select(u => new InwardUnsavedLineDto(u.CodeText, u.QuantityBoxes, u.Kind, u.Reason, u.SourceRow, u.Description, u.MfgMonth))
             .ToListAsync(cancellationToken);
 
+        var netPosted = transaction.PostedAt is null
+            ? new Dictionary<(int MaterialId, int MfgMonth), decimal>()
+            : await GrnPostedQuantity.NetPostedAsync(db, transaction.ReferenceNumber, cancellationToken);
+        var recorded = await InwardVariances.AccountedAsync(db, transaction.Id, cancellationToken);
+        var varianceRows = await db.InwardLineVariances.AsNoTracking()
+            .Where(v => v.InwardTransactionId == transaction.Id)
+            .OrderBy(v => v.Id)
+            .Select(v => new
+            {
+                v.Id, v.Type, v.Material.MaterialNumber, v.Material.Description, v.MfgMonth,
+                Location = v.PalletPosition.LocationCode, v.QuantityBoxes, v.Remarks, v.CreatedByUserName, v.CreatedAt
+            })
+            .ToListAsync(cancellationToken);
+        var variances = varianceRows
+            .Select(v => new InwardVarianceDto(
+                v.Id, v.Type, v.MaterialNumber, v.Description, MfgMonthParser.Format(v.MfgMonth), v.Location,
+                v.QuantityBoxes, v.Remarks, v.CreatedByUserName, v.CreatedAt))
+            .ToList();
+        var firstOfGroup = transaction.Lines.GroupBy(l => (l.MaterialId, l.MfgMonth)).Select(g => g.OrderBy(l => l.Id).First().Id).ToHashSet();
+        // Boxes recorded as damage / shortage / mismatch are accounted for (shown on the group's first line, like the other group figures).
+        decimal VarianceOf(InwardTransactionLine l) =>
+            l.MfgMonth is { } m && firstOfGroup.Contains(l.Id) ? recorded.GetValueOrDefault((l.MaterialId, m)) : 0m;
+        (decimal Unplaced, decimal Left) Split(InwardTransactionLine l)
+        {
+            var shortfall = Math.Max(0, l.RequestedQuantityBoxes - l.AllocatedQuantityBoxes - VarianceOf(l));
+            if (shortfall <= 0)
+            {
+                return (0, 0);
+            }
+
+            // Before the GRN is posted there is no ledger: everything without a location is simply unplaced.
+            if (transaction.PostedAt is null || l.MfgMonth is null || !firstOfGroup.Contains(l.Id))
+            {
+                return (shortfall, 0);
+            }
+
+            var unplaced = Math.Min(shortfall, GrnPostedQuantity.UnplacedBoxes(transaction.Lines, l, netPosted, recorded));
+            return (unplaced, shortfall - unplaced);
+        }
+
+        // Which pullouts took the boxes that left inventory (moved / adjusted boxes have no reference to show).
+        var pickInfo = new Dictionary<int, (decimal Boxes, IReadOnlyList<string> References)>();
+        foreach (var l in transaction.Lines)
+        {
+            var left = Split(l).Left;
+            if (left <= 0)
+            {
+                continue;
+            }
+
+            var picked = await GrnPostedQuantity.PickedAgainstAsync(db, transaction, l, cancellationToken);
+            if (picked.Count > 0)
+            {
+                pickInfo[l.Id] = (Math.Min(left, picked.Sum(p => p.Boxes)), picked.Select(p => p.Reference).ToList());
+            }
+        }
+
         var lines = transaction.Lines
             .OrderBy(l => l.Id)
             .Select(l => new InwardDetailLineDto(
@@ -51,7 +108,12 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
                         p.OverrideReason, p.ConfirmedAt, p.ConfirmedByUserName, p.ExcludedLocation, p.PalletPosition.Id, p.IsPickerPlaced, p.IsExcludedLocked,
                         p.PalletPosition.IsVirtual))
                     .ToList(),
-                l.Material.IsActive))
+                l.Material.IsActive,
+                Split(l).Unplaced,
+                Split(l).Left,
+                pickInfo.TryGetValue(l.Id, out var info) ? info.Boxes : 0m,
+                pickInfo.TryGetValue(l.Id, out var info2) ? info2.References : null,
+                VarianceOf(l)))
             .ToList();
 
         return new InwardDetailDto(
@@ -76,7 +138,8 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
             ReceivedFrom: transaction.ReceivedFrom,
             UnsavedLines: unsavedLines,
             IsPkmless: transaction.IsPkmless,
-            PostedAt: transaction.PostedAt);
+            PostedAt: transaction.PostedAt,
+            Variances: variances);
     }
 }
 

@@ -52,7 +52,7 @@ public class PickerPutawayPostedTests
         var (db, _, positions, putaway) = await SeedAsync();
         using var _ = db;
         var confirm = new ConfirmPickerPutawayHandler(db, new PPAllow(), TestServices.Posting(db), new SvcClock(), new SvcUser());
-        var pending = new GetPickerPendingInwardHandler(db);
+        var pending = new GetPickerPendingInwardHandler(db, new PPAllow());
         var transactionId = db.InwardTransactions.AsNoTracking().Single().Id;
 
         // Not submitted yet: nothing to confirm.
@@ -99,7 +99,7 @@ public class PickerPutawayPostedTests
         var result = await confirm.Handle(new ConfirmPickerPutawayCommand(transaction.Id), default);
 
         Assert.False(result.StockPosted); // not posted on upload - posted by this Confirm instead
-        Assert.Empty((await new GetPickerPendingInwardHandler(db).Handle(new GetPickerPendingInwardQuery(), default)).Items);
+        Assert.Empty((await new GetPickerPendingInwardHandler(db, new PPAllow()).Handle(new GetPickerPendingInwardQuery(), default)).Items);
         Assert.Equal(30, OnHand(db, putaway.PalletPositionId)); // inventory updated immediately, no audit-screen confirmation
         Assert.True(db.InwardPutaways.AsNoTracking().Single().IsConfirmed);
         var locked = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -112,7 +112,7 @@ public class PickerPutawayPostedTests
     {
         var (db, _, _, putaway) = await SeedAsync();
         using var _ = db;
-        var query = new GetPickerPendingInwardHandler(db);
+        var query = new GetPickerPendingInwardHandler(db, new PPAllow());
 
         var pending = await query.Handle(new GetPickerPendingInwardQuery(), default);
         Assert.Single(pending.Items);
@@ -240,7 +240,7 @@ public class PickerPutawayPostedTests
     {
         var (db, _, positions, putaway) = await SeedAsync();
         using var _ = db;
-        var pending = new GetPickerPendingInwardHandler(db);
+        var pending = new GetPickerPendingInwardHandler(db, new PPAllow());
         var transactionId = db.InwardTransactions.AsNoTracking().Single().Id;
         var to = positions.First(p => p.Id != putaway.PalletPositionId).Id;
 

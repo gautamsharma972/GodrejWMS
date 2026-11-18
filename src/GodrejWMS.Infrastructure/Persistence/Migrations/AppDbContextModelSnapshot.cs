@@ -497,6 +497,74 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.ToTable("InventoryAdjustmentLines", (string)null);
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.InwardLineVariance", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("CreatedByUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<int?>("InwardPutawayId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("InwardTransactionId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("InwardTransactionLineId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MaterialId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MfgMonth")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PalletPositionId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("QuantityBoxes")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
+                    b.Property<string>("Remarks")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InwardTransactionLineId");
+
+                    b.HasIndex("MaterialId");
+
+                    b.HasIndex("PalletPositionId");
+
+                    b.HasIndex("InwardTransactionId", "Type");
+
+                    b.ToTable("InwardLineVariances", (string)null);
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.InwardPutaway", b =>
                 {
                     b.Property<int>("Id")
@@ -1830,7 +1898,7 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("StockSubtypeId");
 
-                    b.HasIndex("MaterialId", "MfgMonth", "PalletPositionId")
+                    b.HasIndex("MaterialId", "MfgMonth", "PalletPositionId", "StockSubtypeId")
                         .IsUnique();
 
                     b.ToTable("StockBatches", (string)null);
@@ -2540,6 +2608,40 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Navigation("StockBatch");
 
                     b.Navigation("StockSubtype");
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.InwardLineVariance", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.InwardTransaction", "InwardTransaction")
+                        .WithMany()
+                        .HasForeignKey("InwardTransactionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GodrejWMS.Domain.Entities.InwardTransactionLine", "InwardTransactionLine")
+                        .WithMany()
+                        .HasForeignKey("InwardTransactionLineId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GodrejWMS.Domain.Entities.Material", "Material")
+                        .WithMany()
+                        .HasForeignKey("MaterialId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GodrejWMS.Domain.Entities.PalletPosition", "PalletPosition")
+                        .WithMany()
+                        .HasForeignKey("PalletPositionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("InwardTransaction");
+
+                    b.Navigation("InwardTransactionLine");
+
+                    b.Navigation("Material");
+
+                    b.Navigation("PalletPosition");
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.InwardPutaway", b =>

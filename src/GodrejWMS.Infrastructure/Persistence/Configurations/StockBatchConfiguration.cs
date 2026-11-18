@@ -22,7 +22,8 @@ public class StockBatchConfiguration : IEntityTypeConfiguration<StockBatch>
         builder.Property(b => b.UpdatedByUserId).HasMaxLength(450);
 
         builder.HasIndex(b => b.MaterialId);
-        builder.HasIndex(b => new { b.MaterialId, b.MfgMonth, b.PalletPositionId }).IsUnique();
+        // Damage stock of a material + PKM sits in the same cell as its Good stock, so the subtype is part of the key.
+        builder.HasIndex(b => new { b.MaterialId, b.MfgMonth, b.PalletPositionId, b.StockSubtypeId }).IsUnique();
 
         builder.HasOne(b => b.Material)
             .WithMany(m => m.StockBatches)

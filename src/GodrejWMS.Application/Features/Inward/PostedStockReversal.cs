@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GodrejWMS.Application.Features.Inward;
 
 /// <summary>What a GRN put-away wants to take back out of one stock cell.</summary>
-public sealed record StockReversalItem(int MaterialId, int MfgMonth, PalletPosition Position, decimal Quantity);
+public sealed record StockReversalItem(int MaterialId, int MfgMonth, PalletPosition Position, decimal Quantity, int StockSubtypeId = LocationSubtypeIds.Good);
 
 /// <summary>The part of a reversal that can actually be done, and what could not.</summary>
 public sealed record StockReversalPlan(
@@ -35,15 +35,15 @@ public static class PostedStockReversal
         var materialIds = items.Select(i => i.MaterialId).Distinct().ToList();
         var positionIds = items.Select(i => i.Position.Id).Distinct().ToList();
         var batches = await db.StockBatches.AsNoTracking()
-            .Where(b => materialIds.Contains(b.MaterialId) && positionIds.Contains(b.PalletPositionId)
-                && b.StockSubtypeId == LocationSubtypeIds.Good)
+            .Where(b => materialIds.Contains(b.MaterialId) && positionIds.Contains(b.PalletPositionId))
             .ToListAsync(cancellationToken);
 
-        foreach (var cell in items.GroupBy(i => (i.MaterialId, i.MfgMonth, PositionId: i.Position.Id)))
+        foreach (var cell in items.GroupBy(i => (i.MaterialId, i.MfgMonth, PositionId: i.Position.Id, i.StockSubtypeId)))
         {
             var wanted = cell.Sum(i => i.Quantity);
             var onHand = batches
-                .Where(b => b.MaterialId == cell.Key.MaterialId && b.MfgMonth == cell.Key.MfgMonth && b.PalletPositionId == cell.Key.PositionId)
+                .Where(b => b.MaterialId == cell.Key.MaterialId && b.MfgMonth == cell.Key.MfgMonth && b.PalletPositionId == cell.Key.PositionId
+                    && b.StockSubtypeId == cell.Key.StockSubtypeId)
                 .Sum(b => b.QuantityBoxes);
             var take = Math.Min(wanted, Math.Max(0, onHand));
             shortfall += wanted - take;
@@ -52,9 +52,12 @@ public static class PostedStockReversal
                 continue;
             }
 
-            changes.Add(new StockChange(cell.Key.MaterialId, cell.Key.MfgMonth, LocationSubtypeIds.Good, cell.First().Position, -take));
-            var key = (cell.Key.MaterialId, cell.Key.MfgMonth);
-            reversedByMaterial[key] = reversedByMaterial.GetValueOrDefault(key) + take;
+            changes.Add(new StockChange(cell.Key.MaterialId, cell.Key.MfgMonth, cell.Key.StockSubtypeId, cell.First().Position, -take));
+            if (cell.Key.StockSubtypeId == LocationSubtypeIds.Good)
+            {
+                var key = (cell.Key.MaterialId, cell.Key.MfgMonth);
+                reversedByMaterial[key] = reversedByMaterial.GetValueOrDefault(key) + take;
+            }
         }
 
         return new StockReversalPlan(changes, changes.Sum(c => -c.DeltaBoxes), shortfall, reversedByMaterial);

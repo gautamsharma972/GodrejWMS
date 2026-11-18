@@ -86,7 +86,8 @@ public sealed class ApproveInventoryAdjustmentHandler(
             physicalBatch = await db.StockBatches.FirstOrDefaultAsync(b =>
                 b.MaterialId == line.PhysicalMaterialId.Value &&
                 b.PalletPositionId == line.PalletPositionId &&
-                b.MfgMonth == line.MfgMonth, cancellationToken);
+                b.MfgMonth == line.MfgMonth &&
+                b.StockSubtypeId == line.StockSubtypeId, cancellationToken);
 
             var physicalBatchChanged = line.PhysicalStockBatchIdAtCount.HasValue
                 ? physicalBatch is null ||
@@ -117,6 +118,47 @@ public sealed class ApproveInventoryAdjustmentHandler(
 
         line.ActualQuantityBeforePosting = batch.QuantityBoxes;
         line.ActualQuantityAfterPosting = line.CountedQuantity;
+        // Every approved adjustment leaves ledger entries, so Stock Reconciliation can trace why a cell's stock changed.
+        var ledgerPosition = await db.PalletPositions.AsNoTracking().Include(p => p.Rack)
+            .FirstAsync(p => p.Id == line.PalletPositionId, cancellationToken);
+        var postingNumber = $"PST-{clock.UtcNow:yyyyMMdd-HHmmssfff}-{Guid.NewGuid().ToString("N")[..8]}";
+        void WriteLedger(int materialId, int stockSubtypeId, decimal delta, decimal balanceAfter)
+        {
+            if (delta == 0)
+            {
+                return;
+            }
+
+            db.StockLedgerEntries.Add(new StockLedgerEntry
+            {
+                PostingNumber = postingNumber,
+                EntryType = StockLedgerEntryTypes.Adjustment,
+                WarehouseId = ledgerPosition.Rack.WarehouseId,
+                MaterialId = materialId,
+                MfgMonth = line.MfgMonth,
+                StockSubtypeId = stockSubtypeId,
+                PalletPositionId = ledgerPosition.Id,
+                QuantityBoxes = delta,
+                BalanceAfterBoxes = balanceAfter,
+                ReferenceType = "ADJUSTMENT",
+                ReferenceNumber = adjustment.AdjustmentNumber,
+                Notes = "Inventory adjustment approved",
+                CreatedAt = clock.UtcNow,
+                CreatedByUserId = currentUser.UserId,
+                CreatedByUserName = currentUser.UserName
+            });
+        }
+
+        if (line.PhysicalMaterialId.HasValue)
+        {
+            WriteLedger(batch.MaterialId, batch.StockSubtypeId, -batch.QuantityBoxes, 0);
+            WriteLedger(line.PhysicalMaterialId.Value, line.StockSubtypeId, line.CountedQuantity - (physicalBatch?.QuantityBoxes ?? 0), line.CountedQuantity);
+        }
+        else
+        {
+            WriteLedger(batch.MaterialId, batch.StockSubtypeId, line.CountedQuantity - batch.QuantityBoxes, line.CountedQuantity);
+        }
+
         if (line.PhysicalMaterialId.HasValue)
         {
             // The system batch is wrong for this position. Approval removes it and records the

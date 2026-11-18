@@ -29,7 +29,8 @@ public sealed class GetPickerPendingPulloutsHandler(IApplicationDbContext db, IP
 {
     public async Task<PaginatedList<PickerPulloutDto>> Handle(GetPickerPendingPulloutsQuery request, CancellationToken cancellationToken)
     {
-        if (!await permissions.HasPermissionAsync(PermissionKeys.Pullout.Pick, cancellationToken))
+        var reviewer = await permissions.HasPermissionAsync(PermissionKeys.Pullout.Confirm, cancellationToken);
+        if (!reviewer && !await permissions.HasPermissionAsync(PermissionKeys.Pullout.Pick, cancellationToken))
         {
             throw new UnauthorizedAccessException("You do not have permission to work pick-lists.");
         }
@@ -37,8 +38,12 @@ public sealed class GetPickerPendingPulloutsHandler(IApplicationDbContext db, IP
         var transactions = db.PulloutTransactions.AsNoTracking()
             // Current uploads are posted before picking. Older saved drafts predate that workflow,
             // but their allocated picks are valid reservations and must also be worked by the picker.
+            // A picker only sees pick-lists with a pick still to submit; a supervisor sees every one that is not confirmed yet.
             .Where(t => !t.IsRejected
-                && ((t.IsConfirmed && t.UploadHash != null && t.ConfirmedAt == null)
+                // A pullout with no pick at all ("0 of 0 picked": nothing could be allocated) has nothing to pick or confirm.
+                && t.Lines.Any(l => l.Picks.Any())
+                && ((t.IsConfirmed && t.UploadHash != null && t.ConfirmedAt == null
+                        && (reviewer || t.Lines.Any(l => l.Picks.Any(p => p.PickedAt == null))))
                     || (!t.IsConfirmed && t.Lines.Any(l => l.Picks.Any()))));
 
         if (!string.IsNullOrWhiteSpace(request.Search))

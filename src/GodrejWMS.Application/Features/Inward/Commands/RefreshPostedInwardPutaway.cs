@@ -65,19 +65,41 @@ public sealed class RefreshPostedInwardPutawayHandler(
         var inactive = (await db.Materials.AsNoTracking()
             .Where(m => materialIds.Contains(m.Id) && !m.IsActive).Select(m => m.Id).ToListAsync(cancellationToken)).ToHashSet();
 
+        // Boxes that were put away and have since left inventory (picked by a pullout, moved, adjusted away) are NOT given a new location:
+        // only boxes this GRN never posted count as a gap (see GrnPostedQuantity).
+        var netPosted = await GrnPostedQuantity.NetPostedAsync(db, transaction.ReferenceNumber, cancellationToken);
+        var recorded = await InwardVariances.AccountedAsync(db, transaction.Id, cancellationToken);
+        // A put-away a supervisor recorded damage / shortage / mismatch against keeps its cell: its Damage stock sits there, so the row is never re-laid out.
+        var rowsWithRecords = (await db.InwardLineVariances.AsNoTracking()
+                .Where(v => v.InwardTransactionId == transaction.Id && v.InwardPutawayId != null)
+                .Select(v => v.InwardPutawayId!.Value).ToListAsync(cancellationToken))
+            .ToHashSet();
+        bool Untouched(InwardPutaway p) => IsUntouched(p) && !rowsWithRecords.Contains(p.Id);
         var lines = transaction.Lines
             .Where(l => l.MfgMonth is not null && !inactive.Contains(l.MaterialId)
-                && (l.Putaways.Any(IsUntouched) || l.Putaways.Any(IsPendingReservation) || l.AllocatedQuantityBoxes < l.RequestedQuantityBoxes))
+                && (l.Putaways.Any(Untouched) || l.Putaways.Any(IsPendingReservation)
+                    || GrnPostedQuantity.UnplacedBoxes(transaction.Lines, l, netPosted, recorded) > 0))
             .OrderBy(l => l.Id)
             .ToList();
         if (lines.Count == 0)
         {
-            throw new InvalidOperationException("Nothing to refresh: the picker has actioned every put-away and no active material has boxes left without a location.");
+            throw new InvalidOperationException(
+                "Nothing to refresh: the picker has actioned every put-away and no boxes are waiting for a location. "
+                + "Boxes that were put away and have since been picked, moved or adjusted away are not given a new location.");
         }
 
-        // Boxes a line has no put-away row for at all (e.g. its material was inactive or the warehouse was full at upload) are
-        // allocated now too. Counted from the rows themselves, not from the line's Allocated figure, which can leave out reservations.
-        var gapBefore = lines.ToDictionary(l => l.Id, l => Math.Max(0, l.RequestedQuantityBoxes - l.Putaways.Sum(p => p.QuantityBoxes)));
+        // Boxes a line has no put-away row for and that were never posted (e.g. its material was inactive or the warehouse was full at
+        // upload) are allocated now too. Counted from the rows themselves, not from the line's Allocated figure, which can leave out reservations.
+        var gapBefore = new Dictionary<int, decimal>();
+        foreach (var group in lines.GroupBy(l => (l.MaterialId, l.MfgMonth)))
+        {
+            var first = true;
+            foreach (var l in group)
+            {
+                gapBefore[l.Id] = first ? GrnPostedQuantity.UnplacedBoxes(transaction.Lines, l, netPosted, recorded) : 0m;
+                first = false;
+            }
+        }
         // Reservations that never became stock are dropped here; their boxes are allocated and posted below like the rest.
         var pendingBoxes = new Dictionary<int, decimal>();
         foreach (var line in lines)
@@ -92,7 +114,10 @@ public sealed class RefreshPostedInwardPutawayHandler(
             }
         }
 
-        var untouched = lines.SelectMany(l => l.Putaways.Where(IsUntouched).Select(p => (Line: l, Putaway: p))).ToList();
+        var untouched = lines.SelectMany(l => l.Putaways.Where(Untouched).Select(p => (Line: l, Putaway: p))).ToList();
+        var untouchedByMaterial = untouched
+            .GroupBy(x => (x.Line.MaterialId, x.Line.MfgMonth!.Value))
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Putaway.QuantityBoxes));
 
         // 1. Take the untouched put-aways back out of their locations (only what is still in place).
         var plan = await PostedStockReversal.PlanAsync(
@@ -133,9 +158,22 @@ public sealed class RefreshPostedInwardPutawayHandler(
             // Never more than the GRN asked for, whatever an earlier action left behind.
             var room = Math.Max(0, sameMaterial.Sum(l => l.RequestedQuantityBoxes) - sameMaterial.Sum(l => l.Putaways.Sum(p => p.QuantityBoxes)));
             var quantity = Math.Min(wanted, room);
+            // Put-aways whose stock was no longer in its cell (picked, moved or adjusted away) are dropped, not re-allocated:
+            // say so on the line instead of leaving an unexplained shortfall.
+            var gone = untouchedByMaterial.GetValueOrDefault((line.MaterialId, line.MfgMonth!.Value))
+                - plan.ReversedByMaterial.GetValueOrDefault((line.MaterialId, line.MfgMonth!.Value));
+            var goneNote = gone > 0
+                ? $" {gone:0.###} box(es) were no longer in inventory at their put-away location (picked, moved or adjusted away) and were not re-allocated."
+                : string.Empty;
             if (quantity <= 0)
             {
                 line.AllocatedQuantityBoxes = kept;
+                if (gone > 0)
+                {
+                    line.Status = kept >= line.RequestedQuantityBoxes ? AllocationStatus.Fulfilled : kept > 0 ? AllocationStatus.Partial : AllocationStatus.Failed;
+                    line.Remarks = goneNote.Trim();
+                }
+
                 continue;
             }
 
@@ -162,7 +200,9 @@ public sealed class RefreshPostedInwardPutawayHandler(
             line.Status = line.AllocatedQuantityBoxes >= line.RequestedQuantityBoxes
                 ? AllocationStatus.Fulfilled
                 : line.AllocatedQuantityBoxes > 0 ? AllocationStatus.Partial : AllocationStatus.Failed;
-            line.Remarks = line.Status == AllocationStatus.Fulfilled ? null : allocation.Remarks;
+            line.Remarks = line.Status == AllocationStatus.Fulfilled && gone <= 0
+                ? null
+                : ((line.Status == AllocationStatus.Fulfilled ? null : allocation.Remarks) + goneNote).Trim();
 
             // Posted line by line: the allocator sees only posted stock and unconfirmed reservations, so the next material would
             // otherwise be given the very locations this one has just taken (two materials in one location).

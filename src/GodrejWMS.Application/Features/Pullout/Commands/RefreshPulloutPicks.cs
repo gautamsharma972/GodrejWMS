@@ -57,6 +57,22 @@ public sealed class RefreshPulloutPicksHandler(
         return result;
     }
 
+    /// <summary>Rewrites the saved preview JSON from the current lines and picks (lines need Material, picks need PalletPosition loaded).</summary>
+    public static void RebuildPreview(PulloutTransaction transaction)
+    {
+        if (transaction.PreviewJson is null)
+        {
+            return;
+        }
+
+        var preview = JsonSerializer.Deserialize<PulloutResultDto>(transaction.PreviewJson)!;
+        var lines = transaction.Lines.OrderBy(l => l.Id).Select(l => new PulloutLineResultDto(
+            l.Material.MaterialNumber, l.Material.Description, l.RequestedQuantityBoxes, l.PickedQuantityBoxes, l.Status, l.Remarks,
+            l.Picks.OrderBy(p => p.MfgMonth).Select(p => new PulloutPickDto(p.PalletPosition.LocationCode, MfgMonthParser.Format(p.MfgMonth), p.QuantityBoxes)).ToList(),
+            l.PlantName, l.Priority)).ToList();
+        transaction.PreviewJson = JsonSerializer.Serialize(preview with { Lines = lines });
+    }
+
     private async Task<RefreshPulloutPicksResult> RunAsync(RefreshPulloutPicksCommand request, CancellationToken cancellationToken)
     {
         var transaction = await db.PulloutTransactions
@@ -180,15 +196,7 @@ public sealed class RefreshPulloutPicksHandler(
         }
 
         // Keep the saved preview in step with the picks.
-        if (transaction.PreviewJson is not null)
-        {
-            var preview = JsonSerializer.Deserialize<PulloutResultDto>(transaction.PreviewJson)!;
-            var lines = transaction.Lines.OrderBy(l => l.Id).Select(l => new PulloutLineResultDto(
-                l.Material.MaterialNumber, l.Material.Description, l.RequestedQuantityBoxes, l.PickedQuantityBoxes, l.Status, l.Remarks,
-                l.Picks.OrderBy(p => p.MfgMonth).Select(p => new PulloutPickDto(p.PalletPosition.LocationCode, MfgMonthParser.Format(p.MfgMonth), p.QuantityBoxes)).ToList(),
-                l.PlantName, l.Priority)).ToList();
-            transaction.PreviewJson = JsonSerializer.Serialize(preview with { Lines = lines });
-        }
+        RebuildPreview(transaction);
 
         transaction.RowVersion++;
         await db.SaveChangesAsync(cancellationToken);

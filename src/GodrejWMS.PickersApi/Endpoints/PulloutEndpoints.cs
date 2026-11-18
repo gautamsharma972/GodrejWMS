@@ -107,8 +107,29 @@ public static class PulloutEndpoints
                 CancellationToken cancellationToken) =>
                 await ApiExceptionMapping.RunAsync(async () =>
                     Results.Ok(await mediator.Send(new ConfirmPulloutPicklistCommand(id), cancellationToken))))
-            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Confirm)
             .WithName("ConfirmPulloutPicklist");
+
+        group.MapGet("/pullout/{id:int}/add-options", async (
+                int id,
+                int materialId,
+                IMediator mediator,
+                CancellationToken cancellationToken) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                    Results.Ok(await mediator.Send(new GetPulloutAddOptionsQuery(id, materialId), cancellationToken))))
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Edit)
+            .WithName("GetPulloutAddOptions");
+
+        group.MapPost("/pullout/{id:int}/add-pick", async (
+                int id,
+                AddPulloutPickRequest request,
+                IMediator mediator,
+                CancellationToken cancellationToken) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                    Results.Ok(await mediator.Send(
+                        new AddPulloutPickCommand(id, request.MaterialId, request.PalletPositionId, request.QuantityBoxes, request.OverrideReason), cancellationToken))))
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Edit)
+            .WithName("AddPulloutPick");
 
         group.MapGet("/pullout/picks/{pickId:int}/remainder", async (
                 int pickId,
@@ -158,5 +179,7 @@ public static class PulloutEndpoints
 }
 
 public sealed record RemainderMoveRequest(int DestinationPalletPositionId, decimal QuantityBoxes);
+
+public sealed record AddPulloutPickRequest(int MaterialId, int PalletPositionId, decimal QuantityBoxes, string? OverrideReason = null);
 
 public sealed record ConfirmPickRequest(decimal PickedQuantityBoxes, RemainderMoveRequest? MoveRemaining = null);

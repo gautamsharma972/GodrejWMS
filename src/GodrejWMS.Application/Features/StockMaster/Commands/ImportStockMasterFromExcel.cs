@@ -77,7 +77,9 @@ public sealed class ImportStockMasterFromExcelHandler(
         var existingBatches = await db.StockBatches
             .Where(b => b.PalletPosition.Rack.WarehouseId == warehouseId.Value)
             .ToListAsync(cancellationToken);
-        var batchesByKey = existingBatches.ToDictionary(b => (b.MaterialId, b.PalletPositionId, b.MfgMonth));
+        // Damage stock sits in the same cells as Good stock; the upload only ever replaces Good stock.
+        var goodBatches = existingBatches.Where(b => b.StockSubtypeId == LocationSubtypeIds.Good).ToList();
+        var batchesByKey = goodBatches.ToDictionary(b => (b.MaterialId, b.PalletPositionId, b.MfgMonth));
 
         // Rows with errors are skipped and reported; the correct rows are still loaded.
         var valid = new List<(long MaterialNumber, int MaterialId, int PositionId, string LocationCode, int MfgMonth, decimal Quantity)>();
@@ -149,7 +151,7 @@ public sealed class ImportStockMasterFromExcelHandler(
         var now = clock.UtcNow;
         var cleared = 0;
         var listedPositions = valid.Select(v => v.PositionId).ToHashSet();
-        foreach (var batch in existingBatches.Where(b => b.QuantityBoxes > 0 && listedPositions.Contains(b.PalletPositionId)
+        foreach (var batch in goodBatches.Where(b => b.QuantityBoxes > 0 && listedPositions.Contains(b.PalletPositionId)
                      && !rowOfKey.ContainsKey((b.MaterialId, b.PalletPositionId, b.MfgMonth))))
         {
             batch.QuantityBoxes = 0;

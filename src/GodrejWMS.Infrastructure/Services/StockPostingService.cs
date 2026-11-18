@@ -118,7 +118,7 @@ public sealed class StockPostingService(
     private async Task<StockBatch?> FindBatchAsync(StockChange change, CancellationToken cancellationToken)
     {
         bool Matches(StockBatch b) =>
-            b.MaterialId == change.MaterialId && b.MfgMonth == change.MfgMonth
+            b.MaterialId == change.MaterialId && b.MfgMonth == change.MfgMonth && b.StockSubtypeId == change.StockSubtypeId
             && (ReferenceEquals(b.PalletPosition, change.Position) || (change.Position.Id != 0 && b.PalletPositionId == change.Position.Id));
 
         // Pending in the tracker (added earlier in this unit of work) wins over what is stored.
@@ -138,7 +138,8 @@ public sealed class StockPostingService(
         }
 
         return await db.StockBatches.FirstOrDefaultAsync(b =>
-            b.MaterialId == change.MaterialId && b.MfgMonth == change.MfgMonth && b.PalletPositionId == change.Position.Id,
+            b.MaterialId == change.MaterialId && b.MfgMonth == change.MfgMonth && b.PalletPositionId == change.Position.Id
+            && b.StockSubtypeId == change.StockSubtypeId,
             cancellationToken);
     }
 }

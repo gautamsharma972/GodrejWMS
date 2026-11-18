@@ -103,6 +103,11 @@
                     <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
                     Download Excel
                 </button>
+                <a class="btn btn-outline-secondary @(_detail.Lines.Any(l => l.Picks.Count > 0) ? null : "disabled")" href="/pullout/@_detail.Id/print" target="_blank" rel="noopener"
+                   title="Open the pick list and loading sheet as an A4 landscape print view (print or save as PDF)">
+                    <i class="bi bi-printer" aria-hidden="true"></i>
+                    Print / PDF
+                </a>
             </div>
         }
 
@@ -301,17 +306,11 @@
     {
         if (_detail is null) return;
 
-        // Same pick list as the Pick Result panel on the entry screen: one row per pick.
-        var rows = _detail.Lines
-            .SelectMany(l => l.Picks.Select(p => new PulloutDownloadRowDto(
-                l.MaterialNumber, l.MaterialDescription, p.QuantityBoxes, p.MfgMonthLabel, p.LocationCode, l.PlantName)))
-            .ToList();
-        var loadingSheetHeader = new PulloutLoadingSheetHeaderDto(
-            _detail.ReferenceNumber, _detail.CreatedAt, _detail.Lines.Select(l => l.PlantName).FirstOrDefault(p => p is not null),
-            _detail.HeaderFields, _detail.WarehouseAddress);
-        var loadingSheetRows = _detail.Lines
-            .Select(l => new PulloutLoadingSheetRowDto(l.MaterialNumber, l.MaterialDescription, l.RequestedQuantityBoxes, l.Status, l.Priority))
-            .ToList();
+        // The same package the print view shows: one pick-list row per pick plus the loading sheet.
+        var package = global::GodrejWMS.Application.Features.Pullout.PulloutPrintSheets.FromDetail(_detail);
+        var rows = package.Rows;
+        var loadingSheetHeader = package.Header;
+        var loadingSheetRows = package.LoadingRows;
 
         var bytes = ExcelService.WritePulloutDownload(rows, loadingSheetHeader, loadingSheetRows);
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"pullout-{_detail.ReferenceNumber}.xlsx", Convert.ToBase64String(bytes),

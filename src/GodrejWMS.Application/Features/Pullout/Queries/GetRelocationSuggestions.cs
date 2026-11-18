@@ -114,7 +114,7 @@ public sealed class GetPickRemainderHandler(IApplicationDbContext db) : IRequest
             .FirstOrDefaultAsync(p => p.Id == request.PickId, cancellationToken)
             ?? throw new NotFoundException(nameof(PulloutPick), request.PickId);
         var remaining = await db.StockBatches.AsNoTracking()
-            .Where(b => b.PalletPositionId == pick.PalletPositionId && b.MaterialId == pick.PulloutTransactionLine.MaterialId && b.MfgMonth == pick.MfgMonth)
+            .Where(b => b.PalletPositionId == pick.PalletPositionId && b.MaterialId == pick.PulloutTransactionLine.MaterialId && b.MfgMonth == pick.MfgMonth && b.StockSubtypeId == LocationSubtypeIds.Good)
             .SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;
         if (!pick.PulloutTransactionLine.PulloutTransaction.IsConfirmed)
         {

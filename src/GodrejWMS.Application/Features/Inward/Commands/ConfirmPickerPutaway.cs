@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GodrejWMS.Application.Features.Inward.Commands;
 
-/// <summary>The picker's final Confirm of a GRN, once every location has been submitted. Until then the picker can keep changing
+/// <summary>The supervisor's final Confirm of a GRN (the picker only submits), once every location has been submitted - by the picker or by the supervisor. Until then the picker can keep changing
 /// locations, PKM and GIT / NO RACK entries; confirming locks every row of the GRN against further picker changes and takes it off the
 /// picker's pending list. For a GRN posted on upload the stock is already in inventory; for an older GRN a supervisor still posts it.</summary>
 public sealed record ConfirmPickerPutawayCommand(int TransactionId) : IRequest<ConfirmPickerPutawayResult>;
@@ -26,9 +26,10 @@ public sealed class ConfirmPickerPutawayHandler(
 {
     public async Task<ConfirmPickerPutawayResult> Handle(ConfirmPickerPutawayCommand request, CancellationToken cancellationToken)
     {
-        if (!await permissions.HasPermissionAsync(PermissionKeys.Inward.AssignPkm, cancellationToken))
+        // The picker only submits; the final confirm belongs to a supervisor.
+        if (!await permissions.HasPermissionAsync(PermissionKeys.Inward.Confirm, cancellationToken))
         {
-            throw new InvalidOperationException("You do not have permission to confirm put-away.");
+            throw new InvalidOperationException("Only a supervisor can confirm put-away. The picker submits the locations; a supervisor reviews and confirms them.");
         }
 
         var transaction = await db.InwardTransactions

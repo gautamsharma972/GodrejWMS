@@ -9,6 +9,7 @@
 @using GodrejWMS.Application.Features.Inward.Queries
 @using GodrejWMS.Domain.Enums
 @inject IMediator Mediator
+@inject GodrejWMS.Application.Common.Permissions.IPermissionService PermissionService
 @inject IJSRuntime JsRuntime
 @inject ILogger<Index> Logger
 
@@ -209,7 +210,18 @@
                             </div>
                             @if (rows.Any(r => !r.Putaway.IsExcludedLocked))
                             {
-                                // Every GRN ends with the picker's own Confirm; until then every location stays editable.
+                                // The picker only submits; the final Confirm belongs to a supervisor. Until it is given every location stays editable.
+                                @if (!_canConfirm)
+                                {
+                                    <div class="alert alert-info mt-3 mb-0" role="status">
+                                        <i class="bi bi-hourglass-split" aria-hidden="true"></i>
+                                        @(done < rows.Count
+                                            ? "Submit every location. A supervisor reviews and confirms the put-away afterwards."
+                                            : "Every location is submitted. Waiting for the supervisor to review and confirm.")
+                                    </div>
+                                }
+                                else
+                                {
                                 <div class="mt-3">
                                     @if (_confirmError is not null)
                                     {
@@ -225,6 +237,7 @@
                                             : "Until you confirm you can still change any location, its PKM or GIT / NO RACK.")
                                     </p>
                                 </div>
+                                }
                             }
                         }
                         else
@@ -339,6 +352,7 @@
     private string? _submitError;
     private string? _confirmError;
     private bool _confirming;
+    private bool _canConfirm;
     private int? _selectedPutawayId;
 
     private IReadOnlyList<AopLocationOptionDto> _locationOptions = [];
@@ -371,6 +385,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _canConfirm = await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Inward.Confirm);
         var options = (await Mediator.Send(new GetAopLocationOptionsQuery())).ToList();
         options.Insert(0, new AopLocationOptionDto(NoRackOptionId, 0, "", 0, "", 0, 0, "NO RACK"));
         options.Insert(0, new AopLocationOptionDto(GitOptionId, 0, "", 0, "", 0, 0, "GIT"));

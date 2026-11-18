@@ -5,16 +5,18 @@ import { FullScreenModal } from "./ui/FullScreenModal";
 import { LoadingView } from "./ui/LoadingView";
 import { SearchField } from "./ui/SearchField";
 import { colors, spacing, typography } from "../theme";
-import type { MaterialDto } from "../types/api";
+import type { MaterialDto, PaginatedList } from "../types/api";
 
 interface Props {
   visible: boolean;
   token: string;
   onClose: () => void;
   onSelect: (material: MaterialDto) => void;
+  /** Material search to use; defaults to the Inward.Create search. Supervisors pass their own (Inward.Confirm) search. */
+  searchFn?: (token: string, search: string, pageNumber?: number, pageSize?: number) => Promise<PaginatedList<MaterialDto>>;
 }
 
-export function MaterialPickerModal({ visible, token, onClose, onSelect }: Props) {
+export function MaterialPickerModal({ visible, token, onClose, onSelect, searchFn = searchMaterials }: Props) {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<MaterialDto[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -26,7 +28,7 @@ export function MaterialPickerModal({ visible, token, onClose, onSelect }: Props
     setIsLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const page = await searchMaterials(token, search, 1, 20);
+        const page = await searchFn(token, search, 1, 20);
         if (!cancelled) setResults(page.items);
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -36,7 +38,7 @@ export function MaterialPickerModal({ visible, token, onClose, onSelect }: Props
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [visible, search, token]);
+  }, [visible, search, token, searchFn]);
 
   return (
     <FullScreenModal visible={visible} title="Select material" onClose={onClose}>

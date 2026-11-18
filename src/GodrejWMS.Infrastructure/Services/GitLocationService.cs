@@ -58,7 +58,18 @@ public sealed class GitLocationService(AppDbContext db) : IGitLocationService
             VirtualStatus = VirtualLocationStatus.InUse
         };
         db.PalletPositions.Add(position);
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex)
+        {
+            // Say why (for example the GIT zone type row is missing) instead of the generic "error occurred while saving".
+            db.ChangeTracker.Clear();
+            throw new InvalidOperationException(
+                $"The GIT location for this warehouse could not be created: {ex.GetBaseException().Message}", ex);
+        }
+
         return position;
     }
 

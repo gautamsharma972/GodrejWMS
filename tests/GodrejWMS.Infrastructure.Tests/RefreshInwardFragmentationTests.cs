@@ -290,19 +290,18 @@ public class PickerPlaceInwardPutawayTests
     }
 
     [Fact]
-    public async Task QuantityAboveTheSystemAllocation_IsAcceptedAtPutaway_ButBlocksTheSupervisorConfirm()
+    public async Task QuantityAboveTheInboundVolume_IsRejectedAtPutaway_AndNothingChanges()
     {
         var (db, _, _, _, putaway, positions) = await SeedAsync();
         using var _ = db;
 
-        Assert.True((await Handler(db).Handle(
-            new PickerPlaceInwardPutawayCommand(putaway.Id, 31, "OCT|2026", positions[0].Id, null), default)).Saved);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => Handler(db).Handle(
+            new PickerPlaceInwardPutawayCommand(putaway.Id, 31, "OCT|2026", positions[0].Id, null), default));
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new ConfirmInwardPutawayHandler(db, TestServices.Posting(db), new FragClock(), new FragUser(), new AllowAll())
-                .Handle(new ConfirmInwardPutawayCommand("GRN-1"), default));
         Assert.Contains("more than the 30", ex.Message);
-        Assert.False(db.InwardPutaways.Single().IsConfirmed);
+        Assert.Contains("excess material", ex.Message);
+        Assert.Equal(30, db.InwardPutaways.AsNoTracking().Single().QuantityBoxes);
+        Assert.False(db.InwardPutaways.AsNoTracking().Single().IsPickerPlaced);
     }
 
     [Fact]

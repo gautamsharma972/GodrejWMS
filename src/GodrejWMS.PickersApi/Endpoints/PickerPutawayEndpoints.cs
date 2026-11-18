@@ -13,6 +13,11 @@ public sealed record PickerPlaceInwardPutawayRequest(
     string? ExcludedLocation,
     bool AcknowledgeWarning = false);
 
+public sealed record RecordInwardVarianceRequest(Domain.Entities.InwardVarianceType Type, decimal QuantityBoxes, string Remarks);
+
+public sealed record RecordExcessMaterialRequest(
+    int MaterialId, string MfgMonthText, int PalletPositionId, decimal QuantityBoxes, string Remarks, bool AcknowledgeWarning = false);
+
 /// <summary>Mirrors the Picker Put-away screen (InwardPicker/Index.razor, route /inward-picker) - a
 /// queue of GRNs that still have a put-away location to be worked, plus the ability to confirm or
 /// change each one's quantity, PKM and location (including setting it aside as GIT / NO RACK).
@@ -71,8 +76,56 @@ public static class PickerPutawayEndpoints
                 CancellationToken cancellationToken) =>
                 await ApiExceptionMapping.RunAsync(async () =>
                     Results.Ok(await mediator.Send(new ConfirmPickerPutawayCommand(transactionId), cancellationToken))))
-            .RequireAuthorization("Permission:" + PermissionKeys.Inward.AssignPkm)
+            .RequireAuthorization("Permission:" + PermissionKeys.Inward.Confirm)
             .WithName("ConfirmPickerPutaway");
+
+        // ---- Supervisor review (Inward.Confirm): records against a put-away, excess material, material search.
+        group.MapPost("/supervisor/putaway/putaways/{putawayId:int}/variances", async (
+                int putawayId,
+                RecordInwardVarianceRequest request,
+                IMediator mediator,
+                CancellationToken cancellationToken) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                    Results.Ok(await mediator.Send(
+                        new RecordInwardVarianceCommand(putawayId, request.Type, request.QuantityBoxes, request.Remarks), cancellationToken))))
+            .RequireAuthorization("Permission:" + PermissionKeys.Inward.Confirm)
+            .WithName("RecordInwardVariance");
+
+        group.MapPost("/supervisor/putaway/variances/{varianceId:int}/remove", async (
+                int varianceId,
+                IMediator mediator,
+                CancellationToken cancellationToken) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                {
+                    await mediator.Send(new RemoveInwardVarianceCommand(varianceId), cancellationToken);
+                    return Results.NoContent();
+                }))
+            .RequireAuthorization("Permission:" + PermissionKeys.Inward.Confirm)
+            .WithName("RemoveInwardVariance");
+
+        group.MapPost("/supervisor/putaway/{transactionId:int}/excess", async (
+                int transactionId,
+                RecordExcessMaterialRequest request,
+                IMediator mediator,
+                CancellationToken cancellationToken) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                    Results.Ok(await mediator.Send(new RecordExcessMaterialCommand(
+                        transactionId, request.MaterialId, request.MfgMonthText, request.PalletPositionId, request.QuantityBoxes,
+                        request.Remarks, request.AcknowledgeWarning), cancellationToken))))
+            .RequireAuthorization("Permission:" + PermissionKeys.Inward.Confirm)
+            .WithName("RecordExcessMaterial");
+
+        group.MapGet("/supervisor/materials", async (
+                string? search,
+                int pageNumber = 1,
+                int pageSize = 10,
+                IMediator mediator = null!,
+                CancellationToken cancellationToken = default) =>
+                await ApiExceptionMapping.RunAsync(async () =>
+                    Results.Ok(await mediator.Send(new Application.Features.Materials.Queries.GetMaterialsQuery(
+                        Search: search, PageNumber: pageNumber <= 0 ? 1 : pageNumber, PageSize: pageSize <= 0 ? 10 : pageSize), cancellationToken))))
+            .RequireAuthorization("Permission:" + PermissionKeys.Inward.Confirm)
+            .WithName("SupervisorSearchMaterials");
 
         return group;
     }

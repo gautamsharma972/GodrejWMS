@@ -120,6 +120,11 @@ public sealed record InwardPutawayDto(
     bool IsExcludedLocked = false,
     bool IsVirtual = false);
 
+/// <summary>A damage / shortage / mismatch / excess record a supervisor made against a GRN.</summary>
+public sealed record InwardVarianceDto(
+    int Id, Domain.Entities.InwardVarianceType Type, long MaterialNumber, string MaterialDescription, string MfgMonthLabel, string LocationCode,
+    decimal QuantityBoxes, string Remarks, string? CreatedByUserName, DateTimeOffset CreatedAt);
+
 public sealed record InwardDetailLineDto(
     long MaterialNumber,
     string MaterialDescription,
@@ -130,7 +135,16 @@ public sealed record InwardDetailLineDto(
     AllocationStatus Status,
     string? Remarks,
     IReadOnlyList<InwardPutawayDto> Putaways,
-    bool MaterialIsActive = true);
+    bool MaterialIsActive = true,
+    /// <summary>Boxes with no put-away and never posted by this GRN (no location could be found): Refresh Put-away may still place them.</summary>
+    decimal UnplacedBoxes = 0,
+    /// <summary>Boxes that were put away and have since left inventory (picked by a pullout, moved or adjusted away): no location is held for them.</summary>
+    decimal LeftInventoryBoxes = 0,
+    /// <summary>Of <see cref="LeftInventoryBoxes"/>, the boxes picked by pullouts (the rest were moved or adjusted away, which carry no reference).</summary>
+    decimal LeftByPickBoxes = 0,
+    IReadOnlyList<string>? PickReferences = null,
+    /// <summary>Boxes recorded as damage / shortage / mismatch against this line: accounted for, neither put away nor missing.</summary>
+    decimal VarianceBoxes = 0);
 
 public sealed record InwardDetailDto(
     int Id,
@@ -148,7 +162,9 @@ public sealed record InwardDetailDto(
     string? ReceivedFrom = null,
     IReadOnlyList<InwardUnsavedLineDto>? UnsavedLines = null,
     bool IsPkmless = false,
-    DateTimeOffset? PostedAt = null);
+    DateTimeOffset? PostedAt = null,
+    /// <summary>Damage / shortage / mismatch / excess records a supervisor made against this GRN.</summary>
+    IReadOnlyList<InwardVarianceDto>? Variances = null);
 /// <summary>
 /// One row of the inward Excel download: one put-away location of one GRN line, or a single row with
 /// no location for a line that received none.

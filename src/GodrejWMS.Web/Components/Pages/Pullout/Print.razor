@@ -1,0 +1,132 @@
+@page "/pullout/{TransactionId:int}/print"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewPullout)]
+@using GodrejWMS.Application.Features.Pullout
+@using GodrejWMS.Application.Features.Pullout.Dtos
+@using GodrejWMS.Application.Features.Pullout.Queries
+@inject IMediator Mediator
+
+<PageTitle>Print pullout - Godrej WMS</PageTitle>
+
+<div class="grn-print">
+    @if (_loading)
+    {
+        <div class="loading-panel"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Preparing the print view...</div>
+    }
+    else if (_error is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_error</div>
+    }
+    else if (_package is not null)
+    {
+        <div class="grn-print-toolbar">
+            <button type="button" class="btn btn-primary" data-print>
+                <i class="bi bi-printer" aria-hidden="true"></i> Print / Save as PDF
+            </button>
+            <a class="btn btn-outline-secondary" href="/pullout/@TransactionId">Back to pullout</a>
+            <span class="grn-print-hint">In the print window choose <strong>Save as PDF</strong> (or your printer), paper <strong>A4</strong>, <strong>Landscape</strong>. Page 1 is the pick list, then the loading sheet.</span>
+        </div>
+
+        <section class="grn-print-sheet">
+            @RenderHeader("Picklist", showLoadingExtras: false)
+            <table class="grn-print-table">
+                <thead><tr>@foreach (var h in PulloutPrintSheets.PicklistHeaders) { <th>@h</th> }</tr></thead>
+                <tbody>
+                    @foreach (var row in PulloutPrintSheets.PicklistRows(_package))
+                    {
+                        <tr>@for (var i = 0; i < row.Length; i++) { <td class="@(i == 2 ? "num" : null)">@row[i]</td> }</tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+
+        <section class="grn-print-sheet grn-print-break">
+            @RenderHeader("Loading Sheet", showLoadingExtras: true)
+            <table class="grn-print-table">
+                <thead><tr>@foreach (var h in PulloutPrintSheets.LoadingHeaders) { <th>@h</th> }</tr></thead>
+                <tbody>
+                    @foreach (var row in PulloutPrintSheets.LoadingRows(_package))
+                    {
+                        <tr>
+                            @for (var i = 0; i < row.Length; i++)
+                            {
+                                <td class="@(i == 2 ? "num" : null)">@row[i]</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <table class="grn-print-header grn-print-footer">
+                <tbody>
+                    <tr><td colspan="2" class="label">Driver Sign</td><td class="label">Loading Total</td><td colspan="3"></td></tr>
+                    <tr><td colspan="2" class="label">Supervisor Sign</td><td class="label">Checked By</td><td colspan="3"></td></tr>
+                </tbody>
+            </table>
+            <table class="grn-print-table grn-print-delivery">
+                <thead><tr><th>Sr.No.</th><th>Delivery No</th><th>Del Qty</th><th>Total Spending</th></tr></thead>
+                <tbody>
+                    @for (var i = 1; i <= 3; i++) { <tr><td>@i</td><td></td><td></td><td></td></tr> }
+                    <tr><td colspan="2"><strong>Total</strong></td><td></td><td></td></tr>
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public int TransactionId { get; set; }
+
+    private PulloutDownloadPackage? _package;
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        try
+        {
+            var detail = await Mediator.Send(new GetPulloutDetailQuery(TransactionId));
+            _package = PulloutPrintSheets.FromDetail(detail);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private RenderFragment RenderHeader(string title, bool showLoadingExtras) => __builder =>
+    {
+        var header = _package!.Header;
+        <table class="grn-print-header">
+            <tbody>
+                <tr><td colspan="6" class="title company">@PulloutPrintSheets.Company</td></tr>
+                <tr><td colspan="6" class="title address">@PulloutPrintSheets.Address(header)</td></tr>
+                <tr><td colspan="6" class="title">@title</td></tr>
+                @foreach (var (left, middle, right) in PulloutPrintSheets.TransportRows(header))
+                {
+                    <tr>
+                        <td class="label">@left.Label</td><td>@left.Value</td>
+                        <td class="label">@middle.Label</td><td>@middle.Value</td>
+                        <td class="label">@right.Label</td><td>@right.Value</td>
+                    </tr>
+                }
+                @if (showLoadingExtras)
+                {
+                    <tr>
+                        <td class="label">Indent</td><td>@header.ReferenceNumber</td>
+                        <td class="label">Weight</td><td>@header.Fields?.WeightText</td>
+                        <td class="label">Volume</td><td>@header.Fields?.VolumeText</td>
+                    </tr>
+                }
+                else
+                {
+                    <tr><td class="label">Pull reference</td><td colspan="5">@header.ReferenceNumber</td></tr>
+                }
+            </tbody>
+        </table>
+    };
+}

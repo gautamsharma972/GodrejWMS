@@ -1,5 +1,6 @@
 using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Common.Models;
+using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Domain.Enums;
 using MediatR;
@@ -13,18 +14,21 @@ public sealed record GetPickerPendingInwardQuery(
     int PageNumber = 1,
     int PageSize = 10) : IRequest<PaginatedList<InwardHistoryDto>>;
 
-public sealed class GetPickerPendingInwardHandler(IApplicationDbContext db)
+public sealed class GetPickerPendingInwardHandler(IApplicationDbContext db, IPermissionService permissions)
     : IRequestHandler<GetPickerPendingInwardQuery, PaginatedList<InwardHistoryDto>>
 {
-    public Task<PaginatedList<InwardHistoryDto>> Handle(GetPickerPendingInwardQuery request, CancellationToken cancellationToken)
+    public async Task<PaginatedList<InwardHistoryDto>> Handle(GetPickerPendingInwardQuery request, CancellationToken cancellationToken)
     {
-        var transactions = db.InwardTransactions.AsNoTracking()
-            // Needs the picker: an open reservation, or - for an order posted on upload - a location the picker has not confirmed
-            // or changed yet. (Only an order still pending from before posting on upload keeps a GIT / NO RACK entry open
-            // for correction until the supervisor confirms it.)
-            .Where(t => !t.IsRejected
-                && t.Lines.Any(l => l.Putaways.Any(p => !p.IsExcludedLocked
-                    && (!p.IsConfirmed || t.PostedAt != null || p.ExcludedLocation != null))));
+        // A supervisor (Inward.Confirm) sees every GRN that is not confirmed yet - submitted or not - because the final confirm is theirs.
+        // A picker only sees GRNs that still have a location to submit: once everything is submitted the GRN waits for the supervisor.
+        var reviewer = await permissions.HasPermissionAsync(PermissionKeys.Inward.Confirm, cancellationToken);
+        var open = db.InwardTransactions.AsNoTracking().Where(t => !t.IsRejected);
+        var transactions = reviewer
+            // An open reservation, or - for an order posted on upload - a location that is not confirmed (locked) yet.
+            ? open.Where(t => t.Lines.Any(l => l.Putaways.Any(p => p.QuantityBoxes > 0 && !p.IsExcludedLocked
+                && (!p.IsConfirmed || t.PostedAt != null || p.ExcludedLocation != null))))
+            : open.Where(t => t.Lines.Any(l => l.Putaways.Any(p => p.QuantityBoxes > 0 && !p.IsExcludedLocked && !p.IsPickerPlaced && p.ExcludedLocation == null
+                && (!p.IsConfirmed || t.PostedAt != null))));
 
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
@@ -54,6 +58,6 @@ public sealed class GetPickerPendingInwardHandler(IApplicationDbContext db)
                 SubmittedLocationCount: t.Lines.SelectMany(l => l.Putaways).Count(p => p.IsPickerPlaced || (p.IsConfirmed && t.PostedAt == null)),
                 VirtualLocationCount: t.Lines.SelectMany(l => l.Putaways).Count(p => p.PalletPosition.IsVirtual)));
 
-        return PaginatedList<InwardHistoryDto>.CreateAsync(query, request.PageNumber, request.PageSize);
+        return await PaginatedList<InwardHistoryDto>.CreateAsync(query, request.PageNumber, request.PageSize);
     }
 }

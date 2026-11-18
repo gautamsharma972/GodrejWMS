@@ -53,7 +53,7 @@ public static class PutawayPickReservation
             // Boxes the put-aways do not explain (older stock of the same material and PKM in the cell) are picked first;
             // only what the pick takes beyond them comes out of the not-yet-placed put-aways.
             var onHand = await db.StockBatches.AsNoTracking()
-                .Where(b => b.PalletPositionId == positionId && b.MaterialId == materialId && b.MfgMonth == mfgMonth)
+                .Where(b => b.PalletPositionId == positionId && b.MaterialId == materialId && b.MfgMonth == mfgMonth && b.StockSubtypeId == LocationSubtypeIds.Good)
                 .SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;
             var untouched = putaways.Sum(p => p.QuantityBoxes);
             var others = Math.Max(0m, onHand - untouched);
@@ -142,5 +142,65 @@ public static class PutawayPickReservation
         }
 
         return reservedBoxes;
+    }
+
+    /// <summary>The picker found fewer boxes than allocated (or none, when the stock is still on the inward vehicle): the shortfall goes back
+    /// to stock at the pick cell, so the PICK-RESERVED put-away rows of this pullout for that cell become normal, unplaced put-aways again for
+    /// up to that many boxes. A GRN that was rejected meanwhile keeps its rows as history.</summary>
+    public static async Task ReleaseShortfallAsync(
+        IApplicationDbContext db, string pulloutReference, int materialId, int mfgMonth, int positionId, decimal boxes,
+        CancellationToken cancellationToken)
+    {
+        if (boxes <= 0)
+        {
+            return;
+        }
+
+        var reason = ReasonFor(pulloutReference);
+        var rows = await db.InwardPutaways
+            .Include(p => p.InwardTransactionLine).ThenInclude(l => l.InwardTransaction)
+            .Where(p => p.ExcludedLocation == Label && p.OverrideReason == reason && p.PalletPositionId == positionId
+                && p.InwardTransactionLine.MaterialId == materialId && p.InwardTransactionLine.MfgMonth == mfgMonth
+                && !p.InwardTransactionLine.InwardTransaction.IsRejected)
+            .OrderBy(p => p.Id)
+            .ToListAsync(cancellationToken);
+
+        foreach (var row in rows)
+        {
+            if (boxes <= 0)
+            {
+                break;
+            }
+
+            var take = Math.Min(row.QuantityBoxes, boxes);
+            boxes -= take;
+            InwardPutaway target;
+            if (take == row.QuantityBoxes)
+            {
+                target = row;
+            }
+            else
+            {
+                row.QuantityBoxes -= take;
+                row.RowVersion++;
+                target = new InwardPutaway
+                {
+                    InwardTransactionLineId = row.InwardTransactionLineId,
+                    PalletPositionId = row.PalletPositionId,
+                    QuantityBoxes = take,
+                    AllocationReason = row.AllocationReason,
+                    IsConfirmed = true,
+                    ConfirmedAt = row.ConfirmedAt
+                };
+                db.InwardPutaways.Add(target);
+            }
+
+            target.ExcludedLocation = null;
+            target.OverrideReason = null;
+            target.IsPickerPlaced = false;
+            target.IsExcludedLocked = false;
+            target.IsConfirmed = true;
+            target.RowVersion++;
+        }
     }
 }

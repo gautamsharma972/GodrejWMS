@@ -20,6 +20,11 @@ public sealed record LoginResponse(
 
 public static class AuthEndpoints
 {
+    /// <summary>Roles that must be at their assigned (geofenced) warehouse to sign in to the mobile app: the pickers and the supervisors who
+    /// review, correct and confirm their work. Superadmin, Logistic Manager and Office Staff are not location-bound.</summary>
+    private static readonly HashSet<string> GeofencedRoles =
+        [RoleNames.Pickers, RoleNames.FloorSupervisor, RoleNames.Supervisor, RoleNames.HeadSupervisor];
+
     public static RouteGroupBuilder MapAuthEndpoints(this RouteGroupBuilder group)
     {
         group.MapPost("/auth/login", async (
@@ -50,13 +55,14 @@ public static class AuthEndpoints
             var roles = await userManager.GetRolesAsync(user);
             var roleList = roles.ToList();
 
-            // Picker-login geofencing (Platform Admin only - see UpdateWarehouseGeofenceCommand):
-            // a Pickers-role user may only sign in to the mobile app from within range of one of
+            // Mobile login geofencing (Platform Admin only - see UpdateWarehouseGeofenceCommand):
+            // a floor-role user (Pickers, Floor Supervisor, Supervisor, Head Supervisor) may only sign in to the mobile app from within range of one of
             // their assigned warehouses, when that warehouse has geofencing enabled. A user with
             // no geofenced warehouses assigned is unaffected. Checked here, before issuing a token,
             // rather than as a general-purpose authorization rule, since this is specifically a
             // login-time location check, not an ongoing per-request restriction.
-            if (roleList.Contains(RoleNames.Pickers))
+            // Floor roles on the mobile app (pickers and the supervisors who review / submit in their place) must be at the warehouse.
+            if (roleList.Any(r => GeofencedRoles.Contains(r)))
             {
                 var geofences = await db.UserWarehouses
                     .Where(uw => uw.UserId == user.Id)

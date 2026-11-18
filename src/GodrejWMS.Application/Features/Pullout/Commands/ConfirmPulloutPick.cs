@@ -16,7 +16,7 @@ public sealed record PulloutRemainderMove(int DestinationPalletPositionId, decim
 /// <summary>The Picker's confirmation of one pick of a posted pullout: the quantity really picked - fewer or more than the system
 /// allocated (more is taken from what is still on the shelf at that location, never beyond it) - and, optionally, where the boxes left
 /// at that location should go. It can be changed again until the pick-list is confirmed. Stock only changes when the pick-list is
-/// confirmed (<see cref="ConfirmPulloutPicklistCommand"/>): a shortfall goes back to stock, extra boxes are deducted and the chosen
+/// confirmed (<see cref="ConfirmPulloutPicklistCommand"/>): a shortfall - up to the whole allocation when 0 is entered - goes back to stock, extra boxes are deducted and the chosen
 /// remainder move is carried out then.</summary>
 public sealed record ConfirmPulloutPickCommand(int PickId, decimal PickedQuantityBoxes, PulloutRemainderMove? MoveRemaining = null)
     : IRequest<ConfirmPulloutPickResult>;
@@ -38,7 +38,9 @@ public sealed class ConfirmPulloutPickValidator : AbstractValidator<ConfirmPullo
     public ConfirmPulloutPickValidator()
     {
         RuleFor(x => x.PickId).GreaterThan(0);
-        RuleFor(x => x.PickedQuantityBoxes).GreaterThan(0).WithMessage("Picked quantity must be greater than zero.");
+        // Zero is allowed: the material is not at the dock/vehicle yet (e.g. still on the inward truck), so the picker skips it and every
+        // allocated box goes back to stock when the pick-list is confirmed.
+        RuleFor(x => x.PickedQuantityBoxes).GreaterThanOrEqualTo(0).WithMessage("Picked quantity cannot be negative.");
         When(x => x.MoveRemaining is not null, () =>
         {
             RuleFor(x => x.MoveRemaining!.DestinationPalletPositionId).GreaterThan(0).WithMessage("Select the location to move the remaining boxes to.");
@@ -85,7 +87,7 @@ public sealed class ConfirmPulloutPickHandler(
 
         // What is on the shelf at the pick location for this material + PKM beyond what this pick already took out.
         var onHand = await db.StockBatches.AsNoTracking()
-            .Where(b => b.PalletPositionId == source.Id && b.MaterialId == line.MaterialId && b.MfgMonth == pick.MfgMonth)
+            .Where(b => b.PalletPositionId == source.Id && b.MaterialId == line.MaterialId && b.MfgMonth == pick.MfgMonth && b.StockSubtypeId == LocationSubtypeIds.Good)
             .SumAsync(b => (decimal?)b.QuantityBoxes, cancellationToken) ?? 0m;
 
         // A legacy draft has not deducted its planned picks yet. Respect every other legacy
@@ -120,7 +122,8 @@ public sealed class ConfirmPulloutPickHandler(
         var moved = 0m;
         string? destinationCode = null;
         int? destinationId = null;
-        if (request.MoveRemaining is { } move)
+        // Nothing picked means nothing to carry out of the bin: a remainder move only makes sense after a real pick.
+        if (request.MoveRemaining is { } move && request.PickedQuantityBoxes > 0)
         {
             if (move.QuantityBoxes > remaining)
             {

@@ -63,12 +63,20 @@ public sealed class RejectInwardHandler(
             .Where(x => x.Line.MfgMonth is not null)
             .ToList();
         decimal notReversed = 0;
-        if (posted.Count > 0)
+        // Damage stock and excess material the supervisor recorded against this GRN go back out with it (shortage / mismatch left no stock).
+        var records = await db.InwardLineVariances
+            .Include(v => v.PalletPosition)
+            .Where(v => v.InwardTransactionId == transaction.Id && (v.Type == InwardVarianceType.Damage || v.Type == InwardVarianceType.Excess))
+            .ToListAsync(cancellationToken);
+        if (posted.Count > 0 || records.Count > 0)
         {
-            var plan = await PostedStockReversal.PlanAsync(
-                db,
-                posted.Select(x => new StockReversalItem(x.Line.MaterialId, x.Line.MfgMonth!.Value, x.Putaway.PalletPosition, x.Putaway.QuantityBoxes)).ToList(),
-                cancellationToken);
+            var items = posted
+                .Select(x => new StockReversalItem(x.Line.MaterialId, x.Line.MfgMonth!.Value, x.Putaway.PalletPosition, x.Putaway.QuantityBoxes))
+                .Concat(records.Select(v => new StockReversalItem(
+                    v.MaterialId, v.MfgMonth, v.PalletPosition, v.QuantityBoxes,
+                    v.Type == InwardVarianceType.Damage ? LocationSubtypeIds.Damage : LocationSubtypeIds.Good)))
+                .ToList();
+            var plan = await PostedStockReversal.PlanAsync(db, items, cancellationToken);
             notReversed = plan.ShortfallBoxes;
             if (plan.Changes.Count > 0)
             {

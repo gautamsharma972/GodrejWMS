@@ -1484,8 +1484,10 @@ public class ClosedXmlExcelService : IExcelService
         for (var row = 5; row <= 10; row++) ws.Row(row).Height = 22;
         for (var row = PicklistFirstDataRow; row <= lastRow; row++) ws.Row(row).Height = 22;
 
+        ws.PageSetup.PaperSize = XLPaperSize.A4Paper;
         ws.PageSetup.PageOrientation = XLPageOrientation.Landscape;
         ws.PageSetup.FitToPages(1, 0);
+        ws.PageSetup.CenterHorizontally = true;
         ws.PageSetup.SetRowsToRepeatAtTop(2, 8);
         ws.PageSetup.Margins.Top = 0.25;
         ws.PageSetup.Margins.Bottom = 0.25;
@@ -1621,6 +1623,15 @@ public class ClosedXmlExcelService : IExcelService
         }
 
         WriteLoadingSheetFooter(ws, footerStartRow);
+
+        // Ready to print: A4 landscape, one page wide, the column header row repeated on every page.
+        ws.PageSetup.PaperSize = XLPaperSize.A4Paper;
+        ws.PageSetup.PageOrientation = XLPageOrientation.Landscape;
+        ws.PageSetup.FitToPages(1, 0);
+        ws.PageSetup.CenterHorizontally = true;
+        ws.PageSetup.Margins.Left = ws.PageSetup.Margins.Right = 0.25;
+        ws.PageSetup.Margins.Top = ws.PageSetup.Margins.Bottom = 0.25;
+        ws.PageSetup.SetRowsToRepeatAtTop(11, 11);
     }
 
     /// <summary>The GCPL Loading Sheet's standard 9-row footer (Driver Sign / Loading Total,
@@ -1935,6 +1946,10 @@ public class ClosedXmlExcelService : IExcelService
         ws.Column(10).Hide();
         ws.Columns().AdjustToContents(headerRow);
 
+        // Ready to print: A4 landscape, one page wide, table header repeated on every page. The put-away sheet prints without the hidden
+        // Put-away ID and without the Vehicle No. / LR No. columns (the print area stops at Put-away Status).
+        ApplyPrintSetup(ws, headerRow, lastPrintColumn: 9, lastRow: Math.Max(rowNum - 1, headerRow), download.Header.ReferenceNumber);
+
         if (download.UnloadingRows.Count > 0)
         {
             WriteUnloadingSheet(workbook, download, block);
@@ -2072,6 +2087,30 @@ public class ClosedXmlExcelService : IExcelService
         ws.Column(6).Width = 14;
         ws.Column(7).Width = 22;
         ws.Column(referenceColumn).AdjustToContents();
+
+        // The GRN reference sits outside the client's columns; keep it off the printout (it is in the page footer).
+        ApplyPrintSetup(ws, tableHeaderRow, lastPrintColumn: columnCount, lastRow: Math.Max(row - 1, tableHeaderRow), download.Header.ReferenceNumber);
+    }
+
+    /// <summary>A4 landscape, fitted to one page wide (as many pages tall as needed), narrow margins, centred, the table header row repeated on each
+    /// page, and a footer with the GRN reference and the page number - so the sheet can be printed straight from Excel without formatting first.</summary>
+    private static void ApplyPrintSetup(IXLWorksheet ws, int headerRow, int lastPrintColumn, int lastRow, string referenceNumber)
+    {
+        var setup = ws.PageSetup;
+        setup.PaperSize = XLPaperSize.A4Paper;
+        setup.PageOrientation = XLPageOrientation.Landscape;
+        setup.FitToPages(1, 0);
+        setup.Margins.Left = setup.Margins.Right = 0.4;
+        setup.Margins.Top = setup.Margins.Bottom = 0.5;
+        setup.CenterHorizontally = true;
+        setup.PrintAreas.Clear();
+        setup.PrintAreas.Add(1, 1, lastRow, lastPrintColumn);
+        setup.SetRowsToRepeatAtTop(headerRow, headerRow);
+        setup.Footer.Left.AddText(referenceNumber, XLHFOccurrence.AllPages);
+        setup.Footer.Right.AddText("Page ", XLHFOccurrence.AllPages);
+        setup.Footer.Right.AddText(XLHFPredefinedText.PageNumber, XLHFOccurrence.AllPages);
+        setup.Footer.Right.AddText(" of ", XLHFOccurrence.AllPages);
+        setup.Footer.Right.AddText(XLHFPredefinedText.NumberOfPages, XLHFOccurrence.AllPages);
     }
 
     /// <summary>Reads a GRN's Inward Download sheet back for location reassignment. Understands both layouts: the

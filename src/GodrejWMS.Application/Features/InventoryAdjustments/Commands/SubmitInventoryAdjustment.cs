@@ -70,7 +70,8 @@ public sealed class SubmitInventoryAdjustmentHandler(
             physicalBatch = await db.StockBatches.FirstOrDefaultAsync(b =>
                 b.MaterialId == physicalMaterialId.Value &&
                 b.PalletPositionId == batch.PalletPositionId &&
-                b.MfgMonth == batch.MfgMonth, cancellationToken);
+                b.MfgMonth == batch.MfgMonth &&
+                b.StockSubtypeId == batch.StockSubtypeId, cancellationToken);
         }
 
         if (!physicalMaterialId.HasValue && batch.QuantityBoxes == request.CountedQuantity)

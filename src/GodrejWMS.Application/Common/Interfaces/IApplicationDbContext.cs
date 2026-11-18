@@ -52,6 +52,8 @@ public interface IApplicationDbContext : IAsyncDisposable
 
     DbSet<InwardPutaway> InwardPutaways { get; }
 
+    DbSet<InwardLineVariance> InwardLineVariances { get; }
+
     DbSet<PulloutTransaction> PulloutTransactions { get; }
 
     DbSet<PulloutTransactionLine> PulloutTransactionLines { get; }

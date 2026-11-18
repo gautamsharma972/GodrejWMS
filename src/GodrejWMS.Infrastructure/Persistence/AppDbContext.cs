@@ -76,6 +76,7 @@ public class AppDbContext(
     public DbSet<InwardUnsavedLine> InwardUnsavedLines => Set<InwardUnsavedLine>();
 
     public DbSet<InwardPutaway> InwardPutaways => Set<InwardPutaway>();
+    public DbSet<InwardLineVariance> InwardLineVariances => Set<InwardLineVariance>();
 
     public DbSet<PulloutTransaction> PulloutTransactions => Set<PulloutTransaction>();
 
@@ -131,6 +132,9 @@ public class AppDbContext(
         builder.Entity<InwardPutaway>().HasQueryFilter(p => HasAllWarehouses
             || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == p.InwardTransactionLine.InwardTransaction.WarehouseId)
             || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == p.InwardTransactionLine.InwardTransaction.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<InwardLineVariance>().HasQueryFilter(v => HasAllWarehouses
+            || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == v.InwardTransaction.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == v.InwardTransaction.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
         builder.Entity<PulloutTransaction>().HasQueryFilter(t => HasAllWarehouses
             || UserWarehouses.Any(a => a.UserId == AccessUserId && a.WarehouseId == t.WarehouseId)
             || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == t.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));

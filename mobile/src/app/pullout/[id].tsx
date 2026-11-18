@@ -10,6 +10,7 @@ import {
   type PickChangeMode,
   type PickSplit,
 } from "../../components/PulloutPickLocationChangeModal";
+import { SupervisorAddPulloutMaterial } from "../../components/SupervisorAddPulloutMaterial";
 import { PulloutPickConfirmModal, type ConfirmablePick } from "../../components/PulloutPickConfirmModal";
 import { PulloutPickerChangeLocationModal, type PickerActivePick } from "../../components/PulloutPickerChangeLocationModal";
 import { AppIcon } from "../../components/ui/AppIcon";
@@ -386,7 +387,23 @@ export default function PulloutDetailScreen() {
         </View>
       )}
 
-      {pickerActionable && (
+      {pickerActionable && permissions.includes("Pullout.Edit") && (
+        <View style={styles.picklistBar}>
+          <SupervisorAddPulloutMaterial token={token} pulloutId={detail.id} onAdded={load} />
+        </View>
+      )}
+
+      {pickerActionable && !permissions.includes("Pullout.Confirm") && (
+        <View style={styles.picklistBar}>
+          <Text style={styles.picklistHint}>
+            {picksDone < allPicks.length
+              ? "Submit every pick. A supervisor reviews and confirms the pick-list afterwards."
+              : "Every pick is submitted. Waiting for the supervisor to review and confirm."}
+          </Text>
+        </View>
+      )}
+
+      {pickerActionable && permissions.includes("Pullout.Confirm") && (
         <View style={styles.picklistBar}>
           {picklistError && <Text style={styles.picklistError}>{picklistError}</Text>}
           <Button

@@ -1,4 +1,5 @@
 using GodrejWMS.Application.Features.Inward.Commands;
+using GodrejWMS.Application.Features.Inward.Queries;
 using GodrejWMS.Domain.Entities;
 using GodrejWMS.Infrastructure.Persistence;
 using GodrejWMS.Infrastructure.Services;
@@ -72,6 +73,8 @@ public class RefreshPostedInwardPutawayTests
         var line = db.InwardTransactionLines.Single();
         db.InwardPutaways.RemoveRange(db.InwardPutaways);
         db.StockBatches.RemoveRange(db.StockBatches);
+        // Nothing was ever posted for it either (an upload that placed no boxes leaves no ledger entries).
+        db.StockLedgerEntries.RemoveRange(db.StockLedgerEntries);
         line.AllocatedQuantityBoxes = 0;
         line.Status = GodrejWMS.Domain.Enums.AllocationStatus.Failed;
         await db.SaveChangesAsync();
@@ -177,5 +180,80 @@ public class RefreshPostedInwardPutawayTests
         await db.SaveChangesAsync();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => Handler(db).Handle(new RefreshPostedInwardPutawayCommand(transactionId), default));
+    }
+
+    [Fact]
+    public async Task Refresh_WhenStockOfAnUnplacedPutawayIsGone_SaysSoOnTheLine_InsteadOfSilentlyShrinkingTheGrn()
+    {
+        var (db, _, transactionId) = await SeedAsync();
+        using var _ = db;
+        // Stock of the GRN's put-aways was written off (e.g. an inventory adjustment) before the refresh.
+        db.StockBatches.RemoveRange(db.StockBatches.ToList());
+        await db.SaveChangesAsync();
+
+        await Handler(db).Handle(new RefreshPostedInwardPutawayCommand(transactionId), default);
+
+        var line = db.InwardTransactionLines.AsNoTracking().First();
+        Assert.NotNull(line.Remarks);
+        Assert.Contains("no longer in inventory", line.Remarks);
+
+        // The boxes that left inventory are never given a new location - not on the first click, not on a second one.
+        Assert.Equal(0, db.StockBatches.AsNoTracking().Sum(b => (decimal?)b.QuantityBoxes) ?? 0);
+        var second = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Handler(db).Handle(new RefreshPostedInwardPutawayCommand(transactionId), default));
+        Assert.Contains("Nothing to refresh", second.Message);
+        Assert.Equal(0, db.StockBatches.AsNoTracking().Sum(b => (decimal?)b.QuantityBoxes) ?? 0);
+
+        // The audit screen says what happened instead of "No location reserved".
+        var detail = await new GetInwardDetailHandler(db).Handle(new GetInwardDetailQuery(transactionId), default);
+        var detailLine = detail.Lines.First();
+        Assert.Equal(0, detailLine.UnplacedBoxes);
+        Assert.True(detailLine.LeftInventoryBoxes > 0);
+    }
+
+    [Fact]
+    public async Task AuditDetail_NamesThePullouts_ThatPickedBoxesWhichLeftInventory_ButNotMovedOrAdjustedOnes()
+    {
+        var (db, _, transactionId) = await SeedAsync();
+        using var _ = db;
+        var rows = db.InwardPutaways.AsNoTracking().OrderBy(p => p.Id).ToList();
+        var pickedRow = rows[0];
+        var adjustedRow = rows.Count > 1 ? rows[1] : null;
+
+        // Boxes of the first put-away were picked by a pullout (ledger entry), then the put-away row and its stock went away.
+        var batch = db.StockBatches.First(b => b.PalletPositionId == pickedRow.PalletPositionId);
+        db.StockLedgerEntries.Add(new GodrejWMS.Domain.Entities.StockLedgerEntry
+        {
+            PostingNumber = "PST-T", EntryType = GodrejWMS.Domain.Entities.StockLedgerEntryTypes.PulloutDeduct,
+            WarehouseId = 1, MaterialId = batch.MaterialId, MfgMonth = batch.MfgMonth, StockSubtypeId = batch.StockSubtypeId,
+            PalletPositionId = pickedRow.PalletPositionId, QuantityBoxes = -pickedRow.QuantityBoxes, BalanceAfterBoxes = 0,
+            ReferenceType = "PICK", ReferenceNumber = "PICK-20261118-000099", CreatedAt = TestServices.Now.AddHours(1)
+        });
+        var removedBoxes = pickedRow.QuantityBoxes;
+        db.InwardPutaways.Remove(db.InwardPutaways.Single(p => p.Id == pickedRow.Id));
+        db.StockBatches.RemoveRange(db.StockBatches.Where(b => b.PalletPositionId == pickedRow.PalletPositionId));
+        var line = db.InwardTransactionLines.Single();
+        line.AllocatedQuantityBoxes -= removedBoxes;
+        await db.SaveChangesAsync();
+
+        var detail = await new GetInwardDetailHandler(db).Handle(new GetInwardDetailQuery(transactionId), default);
+        var detailLine = detail.Lines.Single();
+        Assert.Equal(removedBoxes, detailLine.LeftInventoryBoxes);
+        Assert.Equal(removedBoxes, detailLine.LeftByPickBoxes);
+        Assert.Equal(["PICK-20261118-000099"], detailLine.PickReferences);
+
+        // A second put-away whose stock was adjusted away (no pullout entry) is reported without any reference.
+        if (adjustedRow is not null)
+        {
+            db.InwardPutaways.Remove(db.InwardPutaways.Single(p => p.Id == adjustedRow.Id));
+            db.StockBatches.RemoveRange(db.StockBatches.Where(b => b.PalletPositionId == adjustedRow.PalletPositionId));
+            db.InwardTransactionLines.Single().AllocatedQuantityBoxes -= adjustedRow.QuantityBoxes;
+            await db.SaveChangesAsync();
+
+            var again = (await new GetInwardDetailHandler(db).Handle(new GetInwardDetailQuery(transactionId), default)).Lines.Single();
+            Assert.Equal(removedBoxes + adjustedRow.QuantityBoxes, again.LeftInventoryBoxes);
+            Assert.Equal(removedBoxes, again.LeftByPickBoxes);
+            Assert.Single(again.PickReferences!);
+        }
     }
 }
