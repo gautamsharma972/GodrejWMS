@@ -15,8 +15,10 @@ public static class MaterialsEndpoints
                 IMediator mediator = null!,
                 CancellationToken cancellationToken = default) =>
             {
+                // The mobile material dropdown only offers active materials: an inactive one cannot be received or allocated anyway.
                 var query = new GetMaterialsQuery(
                     Search: search,
+                    IsActive: true,
                     PageNumber: pageNumber <= 0 ? 1 : pageNumber,
                     PageSize: pageSize <= 0 ? 10 : pageSize);
                 return Results.Ok(await mediator.Send(query, cancellationToken));

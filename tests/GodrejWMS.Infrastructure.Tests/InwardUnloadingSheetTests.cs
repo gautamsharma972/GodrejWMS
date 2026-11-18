@@ -402,6 +402,20 @@ public class InwardUnloadingSheetTests
         var (db, material) = SeedHistory();
         AddGrn(db, material, "GRN-3", "MH04AB1234", "11223344", pkmless: true);
         AddGrn(db, material, "GRN-4", "HR68C6373", "77872", pkmless: true);
+        // These GRNs each have a location waiting for its PKM (a GRN with no location or no boxes is not listed).
+        var rack = new Rack { WarehouseId = 1, Code = "A", Columns = 2, Levels = 1, ShelfLengthMm = 1, ShelfWidthMm = 1, ShelfHeightMm = 1 };
+        rack.PalletPositions.Add(new PalletPosition { Column = 1, Level = 1, LocationCode = "A-01-01", MaxPallets = 1 });
+        rack.PalletPositions.Add(new PalletPosition { Column = 2, Level = 1, LocationCode = "A-02-01", MaxPallets = 1 });
+        db.Racks.Add(rack);
+        db.SaveChanges();
+        var positions = rack.PalletPositions.OrderBy(p => p.Column).ToList();
+        var i = 0;
+        foreach (var line in db.InwardTransactionLines.ToList())
+        {
+            db.InwardPutaways.Add(new InwardPutaway { InwardTransactionLineId = line.Id, PalletPositionId = positions[i++].Id, QuantityBoxes = 10, IsConfirmed = false });
+        }
+
+        db.SaveChanges();
         var handler = new GetInwardHistoryWithoutPkmHandler(db);
 
         var all = await handler.Handle(new GetInwardHistoryWithoutPkmQuery(), CancellationToken.None);

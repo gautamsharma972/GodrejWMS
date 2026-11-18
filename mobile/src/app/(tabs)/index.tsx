@@ -57,6 +57,9 @@ export default function HomeScreen() {
   const canPick = permissions.includes("Inward.Create");
   const canAssignPkm = permissions.includes("Inward.AssignPkm");
   const canConfirmInward = permissions.includes("Inward.Confirm");
+  // Pickers submit put-aways; supervisors (Inward.Confirm) review the same GRNs on the same screens - edit location / qty / PKM, record damage,
+  // shortage, mismatch and excess, and confirm - so both go to the put-away queue below. The old supervisor-only queue is no longer shown.
+  const canWorkPutaway = canAssignPkm || canConfirmInward;
   // Supervisors confirm old pending pullouts; pickers work the picks of posted ones - both reach the Pullout queue.
   const canConfirmPullout = permissions.includes("Pullout.Confirm") || permissions.includes("Pullout.Pick");
   // Mirrors the web app's naming: the picker-facing queue is "Picker Pick-list" (/pullout-picker),
@@ -73,19 +76,12 @@ export default function HomeScreen() {
       route: "/inward-history",
       fetchCount: async (token: string) => (await getInwardHistory(token, { pageSize: 1 })).totalCount,
     },
-    canAssignPkm && {
+    canWorkPutaway && {
       key: "putaway",
       icon: "file-tray-stacked-outline",
-      label: "To put away",
+      label: canConfirmInward ? "Put-away review" : "To put away",
       route: "/picker-putaway-queue",
       fetchCount: async (token: string) => (await getPickerPutawayQueue(token, { pageSize: 1 })).totalCount,
-    },
-    canConfirmInward && {
-      key: "inward-confirm",
-      icon: "cube-outline",
-      label: "Putaway queue",
-      route: "/inward-putaway-queue",
-      fetchCount: async (token: string) => (await getInwardHistory(token, { pageSize: 1 })).totalCount,
     },
     canConfirmPullout && {
       key: "pullout",
@@ -117,23 +113,14 @@ export default function HomeScreen() {
       subtitle: "Pending GRNs, assign PKM",
       route: "/inward-history",
     },
-    canAssignPkm && {
+    canWorkPutaway && {
       key: "picker-putaway",
       icon: "pricetag-outline",
       color: "#7c3aed",
       softColor: "#f3e8ff",
-      title: "Picker put-away",
-      subtitle: "Location, qty and PKM",
+      title: canConfirmInward ? "Inward (Put-away)" : "Picker put-away",
+      subtitle: canConfirmInward ? "Edit, record damage / excess, confirm" : "Location, qty and PKM",
       route: "/picker-putaway-queue",
-    },
-    canConfirmInward && {
-      key: "inward-putaway-queue",
-      icon: "cube-outline",
-      color: colors.warningSolid,
-      softColor: colors.warningSoft,
-      title: "Inward putaway queue",
-      subtitle: "Edit location, confirm GRNs",
-      route: "/inward-putaway-queue",
     },
     canConfirmPullout && {
       key: "pullout-queue",

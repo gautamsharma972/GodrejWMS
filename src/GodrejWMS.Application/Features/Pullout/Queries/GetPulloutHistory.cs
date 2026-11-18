@@ -18,7 +18,9 @@ public sealed record GetPulloutHistoryQuery(
     int PageNumber = 1,
     int PageSize = 20,
     bool? IsConfirmed = null,
-    bool? IsRejected = null) : IRequest<PaginatedList<PulloutHistoryDto>>;
+    bool? IsRejected = null,
+    /// <summary>Hides pullouts with nothing to pick ("0 of 0 picked": no pick and no picked quantity). Set by the mobile pick queue.</summary>
+    bool OnlyWithPicks = false) : IRequest<PaginatedList<PulloutHistoryDto>>;
 
 public sealed class GetPulloutHistoryHandler(IApplicationDbContext db)
     : IRequestHandler<GetPulloutHistoryQuery, PaginatedList<PulloutHistoryDto>>
@@ -34,6 +36,11 @@ public sealed class GetPulloutHistoryHandler(IApplicationDbContext db)
                 : transactions.Where(t => !(t.IsConfirmed && (t.ConfirmedAt != null || t.UploadHash == null)) && !t.IsRejected);
         if (request.IsRejected == true)
             transactions = transactions.Where(t => t.IsRejected);
+
+        if (request.OnlyWithPicks)
+        {
+            transactions = transactions.Where(t => t.Lines.Any(l => l.Picks.Any() || l.PickedQuantityBoxes > 0));
+        }
 
         if (request.WarehouseId.HasValue)
         {

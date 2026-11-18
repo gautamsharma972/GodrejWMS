@@ -65,7 +65,9 @@ public sealed class PickerPlaceInwardPutawayHandler(
 {
     public async Task<PickerPlaceInwardPutawayResult> Handle(PickerPlaceInwardPutawayCommand request, CancellationToken cancellationToken)
     {
-        if (!await permissions.HasPermissionAsync(PermissionKeys.Inward.AssignPkm, cancellationToken))
+        // A picker submits put-aways; a supervisor (Inward.Confirm) may submit or correct them too, in the picker's absence.
+        if (!await permissions.HasPermissionAsync(PermissionKeys.Inward.AssignPkm, cancellationToken)
+            && !await permissions.HasPermissionAsync(PermissionKeys.Inward.Confirm, cancellationToken))
         {
             throw new InvalidOperationException("You do not have permission to update put-away locations.");
         }
@@ -162,7 +164,11 @@ public sealed class PickerPlaceInwardPutawayHandler(
         }
 
         // The put-away of a material + PKM can never exceed what the inbound asked for: boxes found beyond it are recorded as excess material, not put away.
-        var capLines = transaction.Lines.Where(l => l.MaterialId == line.MaterialId && l.MfgMonth == pkm).ToList();
+        // For an "Inward without PKM" GRN the PKM is only assigned by this very submit: the material's unassigned lines are then part of the same
+        // inbound, so the cap holds from the first submit (not only once a line carries the PKM).
+        var capLines = transaction.Lines
+            .Where(l => l.MaterialId == line.MaterialId && (l.MfgMonth == pkm || (line.MfgMonth is null && l.MfgMonth is null)))
+            .ToList();
         if (capLines.Count > 0)
         {
             var inboundQuantity = capLines.Sum(l => l.RequestedQuantityBoxes);
@@ -195,7 +201,7 @@ public sealed class PickerPlaceInwardPutawayHandler(
         }
 
         var accountedByRecords = await InwardVariances.AccountedAsync(db, transaction.Id, cancellationToken);
-        foreach (var touched in transaction.Lines.Where(l => l == line || l.Putaways.Any(p => p == putaway)).ToList())
+        foreach (var touched in transaction.Lines.Where(l => l == line || l == putaway.InwardTransactionLine).ToList())
         {
             InwardVariances.RefreshLineStatus(touched, touched.MfgMonth is { } m ? accountedByRecords.GetValueOrDefault((touched.MaterialId, m)) : 0m);
         }
@@ -445,8 +451,15 @@ public sealed class PickerPlaceInwardPutawayHandler(
             transaction.Lines.Add(destination);
         }
 
-        line.Putaways.Remove(putaway);
-        destination.Putaways.Add(putaway);
+        // Re-parent ONLY through the row's own navigation and let EF fix up both collections. Taking the row out of the old line's collection and adding it
+        // to the new one by hand makes EF see an orphan and DELETE the put-away row (found on MySQL: the picker assigning a PKM to one of several
+        // locations of a line made that location vanish, taking its boxes out of the put-away list).
+        putaway.InwardTransactionLine = destination;
+        if (destination.Id != 0)
+        {
+            putaway.InwardTransactionLineId = destination.Id;
+        }
+
         // The ordered quantity of this location moves with it; only the boxes actually put away count as allocated.
         destination.RequestedQuantityBoxes += originalQuantity;
         destination.AllocatedQuantityBoxes += quantity;

@@ -362,4 +362,66 @@ public class MySqlSupervisorFlowTests
             await db.Database.EnsureDeletedAsync();
         }
     }
+
+    [MySqlFact]
+    public async Task InwardWithoutPkm_AssigningAPkm_FromAFreshRequestContext_KeepsEveryRow_OnMySql()
+    {
+        // Like the mobile API: every request gets its own context, so nothing from the upload is tracked when the picker submits.
+        var database = $"godrejwms_it_{Guid.NewGuid():N}"[..30];
+        var (db, _, m1, _) = await SetupAsync(database);
+        await using var _ = db;
+        try
+        {
+            await new SubmitInwardWithoutPkmHandler(
+                    db, TestServices.Placement(db, new PalletAllocationService(db, new SvcClock())), TestServices.Uow(db), new SvcClock(), new SvcUser())
+                .Handle(new SubmitInwardWithoutPkmCommand([new SubmitInwardWithoutPkmLine(m1.MaterialNumber, 120)], WarehouseId: 1), default);
+            var rows = db.InwardPutaways.AsNoTracking().OrderBy(p => p.Id).ToList();
+
+            await using (var request = Open(database))
+            {
+                var place = new PickerPlaceInwardPutawayHandler(request, TestServices.Posting(request), TestServices.Git(request), TestServices.Uow(request), new AllowAll(), new SvcUser(), new SvcClock());
+                await place.Handle(new PickerPlaceInwardPutawayCommand(rows[0].Id, 50, "NOV|2026", rows[0].PalletPositionId, null, AcknowledgeWarning: true), default);
+            }
+
+            // The location that got its PKM is still there (before the fix it was deleted, taking 50 boxes out of the put-away list).
+            await using var check = Open(database);
+            var after = check.InwardPutaways.AsNoTracking().OrderBy(p => p.Id).ToList();
+            Assert.Equal(3, after.Count);
+            Assert.Equal(120, after.Sum(p => p.QuantityBoxes));
+            Assert.Equal(202611, check.InwardTransactionLines.AsNoTracking().Single(l => l.Id == after[0].InwardTransactionLineId).MfgMonth);
+        }
+        finally
+        {
+            await db.Database.EnsureDeletedAsync();
+        }
+    }
+
+    [MySqlFact]
+    public async Task InwardWithoutPkm_AssigningAPkmToOneOfSeveralRows_KeepsEveryRow_OnMySql()
+    {
+        var database = $"godrejwms_it_{Guid.NewGuid():N}"[..30];
+        var (db, _, m1, _) = await SetupAsync(database);
+        await using var _ = db;
+        try
+        {
+            await new SubmitInwardWithoutPkmHandler(
+                    db, TestServices.Placement(db, new PalletAllocationService(db, new SvcClock())), TestServices.Uow(db), new SvcClock(), new SvcUser())
+                .Handle(new SubmitInwardWithoutPkmCommand([new SubmitInwardWithoutPkmLine(m1.MaterialNumber, 120)], WarehouseId: 1), default);
+            var rows = db.InwardPutaways.AsNoTracking().OrderBy(p => p.Id).ToList();
+            Assert.Equal(3, rows.Count);
+
+            var place = new PickerPlaceInwardPutawayHandler(db, TestServices.Posting(db), TestServices.Git(db), TestServices.Uow(db), new AllowAll(), new SvcUser(), new SvcClock());
+            await place.Handle(new PickerPlaceInwardPutawayCommand(rows[0].Id, 50, "NOV|2026", rows[0].PalletPositionId, null, AcknowledgeWarning: true), default);
+
+            Assert.Equal(3, db.InwardPutaways.AsNoTracking().Count()); // the location that got its PKM must still be there
+            Assert.Equal(120, db.InwardPutaways.AsNoTracking().Sum(p => p.QuantityBoxes));
+            var tooMany = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                place.Handle(new PickerPlaceInwardPutawayCommand(rows[1].Id, 80, "NOV|2026", rows[1].PalletPositionId, null, AcknowledgeWarning: true), default));
+            Assert.Contains("more than the 120", tooMany.Message);
+        }
+        finally
+        {
+            await db.Database.EnsureDeletedAsync();
+        }
+    }
 }

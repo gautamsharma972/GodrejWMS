@@ -27,7 +27,7 @@ public sealed class PermissionAuthorizationHandler(IApplicationDbContextFactory 
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var granted = await db.RolePermissions
-            .AnyAsync(p => roles.Contains(p.RoleName) && p.PermissionKey == requirement.PermissionKey && p.IsGranted);
+            .AnyAsync(p => roles.Contains(p.RoleName) && requirement.PermissionKeys.Contains(p.PermissionKey) && p.IsGranted);
 
         if (granted)
         {

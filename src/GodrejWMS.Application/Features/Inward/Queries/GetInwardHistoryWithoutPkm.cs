@@ -25,7 +25,9 @@ public sealed class GetInwardHistoryWithoutPkmHandler(IApplicationDbContext db)
     public Task<PaginatedList<InwardHistoryDto>> Handle(GetInwardHistoryWithoutPkmQuery request, CancellationToken cancellationToken)
     {
         var transactions = db.InwardTransactions.AsNoTracking()
+            // A GRN with no location or no boxes ("0 locations, 0 boxes") has nothing to assign or put away, so it is not listed.
             .Where(t => t.IsPkmless && !t.IsRejected
+                && t.Lines.SelectMany(l => l.Putaways).Any(p => p.QuantityBoxes > 0)
                 && !(t.Lines.SelectMany(l => l.Putaways).Any() && t.Lines.SelectMany(l => l.Putaways).All(p => p.IsConfirmed)));
 
         if (request.WarehouseId.HasValue)

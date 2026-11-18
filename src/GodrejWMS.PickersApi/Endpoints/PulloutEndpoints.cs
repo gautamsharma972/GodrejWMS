@@ -26,7 +26,8 @@ public static class PulloutEndpoints
                     PageNumber: pageNumber <= 0 ? 1 : pageNumber,
                     PageSize: pageSize <= 0 ? 20 : pageSize,
                     IsConfirmed: false,
-                    IsRejected: false);
+                    IsRejected: false,
+                    OnlyWithPicks: true);
                 return Results.Ok(await mediator.Send(query, cancellationToken));
             })
             .RequireAuthorization("Permission:" + PermissionKeys.Pullout.View)
@@ -86,7 +87,7 @@ public static class PulloutEndpoints
                     var move = request.MoveRemaining is { } m ? new PulloutRemainderMove(m.DestinationPalletPositionId, m.QuantityBoxes) : null;
                     return Results.Ok(await mediator.Send(new ConfirmPulloutPickCommand(pickId, request.PickedQuantityBoxes, move), cancellationToken));
                 }))
-            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick + "|" + PermissionKeys.Pullout.Confirm)
             .WithName("ConfirmPulloutPick");
 
         group.MapGet("/pullout/picker/queue", async (
@@ -98,7 +99,7 @@ public static class PulloutEndpoints
                 await ApiExceptionMapping.RunAsync(async () =>
                     Results.Ok(await mediator.Send(new GetPickerPendingPulloutsQuery(
                         search, pageNumber <= 0 ? 1 : pageNumber, pageSize <= 0 ? 20 : pageSize), cancellationToken))))
-            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick + "|" + PermissionKeys.Pullout.Confirm)
             .WithName("GetPickerPulloutQueue");
 
         group.MapPost("/pullout/{id:int}/confirm-picklist", async (
@@ -137,7 +138,7 @@ public static class PulloutEndpoints
                 CancellationToken cancellationToken) =>
                 await ApiExceptionMapping.RunAsync(async () =>
                     Results.Ok(await mediator.Send(new GetPickRemainderQuery(pickId), cancellationToken))))
-            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick + "|" + PermissionKeys.Pullout.Confirm)
             .WithName("GetPulloutPickRemainder");
 
         group.MapGet("/pullout/picks/{pickId:int}/relocation-suggestions", async (
@@ -147,7 +148,7 @@ public static class PulloutEndpoints
                 CancellationToken cancellationToken) =>
                 await ApiExceptionMapping.RunAsync(async () =>
                     Results.Ok(await mediator.Send(new GetRelocationSuggestionsQuery(pickId, quantity), cancellationToken))))
-            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick + "|" + PermissionKeys.Pullout.Confirm)
             .WithName("GetPulloutRelocationSuggestions");
 
         group.MapGet("/pullout/picker/pick-options", async (
@@ -162,7 +163,7 @@ public static class PulloutEndpoints
                     var query = new GetPulloutPickChangeOptionsQuery(referenceNumber, materialNumber, currentLocationCode, mfgMonthLabel);
                     return Results.Ok(await mediator.Send(query, cancellationToken));
                 }))
-            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick + "|" + PermissionKeys.Pullout.Confirm)
             .WithName("GetPulloutPickerPickOptions");
 
         group.MapPost("/pullout/picker/change-pick-location", async (
@@ -171,7 +172,7 @@ public static class PulloutEndpoints
                 CancellationToken cancellationToken) =>
                 await ApiExceptionMapping.RunAsync(async () =>
                     Results.Ok(await mediator.Send(command, cancellationToken))))
-            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick)
+            .RequireAuthorization("Permission:" + PermissionKeys.Pullout.Pick + "|" + PermissionKeys.Pullout.Confirm)
             .WithName("PickerChangePulloutPickLocation");
 
         return group;

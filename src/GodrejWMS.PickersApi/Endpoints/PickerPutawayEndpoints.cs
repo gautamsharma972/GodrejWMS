@@ -40,7 +40,7 @@ public static class PickerPutawayEndpoints
                     PageSize: pageSize <= 0 ? 10 : pageSize);
                 return Results.Ok(await mediator.Send(query, cancellationToken));
             })
-            .RequireAuthorization("Permission:" + PermissionKeys.Inward.AssignPkm)
+            .RequireAuthorization("Permission:" + PermissionKeys.Inward.AssignPkm + "|" + PermissionKeys.Inward.Confirm)
             .WithName("GetPickerPutawayQueue");
 
         group.MapGet("/picker-putaway/location-options", async (
@@ -48,7 +48,7 @@ public static class PickerPutawayEndpoints
                 CancellationToken cancellationToken) =>
                 await ApiExceptionMapping.RunAsync(async () =>
                     Results.Ok(await mediator.Send(new GetAopLocationOptionsQuery(), cancellationToken))))
-            .RequireAuthorization("Permission:" + PermissionKeys.Inward.AssignPkm)
+            .RequireAuthorization("Permission:" + PermissionKeys.Inward.AssignPkm + "|" + PermissionKeys.Inward.Confirm)
             .WithName("GetPickerPutawayLocationOptions");
 
         group.MapPost("/picker-putaway/putaways/{putawayId:int}/place", async (
@@ -67,7 +67,7 @@ public static class PickerPutawayEndpoints
                         request.AcknowledgeWarning);
                     return Results.Ok(await mediator.Send(command, cancellationToken));
                 }))
-            .RequireAuthorization("Permission:" + PermissionKeys.Inward.AssignPkm)
+            .RequireAuthorization("Permission:" + PermissionKeys.Inward.AssignPkm + "|" + PermissionKeys.Inward.Confirm)
             .WithName("PlacePickerPutaway");
 
         group.MapPost("/picker-putaway/{transactionId:int}/confirm", async (
@@ -123,7 +123,7 @@ public static class PickerPutawayEndpoints
                 CancellationToken cancellationToken = default) =>
                 await ApiExceptionMapping.RunAsync(async () =>
                     Results.Ok(await mediator.Send(new Application.Features.Materials.Queries.GetMaterialsQuery(
-                        Search: search, PageNumber: pageNumber <= 0 ? 1 : pageNumber, PageSize: pageSize <= 0 ? 10 : pageSize), cancellationToken))))
+                        Search: search, IsActive: true, PageNumber: pageNumber <= 0 ? 1 : pageNumber, PageSize: pageSize <= 0 ? 10 : pageSize), cancellationToken))))
             .RequireAuthorization("Permission:" + PermissionKeys.Inward.Confirm)
             .WithName("SupervisorSearchMaterials");
 

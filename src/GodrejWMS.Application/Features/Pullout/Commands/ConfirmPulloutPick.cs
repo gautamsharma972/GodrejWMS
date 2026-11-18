@@ -57,7 +57,9 @@ public sealed class ConfirmPulloutPickHandler(
 {
     public async Task<ConfirmPulloutPickResult> Handle(ConfirmPulloutPickCommand request, CancellationToken cancellationToken)
     {
-        if (!await permissions.HasPermissionAsync(PermissionKeys.Pullout.Pick, cancellationToken))
+        // A picker submits picks; a supervisor (Pullout.Confirm) may submit or correct them too, in the picker's absence.
+        if (!await permissions.HasPermissionAsync(PermissionKeys.Pullout.Pick, cancellationToken)
+            && !await permissions.HasPermissionAsync(PermissionKeys.Pullout.Confirm, cancellationToken))
         {
             throw new InvalidOperationException("You do not have permission to confirm picks.");
         }

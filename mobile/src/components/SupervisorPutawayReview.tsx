@@ -10,6 +10,7 @@ import { PickerLocationPickerModal, type PickerLocationOption } from "./PickerLo
 import { AppIcon } from "./ui/AppIcon";
 import { Button } from "./ui/Button";
 import { FullScreenModal } from "./ui/FullScreenModal";
+import { OptionListSheet } from "./ui/OptionListSheet";
 import { StatusBadge } from "./ui/StatusBadge";
 import { TextField } from "./ui/TextField";
 
@@ -34,6 +35,11 @@ const TYPE_TONE: Record<number, "danger" | "warning" | "info"> = {
   [InwardVarianceType.Mismatch]: "warning",
   [InwardVarianceType.Excess]: "info",
 };
+
+const MONTH_LABELS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+const CURRENT_YEAR = new Date().getFullYear();
+// Same range as the picker's PKM year list.
+const YEAR_OPTIONS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 3 + i);
 
 const RECORD_TYPES: InwardVarianceTypeValue[] = [InwardVarianceType.Damage, InwardVarianceType.Shortage, InwardVarianceType.Mismatch];
 
@@ -62,7 +68,11 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
 
   // ---- excess form
   const [material, setMaterial] = useState<MaterialDto | null>(null);
-  const [pkmText, setPkmText] = useState("");
+  // PKM is chosen as a year and a month (like the picker's put-away), never typed.
+  const [pkmYear, setPkmYear] = useState(0);
+  const [pkmMonth, setPkmMonth] = useState(0);
+  const [showYearPicker, setShowYearPicker] = useState(false);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [location, setLocation] = useState<PickerLocationOption | null>(null);
   const [excessQty, setExcessQty] = useState("");
   const [excessRemarks, setExcessRemarks] = useState("");
@@ -76,7 +86,7 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
 
   const reset = () => {
     setRowId(null); setType(InwardVarianceType.Damage); setQtyText(""); setRemarks("");
-    setMaterial(null); setPkmText(""); setLocation(null); setExcessQty(""); setExcessRemarks(""); setWarning(null); setError(null);
+    setMaterial(null); setPkmYear(0); setPkmMonth(0); setLocation(null); setExcessQty(""); setExcessRemarks(""); setWarning(null); setError(null);
   };
 
   const submitRecord = async () => {
@@ -104,7 +114,7 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
     try {
       const result = await recordExcessMaterial(token, detail.id, {
         materialId: material.id,
-        mfgMonthText: pkmText.trim(),
+        mfgMonthText: `${MONTH_LABELS[pkmMonth - 1]}|${pkmYear}`,
         palletPositionId: location.id,
         quantityBoxes: Number(excessQty),
         remarks: excessRemarks.trim(),
@@ -139,7 +149,7 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
   };
 
   const canSaveRecord = rowId != null && Number(qtyText) > 0 && remarks.trim().length > 0;
-  const canSaveExcess = material != null && location != null && pkmText.trim().length > 0 && Number(excessQty) > 0 && excessRemarks.trim().length > 0;
+  const canSaveExcess = material != null && location != null && pkmYear > 0 && pkmMonth > 0 && Number(excessQty) > 0 && excessRemarks.trim().length > 0;
   const records = detail.variances ?? [];
 
   return (
@@ -209,7 +219,23 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
               {material ? `${material.materialNumber} · ${material.description}` : "Select material code"}
             </Text>
           </TouchableOpacity>
-          <TextField label="PKM" value={pkmText} onChangeText={setPkmText} placeholder="e.g. OCT|2026" autoCapitalize="characters" />
+          <Text style={styles.label}>PKM</Text>
+          <View style={styles.pkmRow}>
+            <TouchableOpacity style={styles.pkmButton} onPress={() => setShowYearPicker(true)} activeOpacity={0.72}>
+              <View>
+                <Text style={styles.pkmHint}>YEAR</Text>
+                <Text style={styles.pkmValue}>{pkmYear > 0 ? pkmYear : "Select"}</Text>
+              </View>
+              <AppIcon name="chevron-down" size={17} color={colors.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.pkmButton} onPress={() => setShowMonthPicker(true)} activeOpacity={0.72}>
+              <View>
+                <Text style={styles.pkmHint}>MONTH</Text>
+                <Text style={styles.pkmValue}>{pkmMonth > 0 ? MONTH_LABELS[pkmMonth - 1] : "Select"}</Text>
+              </View>
+              <AppIcon name="chevron-down" size={17} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
           <Text style={styles.label}>LOCATION</Text>
           <TouchableOpacity style={styles.picker} onPress={() => setShowLocations(true)}>
             <Text style={location ? styles.pickerValue : styles.pickerPlaceholder}>{location ? location.locationCode : "Select location"}</Text>
@@ -226,6 +252,20 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
         </ScrollView>
       </FullScreenModal>
 
+      <OptionListSheet
+        visible={showYearPicker}
+        title="PKM year"
+        options={YEAR_OPTIONS.map((year) => ({ value: year, label: String(year) }))}
+        onClose={() => setShowYearPicker(false)}
+        onSelect={(value) => { setPkmYear(value); setShowYearPicker(false); setWarning(null); }}
+      />
+      <OptionListSheet
+        visible={showMonthPicker}
+        title="PKM month"
+        options={MONTH_LABELS.map((label, index) => ({ value: index + 1, label }))}
+        onClose={() => setShowMonthPicker(false)}
+        onSelect={(value) => { setPkmMonth(value); setShowMonthPicker(false); setWarning(null); }}
+      />
       <MaterialPickerModal
         visible={showMaterials}
         token={token}
@@ -263,6 +303,13 @@ const styles = StyleSheet.create({
   choiceQty: { color: colors.textSecondary },
   typeRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
   typeChip: { flex: 1, alignItems: "center", padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md },
+  pkmRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
+  pkmButton: {
+    flex: 1, minHeight: 58, flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: spacing.md, backgroundColor: colors.surfaceAlt,
+  },
+  pkmHint: { fontSize: 9, lineHeight: 12, fontWeight: "800", color: colors.textMuted, letterSpacing: 0.7, marginBottom: 2 },
+  pkmValue: { ...typography.subtitle, color: colors.textPrimary, fontWeight: "800" },
   picker: { padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, marginBottom: spacing.md },
   pickerValue: { color: colors.textPrimary },
   pickerPlaceholder: { color: colors.textMuted },
