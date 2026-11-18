@@ -307,6 +307,7 @@ export interface PickerPulloutDto {
   createdAt: string;
   destination?: string | null;
   vehicleNumber?: string | null;
+  driverNumber?: string | null;
   lineCount: number;
   pickCount: number;
   pickedCount: number;

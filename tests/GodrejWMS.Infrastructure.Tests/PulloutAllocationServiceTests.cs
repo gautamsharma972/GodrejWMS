@@ -367,7 +367,7 @@ public class PulloutAllocationServiceTests
     }
 
     [Fact]
-    public async Task AllocateAsync_PicksPartialPalletsBeforeFullOnes_WithinOnePkm()
+    public async Task AllocateAsync_PrefersFullPalletThenFlipsToPartial_AsRemainingDropsBelowOnePallet()
     {
         var (db, material, positions) = await SeedRackAsync(columns: 3, levels: 1);
         // The material's pallet holds 40: A-01-01 and A-03-01 are full pallets, A-02-01 is a partial one.
@@ -376,14 +376,76 @@ public class PulloutAllocationServiceTests
         db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-03-01"].Id, MfgMonth = 202606, QuantityBoxes = 40 });
         await db.SaveChangesAsync();
 
-        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 30, warehouseId: 1, preview: true);
+        // 45 needed: remaining(45) >= capacity(40) -> takes the full pallet A-01-01 (40), dropping
+        // remaining to 5 < capacity -> preference flips to the partial location A-02-01 for the tail.
+        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 45, warehouseId: 1, preview: true);
 
-        Assert.Equal(["A-02-01", "A-01-01"], result.Picks.Select(p => p.LocationCode).ToArray());
-        Assert.Equal([25m, 5m], result.Picks.Select(p => p.QuantityBoxes).ToArray());
+        Assert.Equal(AllocationStatus.Fulfilled, result.Status);
+        Assert.Equal(["A-01-01", "A-02-01"], result.Picks.Select(p => p.LocationCode).ToArray());
+        Assert.Equal([40m, 5m], result.Picks.Select(p => p.QuantityBoxes).ToArray());
     }
 
     [Fact]
-    public async Task AllocateAsync_FifoOutranksPartialPallets_AndPartialOutranksVirtualFirst()
+    public async Task AllocateAsync_PrefersPartialPalletLocations_WhenRequirementStaysBelowOnePallet()
+    {
+        var (db, material, positions) = await SeedRackAsync(columns: 3, levels: 1);
+        // One full pallet and two partials; the pallet capacity is 40.
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-01-01"].Id, MfgMonth = 202606, QuantityBoxes = 40 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-02-01"].Id, MfgMonth = 202606, QuantityBoxes = 5 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-03-01"].Id, MfgMonth = 202606, QuantityBoxes = 3 });
+        await db.SaveChangesAsync();
+
+        // 6 needed: remaining is always below capacity(40), so both picks come from the partial
+        // locations in column order, and the full pallet A-01-01 is never touched.
+        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 6, warehouseId: 1, preview: true);
+
+        Assert.Equal(AllocationStatus.Fulfilled, result.Status);
+        Assert.Equal(["A-02-01", "A-03-01"], result.Picks.Select(p => p.LocationCode).ToArray());
+        Assert.Equal([5m, 1m], result.Picks.Select(p => p.QuantityBoxes).ToArray());
+    }
+
+    [Fact]
+    public async Task AllocateAsync_FallsBackToPartialPallets_WhenNoFullPalletExistsInTheOldestPkm()
+    {
+        var (db, material, positions) = await SeedRackAsync(columns: 3, levels: 1);
+        // Oldest PKM: two partials only (no full-pallet location here). Newer PKM: a full pallet,
+        // which must NOT be touched - FIFO still outranks the fullness preference and its fallback.
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-01-01"].Id, MfgMonth = 202606, QuantityBoxes = 30 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-02-01"].Id, MfgMonth = 202606, QuantityBoxes = 25 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-03-01"].Id, MfgMonth = 202609, QuantityBoxes = 40 });
+        await db.SaveChangesAsync();
+
+        // 40 needed: remaining(40) >= capacity(40) -> would prefer a full-pallet location, but the
+        // oldest-PKM bucket has none, so it falls back to the partials in that same bucket instead
+        // of failing or jumping ahead to the newer PKM's full pallet.
+        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 40, warehouseId: 1, preview: true);
+
+        Assert.Equal(AllocationStatus.Fulfilled, result.Status);
+        Assert.Equal(["A-01-01", "A-02-01"], result.Picks.Select(p => p.LocationCode).ToArray());
+        Assert.Equal([30m, 10m], result.Picks.Select(p => p.QuantityBoxes).ToArray());
+        Assert.All(result.Picks, p => Assert.Equal(202606, p.MfgMonth));
+    }
+
+    [Fact]
+    public async Task AllocateAsync_FallsBackToFullPalletLocations_WhenNoPartialPalletExistsInThePkm()
+    {
+        var (db, material, positions) = await SeedRackAsync(columns: 2, levels: 1);
+        // Only full-pallet locations (40 each) in this PKM - no partial location to prefer.
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-01-01"].Id, MfgMonth = 202606, QuantityBoxes = 40 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-02-01"].Id, MfgMonth = 202606, QuantityBoxes = 40 });
+        await db.SaveChangesAsync();
+
+        // 10 needed: remaining(10) < capacity(40) -> would prefer a partial-pallet location, but
+        // none exist, so it falls back to the first full-pallet location in column order.
+        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 10, warehouseId: 1, preview: true);
+
+        Assert.Equal(AllocationStatus.Fulfilled, result.Status);
+        Assert.Equal("A-01-01", Assert.Single(result.Picks).LocationCode);
+        Assert.Equal(10m, Assert.Single(result.Picks).QuantityBoxes);
+    }
+
+    [Fact]
+    public async Task AllocateAsync_FifoAndVirtualFirstOutrankTheFullnessPreference()
     {
         var (db, material, positions) = await SeedRackAsync(columns: 3, levels: 1);
         // Oldest PKM: a full pallet. Newer PKM: a partial pallet. FIFO wins, whatever the fullness.
@@ -393,7 +455,9 @@ public class PulloutAllocationServiceTests
         var fifo = await new PulloutAllocationService(db).AllocateAsync(material.Id, 5, warehouseId: 1, preview: true);
         Assert.Equal("A-03-01", Assert.Single(fifo.Picks).LocationCode);
 
-        // Same PKM: a full virtual pallet and a partial physical one - the partial pallet goes first, then the virtual.
+        // Same PKM: a full virtual pallet and a partial physical one - the virtual location goes
+        // first (it outranks fullness) and alone satisfies the whole request, so the physical
+        // partial location is never touched.
         var overflow = positions["A-02-01"];
         overflow.IsVirtual = true;
         overflow.VirtualStatus = VirtualLocationStatus.InUse;
@@ -402,7 +466,8 @@ public class PulloutAllocationServiceTests
         db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-01-01"].Id, MfgMonth = 202606, QuantityBoxes = 20 });
         await db.SaveChangesAsync();
         var mixed = await new PulloutAllocationService(db).AllocateAsync(material.Id, 30, warehouseId: 1, preview: true);
-        Assert.Equal(["A-01-01", "A-02-01"], mixed.Picks.Select(p => p.LocationCode).ToArray());
+        Assert.Equal(["A-02-01"], mixed.Picks.Select(p => p.LocationCode).ToArray());
+        Assert.Equal([30m], mixed.Picks.Select(p => p.QuantityBoxes).ToArray());
     }
 
     [Fact]

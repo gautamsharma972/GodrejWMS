@@ -57,7 +57,7 @@ export default function PulloutQueueScreen() {
             id: p.id,
             referenceNumber: p.referenceNumber,
             createdAt: p.createdAt,
-            summary: `${p.pickedCount} of ${p.pickCount} picked · ${p.totalBoxes} boxes${p.destination ? ` · ${p.destination}` : ""}${p.virtualPickCount > 0 ? ` · ${p.virtualPickCount} virtual` : ""}`,
+            summary: `${p.pickedCount} of ${p.pickCount} picked · ${p.totalBoxes} boxes${p.destination ? ` · ${p.destination}` : ""}${p.vehicleNumber ? ` · ${p.vehicleNumber}` : ""}${p.driverNumber ? ` · ${p.driverNumber}` : ""}${p.virtualPickCount > 0 ? ` · ${p.virtualPickCount} virtual` : ""}`,
             badge: { label: `${p.pickedCount}/${p.pickCount} picked`, tone: p.pickedCount === 0 ? "danger" : "warning" },
           })));
         } else {

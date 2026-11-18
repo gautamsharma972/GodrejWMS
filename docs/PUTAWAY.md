@@ -377,14 +377,23 @@ Because a material code has exactly one design type, "code then design" orders l
 only matters as a tie-break. Grouping by design first (all materials of one design together, then by
 code) would be a one-line change to the sort key.
 
-## 16. Pullout picks follow FIFO, then column by column, bottom to top
+## 16. Pullout picks follow FIFO, then virtual-first, then fullness preference, then column by column
 
-`PulloutAllocationService` used to order picks by PKM and then `PalletPosition.DistancePriority`,
-which is level-major (A-01-01, A-02-01, A-03-01, ...). It now orders by PKM (oldest first), then
-Rack → Column → Level, so within one PKM a column is emptied from Level 1 upward (A-01-01,
-A-01-02, A-01-03, ...) before the next column, mirroring the put-away fill order in §14. When a
-PKM runs out the pick moves on to the next PKM and starts again from the first location that
-holds it. `DistancePriority` is no longer used for picking. Saved (pending) pullouts keep the picks
-they were saved with; use Refresh Picks on the pullout to recompute them in the new order.
-`AllocateAsync_DrainsColumnBottomToTop_BeforeNextColumn_WithinOnePkm` and
+`PulloutAllocationService` orders picks by PKM (oldest first), then - when configured - virtual
+(overflow) locations before physical ones within that PKM, so virtual locations empty out and get
+reused. Within one PKM and virtual tier, it then prefers whichever locations match what's still
+needed: full-pallet locations while the remaining quantity still needs at least one more full
+pallet, partial-pallet locations once it doesn't - re-evaluated after every pick, so the preference
+can flip mid-allocation (e.g. a 45-box pick against a 40-box pallet takes a full pallet first, then
+flips to a partial location for the last 5). If the preferred kind runs out within that PKM/virtual
+tier, the other kind is used instead rather than skipping ahead to a different PKM or virtual tier.
+Finally, within a matching group, locations are drained ground level (Level 1) first across all
+columns, then upward, then by rack and column - mirroring the put-away fill order in §14. When a
+PKM runs out the pick moves on to the next PKM and starts again from the first location that holds
+it. `DistancePriority` is not used for picking. Saved (pending) pullouts keep the picks they were
+saved with; use Refresh Picks on the pullout to recompute them in the new order.
+`AllocateAsync_PrefersFullPalletThenFlipsToPartial_AsRemainingDropsBelowOnePallet`,
+`AllocateAsync_PrefersPartialPalletLocations_WhenRequirementStaysBelowOnePallet`,
+`AllocateAsync_FallsBackToPartialPallets_WhenNoFullPalletExistsInTheOldestPkm`,
+`AllocateAsync_FifoAndVirtualFirstOutrankTheFullnessPreference`, and
 `AllocateAsync_ExhaustsOldestPkmFirst_ThenMovesToNextPkm_EachInColumnOrder` cover it.

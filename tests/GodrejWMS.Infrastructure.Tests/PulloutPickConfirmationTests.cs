@@ -382,6 +382,48 @@ public class PulloutPickConfirmationTests
         Assert.Null(s.Db.PulloutPicks.AsNoTracking().Single().OverrideReason);
     }
 
+    /// <summary>Regression test for the merged-row bug: GetPulloutDetailQuery used to collapse two
+    /// PulloutPick rows sharing one location+PKM into a single display row with the SUMMED
+    /// quantity, while "Confirm pick" could only ever act on the first underlying PickId - so
+    /// confirming the (wrong) summed quantity against one record left the merged row stuck showing
+    /// "To pick" even though a confirm had genuinely succeeded. Each real pick must now come back
+    /// as its own row, so what the picker sees always matches exactly what Confirm pick acts on.</summary>
+    [Fact]
+    public async Task TwoPicksAtTheSameLocationAndPkm_AreNeverMerged_AndConfirmEachIndependently()
+    {
+        var s = await SeedAsync();
+        using var _ = s.Db;
+        var line = s.Db.PulloutTransactionLines.Single();
+        var originalPick = s.Db.PulloutPicks.Single();
+
+        // A second, independent pick for the same line that happens to land at the exact same
+        // location+PKM as the first (e.g. two separate FIFO batches, or a prior "Change location"
+        // that redirected part of the line here) - the scenario the merge bug required.
+        s.Db.PulloutPicks.Add(new PulloutPick
+        {
+            PulloutTransactionLineId = line.Id,
+            PalletPositionId = originalPick.PalletPositionId,
+            MfgMonth = originalPick.MfgMonth,
+            QuantityBoxes = 19
+        });
+        await s.Db.SaveChangesAsync();
+
+        var detailBefore = await new GetPulloutDetailHandler(s.Db).Handle(new GetPulloutDetailQuery(line.PulloutTransactionId), default);
+        var picks = Assert.Single(detailBefore.Lines).Picks;
+        Assert.Equal(2, picks.Count); // not merged into one 64-box row
+        Assert.Equal([45, 19], picks.Select(p => p.QuantityBoxes).OrderDescending());
+
+        // Confirming the first pick for exactly its own planned quantity must not be reported as
+        // done for the second, still-untouched pick.
+        await Handler(s.Db).Handle(new ConfirmPulloutPickCommand(originalPick.Id, 45), default);
+
+        var detailAfter = await new GetPulloutDetailHandler(s.Db).Handle(new GetPulloutDetailQuery(line.PulloutTransactionId), default);
+        var afterPicks = Assert.Single(detailAfter.Lines).Picks;
+        Assert.Equal(2, afterPicks.Count);
+        Assert.NotNull(afterPicks.Single(p => p.PickId == originalPick.Id).PickedAt);
+        Assert.Null(afterPicks.Single(p => p.PickId != originalPick.Id).PickedAt);
+    }
+
     [Fact]
     public async Task ChangingThePickLocation_OfAPostedPullout_HandsBackTheOldSourceAndTakesFromTheNewOne()
     {
