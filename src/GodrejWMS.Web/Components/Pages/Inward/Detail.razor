@@ -72,11 +72,11 @@
                             <i class="bi bi-file-earmark-arrow-down" aria-hidden="true"></i>
                             Download allocation
                         </button>
-                        <a class="btn btn-outline-secondary" href="/inward/@_detail.Id/print" target="_blank" rel="noopener"
-                           title="Open the put-away sheet and unloading sheet as an A4 landscape print view (print or save as PDF)">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="() => _showPrint = true"
+                                title="Show the put-away sheet and unloading sheet as an A4 landscape print view (print or save as PDF)">
                             <i class="bi bi-printer" aria-hidden="true"></i>
                             Print / PDF
-                        </a>
+                        </button>
                     }
                     @if (CanUploadLocationChanges)
                     {
@@ -865,6 +865,11 @@
     }
 </div>
 
+@if (_detail is not null)
+{
+    <PrintOverlay Visible="_showPrint" Url="@($"/inward/{_detail.Id}/print")" Title="@($"{_detail.ReferenceNumber} - put-away and unloading sheets")" OnClose="() => _showPrint = false" />
+}
+
 @code {
     [Parameter] public int TransactionId { get; set; }
 
@@ -1528,6 +1533,8 @@
             _reallocating = false;
         }
     }
+
+    private bool _showPrint;
 
     private async Task DownloadExcelAsync()
     {

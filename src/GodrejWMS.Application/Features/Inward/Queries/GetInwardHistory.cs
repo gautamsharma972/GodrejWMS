@@ -2,6 +2,7 @@ using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Common.Models;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Domain.Enums;
+using GodrejWMS.Domain.Entities;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -91,7 +92,10 @@ public sealed class GetInwardHistoryHandler(IApplicationDbContext db)
                 t.LrNumber,
                 0,
                 0,
-                t.Lines.SelectMany(l => l.Putaways).Count(p => p.PalletPosition.IsVirtual)));
+                t.Lines.SelectMany(l => l.Putaways).Count(p => p.PalletPosition.IsVirtual),
+                t.Lines.Sum(l => (decimal?)l.RequestedQuantityBoxes) ?? 0m,
+                db.InwardLineVariances.Where(v => v.InwardTransactionId == t.Id && v.Type != InwardVarianceType.Excess).Sum(v => (decimal?)v.QuantityBoxes) ?? 0m,
+                db.InwardLineVariances.Where(v => v.InwardTransactionId == t.Id && v.Type == InwardVarianceType.Excess).Sum(v => (decimal?)v.QuantityBoxes) ?? 0m));
 
         return PaginatedList<InwardHistoryDto>.CreateAsync(query, request.PageNumber, request.PageSize);
     }

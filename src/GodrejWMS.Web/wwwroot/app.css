@@ -8298,7 +8298,13 @@ h2 {
 }
 
 /* ---- Printable GRN allocation (put-away sheet + unloading sheet): A4 landscape ---- */
-@page grn-landscape { size: A4 landscape; margin: 10mm; }
+/* 0 page margin: the browser prints its own header / footer (page title, date, URL) only inside the margin, so with none it prints nothing;
+   the sheets draw their own static header / footer (PrintBands) and keep their margins with PrintSpacerFrame. */
+@page grn-landscape { size: A4 landscape; margin: 0; }
+.print-bands { display: none; }
+.print-frame { width: 100%; border-collapse: collapse; }
+.print-frame > thead > tr > td, .print-frame > tbody > tr > td, .print-frame > tfoot > tr > td { padding: 0; border: 0; }
+.print-space-top, .print-space-bottom { height: 0; }
 .grn-print { page: grn-landscape; }
 .grn-print-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
 .grn-print-hint { color: var(--bs-secondary-color, #64748b); font-size: 0.9rem; }
@@ -8318,7 +8324,15 @@ h2 {
 .grn-print-table td.remark-failed { background: #fee2e2; }
 @media print {
     .grn-print-toolbar { display: none !important; }
-    .grn-print-sheet { border: 0; padding: 0; margin: 0; border-radius: 0; }
+    .grn-print-sheet { border: 0; padding: 0 10mm; margin: 0; border-radius: 0; }
+    .print-bands { display: block; }
+    .print-band { position: fixed; left: 10mm; right: 10mm; display: flex; justify-content: space-between; font-size: 8.5pt; color: #374151; }
+    .print-band-top { top: 5mm; }
+    .print-band-bottom { bottom: 5mm; }
+    .print-band strong { letter-spacing: 0.08em; text-transform: uppercase; }
+    .print-space-top, .print-space-bottom { height: 14mm; }
+    .print-frame > thead { display: table-header-group; }
+    .print-frame > tfoot { display: table-footer-group; }
     .grn-print-break { break-before: page; page-break-before: always; }
     .grn-print-table thead { display: table-header-group; }
     .grn-print-table tr { break-inside: avoid; page-break-inside: avoid; }
@@ -8330,3 +8344,13 @@ h2 {
 .grn-print-footer { margin-top: 0.75rem; }
 .grn-print-footer td { height: 28px; }
 .grn-print-delivery { width: 60%; margin-top: 0.5rem; }
+
+/* ---- Print view shown as a full-screen panel over the page (no new tab, no address bar) ---- */
+.print-overlay { position: fixed; inset: 0; z-index: 2000; display: flex; flex-direction: column; background: #e5e7eb; }
+.print-overlay-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.6rem 1rem; background: #fff; border-bottom: 1px solid #d1d5db; }
+.print-overlay-title { margin-right: auto; }
+.print-overlay-hint { color: #64748b; font-size: 0.85rem; }
+.print-overlay-frame { flex: 1; width: 100%; border: 0; background: #fff; }
+@media print {
+    .print-overlay { display: none !important; }
+}

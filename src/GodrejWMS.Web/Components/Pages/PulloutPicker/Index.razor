@@ -4,6 +4,8 @@
 @using GodrejWMS.Application.Common.Models
 @using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Dtos
 @using GodrejWMS.Application.Features.AopDescriptionLocationPreferences.Queries
+@using GodrejWMS.Application.Features.Materials.Dtos
+@using GodrejWMS.Application.Features.Materials.Queries
 @using GodrejWMS.Application.Features.Pullout.Commands
 @using GodrejWMS.Application.Features.Pullout.Dtos
 @using GodrejWMS.Application.Features.Pullout.Queries
@@ -109,13 +111,18 @@
                             <span class="record-code">@item.ReferenceNumber</span>
                             <span class="status-pill @(item.PickedCount == 0 ? "danger" : "warning")">@item.PickedCount of @item.PickCount picked</span>
                         </div>
+                        <dl class="no-pkm-mobile-history-ids">
+                            <div>
+                                <dt>Vehicle No.</dt>
+                                <dd>@(string.IsNullOrWhiteSpace(item.VehicleNumber) ? "-" : item.VehicleNumber)</dd>
+                            </div>
+                        </dl>
                         <div class="no-pkm-mobile-history-meta">
                             <span><i class="bi bi-clock" aria-hidden="true"></i>@item.CreatedAt.ToLocalTime().ToString("dd MMM, hh:mm tt")</span>
                             <span><strong>@item.LineCount</strong> line(s)</span>
                             <span><strong>@item.TotalBoxes.ToString("N0")</strong> boxes</span>
                             @if (!string.IsNullOrWhiteSpace(item.Destination)) { <span>@item.Destination</span> }
-                            @if (!string.IsNullOrWhiteSpace(item.VehicleNumber)) { <span>@item.VehicleNumber</span> }
-                            @if (!string.IsNullOrWhiteSpace(item.DriverNumber)) { <span>@item.DriverNumber</span> }
+                            @if (!string.IsNullOrWhiteSpace(item.DriverNumber)) { <span>Driver @item.DriverNumber</span> }
                             @if (item.VirtualPickCount > 0) { <span class="status-pill info">@item.VirtualPickCount virtual</span> }
                         </div>
                         <div class="no-pkm-mobile-history-actions">
@@ -161,6 +168,10 @@
                     {
                         <div class="loading-panel"><div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div> Loading pick-list...</div>
                     }
+                    else if (_addMode)
+                    {
+                        @AddMaterialForm
+                    }
                     else if (_selected is null)
                     {
                         var rows = Rows();
@@ -181,6 +192,12 @@
                                 </button>
                             }
                         </div>
+                        @if (_canEdit && _detail is { IsRejected: false, PickingConfirmed: false })
+                        {
+                            <button type="button" class="btn btn-outline-primary w-100 mt-3" @onclick="OpenAddMaterialAsync">
+                                <i class="bi bi-plus-circle" aria-hidden="true"></i> Add material to this pick-list
+                            </button>
+                        }
                         @if (!_canConfirm)
                         {
                             <div class="alert alert-info mt-3 mb-0" role="status">
@@ -271,16 +288,19 @@
                                         <div class="pullout-section-heading">
                                             <div>
                                                 <h3 id="remaining-boxes-heading">Move the remaining @RemainingAfter.ToString("0.###") box(es)?</h3>
-                                                <p>Leave them here or choose a destination. Stock moves only when the pick-list is confirmed.</p>
+                                                <p>@(_moveSwitchOn ? "Choose a destination. Stock moves only when the pick-list is confirmed." : $"Off: they stay at {pick.LocationCode}. Turn on to move them.")</p>
                                             </div>
-                                            <span class="pullout-step-badge optional">Optional</span>
+                                            <div class="d-flex align-items-center gap-2">
+                                                <span class="pullout-step-badge optional">Optional</span>
+                                                <div class="form-check form-switch mb-0">
+                                                    <input class="form-check-input" type="checkbox" role="switch" id="move-remaining-switch" style="width:2.6em;height:1.4em;cursor:pointer"
+                                                           checked="@_moveSwitchOn" @onchange="OnMoveSwitchChanged" aria-label="Move the remaining boxes" />
+                                                </div>
+                                            </div>
                                         </div>
+                                        @if (_moveSwitchOn)
+                                        {
                                         <div class="pullout-destination-list">
-                                            <button type="button" class="pullout-destination-option @(!_moveEnabled ? "selected" : null)" @onclick="() => _moveEnabled = false">
-                                                <span class="pullout-option-icon"><i class="bi bi-geo-alt" aria-hidden="true"></i></span>
-                                                <span class="pullout-option-copy"><strong>Leave at @pick.LocationCode</strong><small>Keep the remaining stock in its current location</small></span>
-                                                <span class="pullout-option-check"><i class="bi bi-check-lg" aria-hidden="true"></i></span>
-                                            </button>
                                             @foreach (var suggestion in _suggestions)
                                             {
                                                 <button type="button" class="pullout-destination-option @(_moveEnabled && _destinationId == suggestion.PalletPositionId ? "selected" : null)"
@@ -302,6 +322,7 @@
                                                 <label class="pullout-field-label" for="picklist-move">Boxes to move to <strong>@DestinationCode</strong></label>
                                                 <input id="picklist-move" type="number" inputmode="decimal" min="1" max="@RemainingAfter" step="1" class="form-control form-control-lg" @bind="_moveQty" />
                                             </div>
+                                        }
                                         }
                                     </section>
                                 }
@@ -373,6 +394,149 @@
 </div>
 
 @code {
+    private RenderFragment AddMaterialForm => __builder =>
+    {
+        <button type="button" class="pullout-pick-back" @onclick="CloseAddMaterial"><i class="bi bi-arrow-left" aria-hidden="true"></i> All picks</button>
+        <h3 class="h5">Add material to this pick-list</h3>
+        <p class="small text-muted">Choose the material code and the location to pick it from. The boxes are deducted from that location at once; the new pick still has to be submitted and confirmed.</p>
+        <div class="picker-form-grid">
+            <div class="picker-field">
+                <label>Material code</label>
+                <SearchableMaterialSelect Options="_materials" Value="_addMaterialId" ValueChanged="OnAddMaterialChanged" Placeholder="Search material code or description" />
+            </div>
+            @if (_addMaterialId > 0)
+            {
+                <div class="picker-field">
+                    <label>Pick from location</label>
+                    @if (_addLoading)
+                    {
+                        <div class="loading-panel"><div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div> Loading locations...</div>
+                    }
+                    else if (_addOptions.Count == 0)
+                    {
+                        <div class="alert alert-warning mb-0">No good stock of this material is available to pick in this warehouse.</div>
+                    }
+                    else
+                    {
+                        <div class="d-grid gap-2">
+                            @foreach (var option in _addOptions)
+                            {
+                                <button type="button" class="btn text-start border rounded-3 p-2 d-flex justify-content-between align-items-center @(_addOption?.PalletPositionId == option.PalletPositionId ? "btn-primary" : "btn-outline-primary")"
+                                        @onclick="() => _addOption = option">
+                                    <span><strong>@option.LocationCode</strong> &middot; @option.MfgMonthLabel @if (option.IsVirtual) { <span class="status-pill info ms-1">Virtual</span> }</span>
+                                    <span>@option.QuantityBoxes.ToString("0.###") boxes@(option.BreaksFifo ? " · newer PKM" : "")</span>
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            @if (_addOption is not null)
+            {
+                <div class="picker-field picker-quantity-field">
+                    <label for="add-qty">Quantity <span>(boxes, up to @_addOption.QuantityBoxes.ToString("0.###"))</span></label>
+                    <input id="add-qty" type="number" inputmode="numeric" min="1" max="@_addOption.QuantityBoxes" step="1" class="form-control form-control-lg" @bind="_addQty" @bind:event="oninput" />
+                </div>
+                @if (_addOption.BreaksFifo)
+                {
+                    <div class="picker-field">
+                        <label for="add-reason">Reason for picking a newer PKM first (FIFO)</label>
+                        <input id="add-reason" class="form-control form-control-lg" maxlength="500" @bind="_addReason" @bind:event="oninput" />
+                    </div>
+                }
+            }
+        </div>
+        @if (_addError is not null)
+        {
+            <div class="alert alert-danger" role="alert">@_addError</div>
+        }
+        <div class="picker-form-actions">
+            <button type="button" class="btn btn-outline-secondary btn-lg" @onclick="CloseAddMaterial">Cancel</button>
+            <button type="button" class="btn btn-primary btn-lg" disabled="@(_addSaving || !CanSaveAdd)" @onclick="SaveAddMaterialAsync">
+                @(_addSaving ? "Adding..." : "Add to pick-list")
+            </button>
+        </div>
+    };
+
+    // ---- supervisor: add material to the open pick-list
+    private bool _addMode;
+    private IReadOnlyList<MaterialDto> _materials = [];
+    private int _addMaterialId;
+    private IReadOnlyList<PulloutAddOptionDto> _addOptions = [];
+    private PulloutAddOptionDto? _addOption;
+    private decimal _addQty;
+    private string _addReason = string.Empty;
+    private string? _addError;
+    private bool _addLoading;
+    private bool _addSaving;
+
+    private bool CanSaveAdd => _addOption is not null && _addQty > 0 && _addQty == Math.Truncate(_addQty) && _addQty <= _addOption.QuantityBoxes
+        && (!_addOption.BreaksFifo || !string.IsNullOrWhiteSpace(_addReason));
+
+    private async Task OpenAddMaterialAsync()
+    {
+        if (_materials.Count == 0)
+        {
+            _materials = (await RunDbOperationAsync(() => Mediator.Send(new GetMaterialsQuery(IsActive: true, PageSize: 5000)))).Items;
+        }
+
+        _addMaterialId = 0; _addOptions = []; _addOption = null; _addQty = 0; _addReason = string.Empty; _addError = null;
+        _addMode = true;
+    }
+
+    private void CloseAddMaterial()
+    {
+        _addMode = false;
+        _addError = null;
+    }
+
+    private async Task OnAddMaterialChanged(int materialId)
+    {
+        _addMaterialId = materialId;
+        _addOption = null;
+        _addOptions = [];
+        _addError = null;
+        if (materialId <= 0 || _detail is null) return;
+        _addLoading = true;
+        try
+        {
+            var pulloutId = _detail.Id;
+            _addOptions = await RunDbOperationAsync(() => Mediator.Send(new GetPulloutAddOptionsQuery(pulloutId, materialId)));
+        }
+        catch (Exception ex)
+        {
+            _addError = ex.Message;
+        }
+        finally
+        {
+            _addLoading = false;
+        }
+    }
+
+    private async Task SaveAddMaterialAsync()
+    {
+        if (_addSaving || _detail is null || _addOption is null || !CanSaveAdd) return;
+        _addSaving = true;
+        _addError = null;
+        try
+        {
+            var pulloutId = _detail.Id;
+            var command = new AddPulloutPickCommand(pulloutId, _addMaterialId, _addOption.PalletPositionId, _addQty, _addOption.BreaksFifo ? _addReason.Trim() : null);
+            var result = await RunDbOperationAsync(() => Mediator.Send(command));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast", $"Added {result.AddedBoxes:0.###} box(es) from {result.LocationCode} to {result.ReferenceNumber}.", "success");
+            _detail = await RunDbOperationAsync(() => Mediator.Send(new GetPulloutDetailQuery(pulloutId)));
+            _addMode = false;
+        }
+        catch (Exception ex)
+        {
+            _addError = ex.Message;
+        }
+        finally
+        {
+            _addSaving = false;
+        }
+    }
+
     private PaginatedList<PickerPulloutDto>? _list;
     private int _pageNumber = 1;
     private string _search = string.Empty;
@@ -394,12 +558,27 @@
     private string? _confirmError;
     private bool _confirmingPicklist;
     private bool _canConfirm;
+    private bool _canEdit;
 
     // Confirm form
     private decimal _qty;
     private PickRemainderDto? _remainder;
     private IReadOnlyList<RelocationSuggestionDto> _suggestions = [];
     private bool _moveEnabled;
+    private bool _moveSwitchOn; // "Move the remaining boxes" switch: off = leave them where they are
+
+    private void OnMoveSwitchChanged(ChangeEventArgs args)
+    {
+        _moveSwitchOn = args.Value is true;
+        if (!_moveSwitchOn)
+        {
+            _moveEnabled = false;
+        }
+        else if (_destinationId > 0)
+        {
+            _moveEnabled = true;
+        }
+    }
     private int _destinationId;
     private int _otherDestinationId;
     private decimal _moveQty;
@@ -432,6 +611,7 @@
     protected override async Task OnInitializedAsync()
     {
         _canConfirm = await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Pullout.Confirm);
+        _canEdit = await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Pullout.Edit);
         _locationOptions = await RunDbOperationAsync(() => Mediator.Send(new GetAopLocationOptionsQuery()));
         await LoadPageAsync(1);
     }
@@ -489,6 +669,7 @@
         _detail = null;
         _detailError = null;
         _selected = null;
+        _addMode = false;
     }
 
     private void BackToList()
@@ -505,6 +686,7 @@
         // A pick that was already confirmed opens with what the picker chose (it stays editable until the pick-list is confirmed).
         _qty = row.Pick.PickedQuantityBoxes ?? row.Pick.QuantityBoxes;
         _moveEnabled = row.Pick.MoveToPalletPositionId is > 0;
+        _moveSwitchOn = _moveEnabled;
         _destinationId = row.Pick.MoveToPalletPositionId ?? 0;
         if (row.Pick.MoveToPalletPositionId is int chosenId && row.Pick.MoveToLocationCode is not null)
         {

@@ -3,6 +3,7 @@ using GodrejWMS.Application.Common.Models;
 using GodrejWMS.Application.Common.Permissions;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Domain.Enums;
+using GodrejWMS.Domain.Entities;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -56,7 +57,10 @@ public sealed class GetPickerPendingInwardHandler(IApplicationDbContext db, IPer
                 LrNumber: t.LrNumber,
                 LocationCount: t.Lines.SelectMany(l => l.Putaways).Count(),
                 SubmittedLocationCount: t.Lines.SelectMany(l => l.Putaways).Count(p => p.IsPickerPlaced || (p.IsConfirmed && t.PostedAt == null)),
-                VirtualLocationCount: t.Lines.SelectMany(l => l.Putaways).Count(p => p.PalletPosition.IsVirtual)));
+                VirtualLocationCount: t.Lines.SelectMany(l => l.Putaways).Count(p => p.PalletPosition.IsVirtual),
+                InboundBoxes: t.Lines.Sum(l => (decimal?)l.RequestedQuantityBoxes) ?? 0m,
+                RecordedBoxes: db.InwardLineVariances.Where(v => v.InwardTransactionId == t.Id && v.Type != InwardVarianceType.Excess).Sum(v => (decimal?)v.QuantityBoxes) ?? 0m,
+                ExcessBoxes: db.InwardLineVariances.Where(v => v.InwardTransactionId == t.Id && v.Type == InwardVarianceType.Excess).Sum(v => (decimal?)v.QuantityBoxes) ?? 0m));
 
         return await PaginatedList<InwardHistoryDto>.CreateAsync(query, request.PageNumber, request.PageSize);
     }

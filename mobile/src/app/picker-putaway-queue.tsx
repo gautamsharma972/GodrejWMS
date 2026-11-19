@@ -13,6 +13,7 @@ import { SearchField } from "../components/ui/SearchField";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { colors, spacing, typography } from "../theme";
 import type { InwardHistoryDto } from "../types/api";
+import { IdTiles } from "../components/IdTiles";
 import { allocationStatusLabel, allocationStatusTone, formatDateTime } from "../utils/status";
 
 function allSubmitted(item: InwardHistoryDto): boolean {
@@ -30,6 +31,20 @@ function submissionLabel(item: InwardHistoryDto): string {
 }
 
 const PAGE_SIZE = 20;
+
+/** "945 / 947 boxes": good boxes put away over the inbound quantity, so boxes recorded as damage / shortage / mismatch are visible as the gap. */
+function boxesSummary(item: InwardHistoryDto): string {
+  const inbound = item.inboundBoxes ?? 0;
+  const showInbound = inbound > 0 && (inbound !== item.totalQuantityBoxes || (item.recordedBoxes ?? 0) > 0);
+  return showInbound ? `${item.totalQuantityBoxes} / ${inbound} boxes` : `${item.totalQuantityBoxes} boxes`;
+}
+
+function recordedSummary(item: InwardHistoryDto): string | null {
+  const parts: string[] = [];
+  if ((item.recordedBoxes ?? 0) > 0) parts.push(`${item.recordedBoxes} damaged / short / mismatch`);
+  if ((item.excessBoxes ?? 0) > 0) parts.push(`+${item.excessBoxes} excess`);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
 
 export default function PickerPutawayQueueScreen() {
   const { token } = useAuth();
@@ -126,9 +141,11 @@ export default function PickerPutawayQueueScreen() {
               </View>
               <View style={styles.progressRow}>
                 <StatusBadge label={submissionLabel(item)} tone={submissionTone(item)} />
-                <Text style={styles.boxes}>{item.totalQuantityBoxes} boxes</Text>
+                <Text style={styles.boxes}>{boxesSummary(item)}</Text>
               </View>
-              <Text style={styles.meta}>{formatDateTime(item.createdAt)} · {item.lineCount} lines{item.vehicleNumber ? ` · ${item.vehicleNumber}` : ""}</Text>
+              {recordedSummary(item) && <Text style={styles.recorded}>{recordedSummary(item)}</Text>}
+              <IdTiles items={[{ label: "Vehicle No.", value: item.vehicleNumber }, { label: "LR No.", value: item.lrNumber }]} />
+              <Text style={styles.meta}>{formatDateTime(item.createdAt)} · {item.lineCount} lines</Text>
             </Card>
           )}
           ListEmptyComponent={<EmptyState icon="checkmark-circle-outline" title="Nothing waiting" subtitle="No GRN is waiting for put-away." />}
@@ -152,5 +169,6 @@ const styles = StyleSheet.create({
   reference: { ...typography.subtitle, color: colors.textPrimary, flex: 1 },
   progressRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: spacing.sm, paddingLeft: 40 },
   boxes: { ...typography.caption, color: colors.textPrimary, fontWeight: "800" },
+  recorded: { ...typography.caption, color: colors.warningText, marginTop: spacing.xs },
   meta: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.sm, paddingLeft: 40 },
 });

@@ -505,6 +505,12 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("ActualMaterialId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ActualMfgMonth")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -515,6 +521,9 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Property<string>("CreatedByUserName")
                         .HasMaxLength(256)
                         .HasColumnType("varchar(256)");
+
+                    b.Property<int?>("DestinationPalletPositionId")
+                        .HasColumnType("int");
 
                     b.Property<int?>("InwardPutawayId")
                         .HasColumnType("int");
@@ -553,6 +562,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasColumnType("longtext");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ActualMaterialId");
+
+                    b.HasIndex("DestinationPalletPositionId");
 
                     b.HasIndex("InwardTransactionLineId");
 
@@ -2612,6 +2625,16 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.InwardLineVariance", b =>
                 {
+                    b.HasOne("GodrejWMS.Domain.Entities.Material", "ActualMaterial")
+                        .WithMany()
+                        .HasForeignKey("ActualMaterialId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GodrejWMS.Domain.Entities.PalletPosition", "DestinationPalletPosition")
+                        .WithMany()
+                        .HasForeignKey("DestinationPalletPositionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("GodrejWMS.Domain.Entities.InwardTransaction", "InwardTransaction")
                         .WithMany()
                         .HasForeignKey("InwardTransactionId")
@@ -2634,6 +2657,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                         .HasForeignKey("PalletPositionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("ActualMaterial");
+
+                    b.Navigation("DestinationPalletPosition");
 
                     b.Navigation("InwardTransaction");
 

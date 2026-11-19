@@ -1,0 +1,11 @@
+@* Wraps a printed sheet in a table whose empty header and footer rows repeat on every printed page, so the content keeps a top and bottom
+   margin on each page even though the page itself has none (see PrintBands). *@
+<table class="print-frame">
+    <thead><tr><td><div class="print-space-top"></div></td></tr></thead>
+    <tbody><tr><td>@ChildContent</td></tr></tbody>
+    <tfoot><tr><td><div class="print-space-bottom"></div></td></tr></tfoot>
+</table>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

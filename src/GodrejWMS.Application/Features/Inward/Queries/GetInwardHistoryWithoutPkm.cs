@@ -2,6 +2,7 @@ using GodrejWMS.Application.Common.Interfaces;
 using GodrejWMS.Application.Common.Models;
 using GodrejWMS.Application.Features.Inward.Dtos;
 using GodrejWMS.Domain.Enums;
+using GodrejWMS.Domain.Entities;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -70,7 +71,13 @@ public sealed class GetInwardHistoryWithoutPkmHandler(IApplicationDbContext db)
             t.IsRejected,
             IsPkmless: true,
             VehicleNumber: t.VehicleNumber,
-            LrNumber: t.LrNumber));
+            LrNumber: t.LrNumber,
+            LocationCount: 0,
+            SubmittedLocationCount: 0,
+            VirtualLocationCount: 0,
+            InboundBoxes: t.Lines.Sum(l => (decimal?)l.RequestedQuantityBoxes) ?? 0m,
+            RecordedBoxes: db.InwardLineVariances.Where(v => v.InwardTransactionId == t.Id && v.Type != InwardVarianceType.Excess).Sum(v => (decimal?)v.QuantityBoxes) ?? 0m,
+            ExcessBoxes: db.InwardLineVariances.Where(v => v.InwardTransactionId == t.Id && v.Type == InwardVarianceType.Excess).Sum(v => (decimal?)v.QuantityBoxes) ?? 0m));
 
         return PaginatedList<InwardHistoryDto>.CreateAsync(query, request.PageNumber, request.PageSize);
     }

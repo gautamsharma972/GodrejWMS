@@ -102,6 +102,14 @@ public class InwardLineVarianceConfiguration : IEntityTypeConfiguration<InwardLi
             .WithMany()
             .HasForeignKey(v => v.PalletPositionId)
             .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(v => v.ActualMaterial)
+            .WithMany()
+            .HasForeignKey(v => v.ActualMaterialId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(v => v.DestinationPalletPosition)
+            .WithMany()
+            .HasForeignKey(v => v.DestinationPalletPositionId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 

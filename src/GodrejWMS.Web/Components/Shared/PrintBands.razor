@@ -1,0 +1,7 @@
+@* The static header and footer of a printed (A4 landscape) sheet: "Godrej WMS" and the document classification "Internal" on every page.
+   They replace the browser's own header / footer (page title, date, the page URL), which the print pages switch off by giving the page a 0 margin;
+   PrintSpacerFrame keeps the content clear of these bands on every page. Visible only when printing. *@
+<div class="print-bands" aria-hidden="true">
+    <div class="print-band print-band-top"><span>Godrej WMS</span><strong>Internal</strong></div>
+    <div class="print-band print-band-bottom"><span>Godrej WMS</span><strong>Internal</strong></div>
+</div>

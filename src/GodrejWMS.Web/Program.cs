@@ -119,18 +119,22 @@ app.Use(async (context, next) =>
 {
     var nonce = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16));
     context.Items["csp-nonce"] = nonce;
+    // The GRN / pullout print views are shown in a frame inside the app (so no new tab with the application URL is opened); only they may be
+    // framed, and only by this same site. Every other page keeps the strict "never framed" rule.
+    var framedBySameSite = System.Text.RegularExpressions.Regex.IsMatch(
+        context.Request.Path.Value ?? string.Empty, @"^/(inward|pullout)/\d+/print/?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     context.Response.OnStarting(() =>
     {
         var headers = context.Response.Headers;
         headers["X-Content-Type-Options"] = "nosniff";
-        headers["X-Frame-Options"] = "DENY";
+        headers["X-Frame-Options"] = framedBySameSite ? "SAMEORIGIN" : "DENY";
         headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
         headers["Permissions-Policy"] = "geolocation=(self), camera=(self), microphone=(), payment=()";
         headers["Cross-Origin-Opener-Policy"] = "same-origin";
         headers["Content-Security-Policy"] =
             $"default-src 'self'; script-src 'self' 'nonce-{nonce}'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
             "font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' ws: wss:; " +
-            "worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+            "worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors " + (framedBySameSite ? "'self'" : "'none'");
         return Task.CompletedTask;
     });
     await next();

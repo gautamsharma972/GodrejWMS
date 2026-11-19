@@ -50,6 +50,18 @@ public class InwardLineVariance : AuditableEntity
 
     public PalletPosition PalletPosition { get; set; } = null!;
 
+    /// <summary>Mismatch only: the material that actually arrived instead of <see cref="MaterialId"/>, and its PKM (yyyyMM).</summary>
+    public int? ActualMaterialId { get; set; }
+
+    public Material? ActualMaterial { get; set; }
+
+    public int? ActualMfgMonth { get; set; }
+
+    /// <summary>Damage / Mismatch: where the damaged or mismatched boxes were put instead of <see cref="PalletPositionId"/> (the put-away's own cell); null = same cell.</summary>
+    public int? DestinationPalletPositionId { get; set; }
+
+    public PalletPosition? DestinationPalletPosition { get; set; }
+
     public decimal QuantityBoxes { get; set; }
 
     public string Remarks { get; set; } = string.Empty;

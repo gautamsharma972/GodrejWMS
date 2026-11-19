@@ -5,7 +5,7 @@
 @using GodrejWMS.Application.Features.Pullout.Queries
 @inject IMediator Mediator
 
-<PageTitle>Print pullout - Godrej WMS</PageTitle>
+<PageTitle>@(_package is null ? "Pullout" : _package.Header.ReferenceNumber) - Godrej WMS - Internal</PageTitle>
 
 <div class="grn-print">
     @if (_loading)
@@ -18,6 +18,8 @@
     }
     else if (_package is not null)
     {
+        @if (!Embed)
+        {
         <div class="grn-print-toolbar">
             <button type="button" class="btn btn-primary" data-print>
                 <i class="bi bi-printer" aria-hidden="true"></i> Print / Save as PDF
@@ -25,8 +27,12 @@
             <a class="btn btn-outline-secondary" href="/pullout/@TransactionId">Back to pullout</a>
             <span class="grn-print-hint">In the print window choose <strong>Save as PDF</strong> (or your printer), paper <strong>A4</strong>, <strong>Landscape</strong>. Page 1 is the pick list, then the loading sheet.</span>
         </div>
+        }
+
+        <PrintBands />
 
         <section class="grn-print-sheet">
+          <PrintSpacerFrame>
             @RenderHeader("Picklist", showLoadingExtras: false)
             <table class="grn-print-table">
                 <thead><tr>@foreach (var h in PulloutPrintSheets.PicklistHeaders) { <th>@h</th> }</tr></thead>
@@ -37,9 +43,11 @@
                     }
                 </tbody>
             </table>
+          </PrintSpacerFrame>
         </section>
 
         <section class="grn-print-sheet grn-print-break">
+          <PrintSpacerFrame>
             @RenderHeader("Loading Sheet", showLoadingExtras: true)
             <table class="grn-print-table">
                 <thead><tr>@foreach (var h in PulloutPrintSheets.LoadingHeaders) { <th>@h</th> }</tr></thead>
@@ -69,12 +77,16 @@
                     <tr><td colspan="2"><strong>Total</strong></td><td></td><td></td></tr>
                 </tbody>
             </table>
+          </PrintSpacerFrame>
         </section>
     }
 </div>
 
 @code {
     [Parameter] public int TransactionId { get; set; }
+
+    /// <summary>Shown inside the print panel of the detail page: its own toolbar is hidden (the panel has the Print and Close buttons).</summary>
+    [SupplyParameterFromQuery(Name = "embed")] public bool Embed { get; set; }
 
     private PulloutDownloadPackage? _package;
     private bool _loading = true;

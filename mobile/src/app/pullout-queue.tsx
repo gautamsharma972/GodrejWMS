@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { getPickerPulloutQueue, getPulloutQueue } from "../api/endpoints";
 import { useAuth } from "../auth/AuthContext";
+import { IdTiles } from "../components/IdTiles";
 import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { RefreshButton } from "../components/ui/RefreshButton";
@@ -19,6 +20,7 @@ interface PulloutQueueItem {
   referenceNumber: string;
   createdAt: string;
   summary: string;
+  vehicleNumber?: string | null;
   badge: { label: string; tone: ReturnType<typeof allocationStatusTone> | "danger" | "warning" };
 }
 
@@ -57,7 +59,8 @@ export default function PulloutQueueScreen() {
             id: p.id,
             referenceNumber: p.referenceNumber,
             createdAt: p.createdAt,
-            summary: `${p.pickedCount} of ${p.pickCount} picked · ${p.totalBoxes} boxes${p.destination ? ` · ${p.destination}` : ""}${p.vehicleNumber ? ` · ${p.vehicleNumber}` : ""}${p.driverNumber ? ` · ${p.driverNumber}` : ""}${p.virtualPickCount > 0 ? ` · ${p.virtualPickCount} virtual` : ""}`,
+            summary: `${p.pickedCount} of ${p.pickCount} picked · ${p.totalBoxes} boxes${p.destination ? ` · ${p.destination}` : ""}${p.driverNumber ? ` · ${p.driverNumber}` : ""}${p.virtualPickCount > 0 ? ` · ${p.virtualPickCount} virtual` : ""}`,
+            vehicleNumber: p.vehicleNumber,
             badge: { label: `${p.pickedCount}/${p.pickCount} picked`, tone: p.pickedCount === 0 ? "danger" : "warning" },
           })));
         } else {
@@ -66,7 +69,8 @@ export default function PulloutQueueScreen() {
             id: p.id,
             referenceNumber: p.referenceNumber,
             createdAt: p.createdAt,
-            summary: `${p.lineCount} line(s) · ${p.totalQuantityBoxes} boxes${p.destination ? ` · ${p.destination}` : ""}${p.vehicleNumber ? ` · ${p.vehicleNumber}` : ""}`,
+            summary: `${p.lineCount} line(s) · ${p.totalQuantityBoxes} boxes${p.destination ? ` · ${p.destination}` : ""}`,
+            vehicleNumber: p.vehicleNumber,
             badge: { label: allocationStatusLabel(p.status), tone: allocationStatusTone(p.status) },
           })));
         }
@@ -120,6 +124,7 @@ export default function PulloutQueueScreen() {
                 <Text style={styles.reference}>{item.referenceNumber}</Text>
                 <StatusBadge label={item.badge.label} tone={item.badge.tone} />
               </View>
+              <IdTiles items={[{ label: "Vehicle No.", value: item.vehicleNumber }]} />
               <Text style={styles.meta}>{formatDateTime(item.createdAt)}</Text>
               <Text style={styles.meta}>{item.summary}</Text>
             </Card>

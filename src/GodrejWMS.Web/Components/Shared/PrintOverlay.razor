@@ -1,0 +1,27 @@
+@inject IJSRuntime JsRuntime
+
+@* A full-screen panel over the current page that shows a print view (the GRN or pullout sheets) in a frame, so no new tab - and no address bar
+   with the application URL - is involved. "Print / Save as PDF" prints the framed sheets only. *@
+@if (Visible)
+{
+    <div class="print-overlay" role="dialog" aria-modal="true" aria-label="@Title">
+        <div class="print-overlay-bar">
+            <strong class="print-overlay-title">@Title</strong>
+            <span class="print-overlay-hint">Choose <strong>Save as PDF</strong> (or your printer), paper <strong>A4</strong>, <strong>Landscape</strong>.</span>
+            <button type="button" class="btn btn-primary" @onclick="PrintAsync"><i class="bi bi-printer" aria-hidden="true"></i> Print / Save as PDF</button>
+            <button type="button" class="btn btn-outline-secondary" @onclick="OnClose">Close</button>
+        </div>
+        <iframe id="@_frameId" class="print-overlay-frame" src="@(Url + "?embed=true")" title="@Title"></iframe>
+    </div>
+}
+
+@code {
+    private readonly string _frameId = "print-frame-" + Guid.NewGuid().ToString("N")[..8];
+
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public string Url { get; set; } = string.Empty;
+    [Parameter] public string Title { get; set; } = "Print view";
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private async Task PrintAsync() => await JsRuntime.InvokeVoidAsync("godrejWms.printFrame", _frameId);
+}

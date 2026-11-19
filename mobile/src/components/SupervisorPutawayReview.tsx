@@ -6,6 +6,7 @@ import { InwardVarianceType, type AopLocationOptionDto, type InwardDetailDto, ty
 import { colors, radius, spacing, typography } from "../theme";
 import { errorPulse, successPulse } from "../utils/haptics";
 import { MaterialPickerModal } from "./MaterialPickerModal";
+import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { PickerLocationPickerModal, type PickerLocationOption } from "./PickerLocationPickerModal";
 import { AppIcon } from "./ui/AppIcon";
 import { Button } from "./ui/Button";
@@ -65,6 +66,16 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
   const [qtyText, setQtyText] = useState("");
   const [remarks, setRemarks] = useState("");
   const [saving, setSaving] = useState(false);
+  // Mismatch: what actually arrived. Damage / mismatch: an optional other location to put the boxes in.
+  const [actualMaterial, setActualMaterial] = useState<MaterialDto | null>(null);
+  const [actualYear, setActualYear] = useState(0);
+  const [actualMonth, setActualMonth] = useState(0);
+  const [destination, setDestination] = useState<PickerLocationOption | null>(null);
+  const [showActualMaterials, setShowActualMaterials] = useState(false);
+  const [showActualYear, setShowActualYear] = useState(false);
+  const [showActualMonth, setShowActualMonth] = useState(false);
+  const [showDestinations, setShowDestinations] = useState(false);
+  const [showDestScanner, setShowDestScanner] = useState(false);
 
   // ---- excess form
   const [material, setMaterial] = useState<MaterialDto | null>(null);
@@ -86,6 +97,7 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
 
   const reset = () => {
     setRowId(null); setType(InwardVarianceType.Damage); setQtyText(""); setRemarks("");
+    setActualMaterial(null); setActualYear(0); setActualMonth(0); setDestination(null);
     setMaterial(null); setPkmYear(0); setPkmMonth(0); setLocation(null); setExcessQty(""); setExcessRemarks(""); setWarning(null); setError(null);
   };
 
@@ -94,7 +106,15 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
     setSaving(true);
     setError(null);
     try {
-      await recordInwardVariance(token, rowId, { type, quantityBoxes: Number(qtyText), remarks: remarks.trim() });
+      await recordInwardVariance(token, rowId, {
+        type,
+        quantityBoxes: Number(qtyText),
+        remarks: remarks.trim(),
+        ...(type === InwardVarianceType.Mismatch && actualMaterial
+          ? { actualMaterialId: actualMaterial.id, actualMfgMonthText: `${MONTH_LABELS[actualMonth - 1]}|${actualYear}` }
+          : {}),
+        ...(type !== InwardVarianceType.Shortage && destination ? { destinationPalletPositionId: destination.id } : {}),
+      });
       successPulse();
       setShowRecord(false);
       reset();
@@ -148,7 +168,9 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
     }
   };
 
-  const canSaveRecord = rowId != null && Number(qtyText) > 0 && remarks.trim().length > 0;
+  const isMismatch = type === InwardVarianceType.Mismatch;
+  const canSaveRecord = rowId != null && Number(qtyText) > 0 && remarks.trim().length > 0
+    && (!isMismatch || (actualMaterial != null && actualYear > 0 && actualMonth > 0));
   const canSaveExcess = material != null && location != null && pkmYear > 0 && pkmMonth > 0 && Number(excessQty) > 0 && excessRemarks.trim().length > 0;
   const records = detail.variances ?? [];
 
@@ -167,7 +189,12 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
               <StatusBadge label={TYPE_LABEL[record.type] ?? "Record"} tone={TYPE_TONE[record.type] ?? "neutral"} variant="soft" />
               <Text style={styles.recordQty}>{record.quantityBoxes} boxes</Text>
             </View>
-            <Text style={styles.recordMeta}>{record.materialNumber} · {record.mfgMonthLabel} · {record.locationCode}</Text>
+            <Text style={styles.recordMeta}>
+              {record.materialNumber} · {record.mfgMonthLabel} · {record.fromLocationCode ? `${record.fromLocationCode} → ${record.locationCode}` : record.locationCode}
+            </Text>
+            {record.actualMaterialNumber ? (
+              <Text style={styles.recordMeta}>Arrived instead: {record.actualMaterialNumber} · {record.actualMfgMonthLabel}</Text>
+            ) : null}
             <Text style={styles.recordRemark}>{record.remarks}</Text>
           </View>
           {!locked && (
@@ -204,7 +231,54 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
               </TouchableOpacity>
             ))}
           </View>
+          {isMismatch && (
+            <>
+              <Text style={styles.label}>MATERIAL THAT ARRIVED</Text>
+              <TouchableOpacity style={styles.picker} onPress={() => setShowActualMaterials(true)}>
+                <Text style={actualMaterial ? styles.pickerValue : styles.pickerPlaceholder}>
+                  {actualMaterial ? `${actualMaterial.materialNumber} · ${actualMaterial.description}` : "Select material code"}
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.label}>PKM THAT ARRIVED</Text>
+              <View style={styles.pkmRow}>
+                <TouchableOpacity style={styles.pkmButton} onPress={() => setShowActualYear(true)} activeOpacity={0.72}>
+                  <View>
+                    <Text style={styles.pkmHint}>YEAR</Text>
+                    <Text style={styles.pkmValue}>{actualYear > 0 ? actualYear : "Select"}</Text>
+                  </View>
+                  <AppIcon name="chevron-down" size={17} color={colors.textSecondary} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.pkmButton} onPress={() => setShowActualMonth(true)} activeOpacity={0.72}>
+                  <View>
+                    <Text style={styles.pkmHint}>MONTH</Text>
+                    <Text style={styles.pkmValue}>{actualMonth > 0 ? MONTH_LABELS[actualMonth - 1] : "Select"}</Text>
+                  </View>
+                  <AppIcon name="chevron-down" size={17} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
           <TextField label="Quantity (boxes)" value={qtyText} onChangeText={setQtyText} keyboardType="decimal-pad" selectTextOnFocus />
+          {type !== InwardVarianceType.Shortage && (
+            <>
+              <Text style={styles.label}>LOCATION (PUT THESE BOXES IN)</Text>
+              <View style={styles.locationRow}>
+                <TouchableOpacity style={[styles.picker, styles.locationPicker]} onPress={() => setShowDestinations(true)}>
+                  <Text style={destination ? styles.pickerValue : styles.pickerPlaceholder}>
+                    {destination ? destination.locationCode : "Same location as the put-away"}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.scanButton} onPress={() => setShowDestScanner(true)} hitSlop={6} activeOpacity={0.78} accessibilityLabel="Scan location QR code">
+                  <AppIcon name="scan-outline" size={22} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+              {destination && (
+                <TouchableOpacity onPress={() => setDestination(null)}>
+                  <Text style={styles.link}>Use the put-away&apos;s own location</Text>
+                </TouchableOpacity>
+              )}
+            </>
+          )}
           <TextField label="Remark" value={remarks} onChangeText={setRemarks} placeholder="What was found" maxLength={500} />
           {error && <Text style={styles.error}>{error}</Text>}
           <Button title="Save record" size="lg" loading={saving} disabled={!canSaveRecord} onPress={submitRecord} />
@@ -273,6 +347,47 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
         onClose={() => setShowMaterials(false)}
         onSelect={(selected) => { setMaterial(selected); setShowMaterials(false); setWarning(null); }}
       />
+      <OptionListSheet
+        visible={showActualYear}
+        title="PKM year that arrived"
+        options={YEAR_OPTIONS.map((year) => ({ value: year, label: String(year) }))}
+        onClose={() => setShowActualYear(false)}
+        onSelect={(value) => { setActualYear(value); setShowActualYear(false); }}
+      />
+      <OptionListSheet
+        visible={showActualMonth}
+        title="PKM month that arrived"
+        options={MONTH_LABELS.map((label, index) => ({ value: index + 1, label }))}
+        onClose={() => setShowActualMonth(false)}
+        onSelect={(value) => { setActualMonth(value); setShowActualMonth(false); }}
+      />
+      <MaterialPickerModal
+        visible={showActualMaterials}
+        token={token}
+        searchFn={searchSupervisorMaterials}
+        onClose={() => setShowActualMaterials(false)}
+        onSelect={(selected) => { setActualMaterial(selected); setShowActualMaterials(false); }}
+      />
+      <BarcodeScannerModal
+        visible={showDestScanner}
+        onClose={() => setShowDestScanner(false)}
+        onScan={(value) => {
+          // Matched against the same list the search picker uses: exact location code, case and spaces ignored.
+          const normalized = value.trim().toUpperCase();
+          const match = locationChoices.find((option) => option.locationCode.toUpperCase() === normalized);
+          if (!match) return false;
+          setDestination(match);
+          setShowDestScanner(false);
+          return true;
+        }}
+      />
+      <PickerLocationPickerModal
+        visible={showDestinations}
+        options={locationChoices}
+        onScanPress={() => setShowDestScanner(true)}
+        onClose={() => setShowDestinations(false)}
+        onSelect={(option) => { setDestination(option); setShowDestinations(false); }}
+      />
       <PickerLocationPickerModal
         visible={showLocations}
         options={locationChoices}
@@ -313,4 +428,11 @@ const styles = StyleSheet.create({
   picker: { padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, marginBottom: spacing.md },
   pickerValue: { color: colors.textPrimary },
   pickerPlaceholder: { color: colors.textMuted },
+  locationRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  locationPicker: { flex: 1 },
+  scanButton: {
+    width: 52, height: 52, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt,
+    alignItems: "center", justifyContent: "center", marginBottom: spacing.md,
+  },
+  link: { color: colors.primary, marginTop: -spacing.sm, marginBottom: spacing.md, fontWeight: "600" },
 });

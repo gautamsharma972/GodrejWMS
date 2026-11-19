@@ -226,7 +226,14 @@ export function placePickerPutaway(
 export function recordInwardVariance(
   token: string,
   putawayId: number,
-  request: { type: InwardVarianceTypeValue; quantityBoxes: number; remarks: string },
+  request: {
+    type: InwardVarianceTypeValue;
+    quantityBoxes: number;
+    remarks: string;
+    actualMaterialId?: number;
+    actualMfgMonthText?: string;
+    destinationPalletPositionId?: number;
+  },
 ): Promise<InwardVarianceDto> {
   return apiRequest<InwardVarianceDto>(`/api/supervisor/putaway/putaways/${putawayId}/variances`, { token, method: "POST", body: request });
 }

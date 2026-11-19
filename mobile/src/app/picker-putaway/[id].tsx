@@ -106,6 +106,17 @@ export default function PickerPutawayDetailScreen() {
   }, [token]);
 
   const rows = useMemo(() => buildRows(detail), [detail]);
+  // Good boxes put away over the inbound quantity; what a supervisor recorded as damage / shortage / mismatch is the visible gap (and excess is extra).
+  const boxTotals = useMemo(() => {
+    const lines = detail?.lines ?? [];
+    const variances = detail?.variances ?? [];
+    return {
+      good: lines.reduce((sum, line) => sum + line.allocatedQuantityBoxes, 0),
+      inbound: lines.reduce((sum, line) => sum + line.requestedQuantityBoxes, 0),
+      recorded: variances.filter((v) => v.type !== 4).reduce((sum, v) => sum + v.quantityBoxes, 0),
+      excess: variances.filter((v) => v.type === 4).reduce((sum, v) => sum + v.quantityBoxes, 0),
+    };
+  }, [detail]);
   const selectedRow = selectedPutawayId != null ? rows.find((r) => r.putaway.id === selectedPutawayId) ?? null : null;
   const pickerLocationOptions: PickerLocationOption[] = useMemo(() => buildPickerLocationOptions(locationOptions), [locationOptions]);
 
@@ -202,6 +213,12 @@ export default function PickerPutawayDetailScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.summaryTitle}>{detail.referenceNumber}</Text>
               <Text style={styles.summary}>Tap a location to confirm or change it.</Text>
+              <Text style={styles.boxesLine}>{boxTotals.good} / {boxTotals.inbound} boxes</Text>
+              {(boxTotals.recorded > 0 || boxTotals.excess > 0) && (
+                <Text style={styles.recordedLine}>
+                  {[boxTotals.recorded > 0 ? `${boxTotals.recorded} damaged / short / mismatch` : null, boxTotals.excess > 0 ? `+${boxTotals.excess} excess` : null].filter(Boolean).join(" · ")}
+                </Text>
+              )}
               <View style={styles.progressTrack}>
                 <View style={[styles.progressFill, { width: `${rows.length > 0 ? (rows.filter((r) => r.done).length / rows.length) * 100 : 0}%` }]} />
               </View>
@@ -274,7 +291,7 @@ export default function PickerPutawayDetailScreen() {
                 <View style={styles.rowStatus}>
                   <Text style={styles.rowQty}>{item.putaway.quantityBoxes} boxes</Text>
                   <StatusBadge
-                    label={item.putaway.excludedLocation ?? (item.putaway.isPickerPlaced ? "Submitted" : item.putaway.isConfirmed && !detail?.postedAt ? "Confirmed" : "To do")}
+                    label={item.putaway.excludedLocation === "PICK-RESERVED" ? (item.putaway.plannedLocationCode ?? "Picked") : item.putaway.excludedLocation ?? (item.putaway.isPickerPlaced ? "Submitted" : item.putaway.isConfirmed && !detail?.postedAt ? "Confirmed" : "To do")}
                     tone={item.done ? "success" : "warning"}
                     variant="soft"
                   />
@@ -434,6 +451,8 @@ export default function PickerPutawayDetailScreen() {
 const styles = StyleSheet.create({
   summaryCard: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md },
   summaryIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center", marginRight: spacing.md },
+  boxesLine: { ...typography.caption, color: colors.textPrimary, fontWeight: "800", marginTop: spacing.xs },
+  recordedLine: { ...typography.caption, color: colors.warningText, marginTop: 2 },
   summaryTitle: { ...typography.subtitle, color: colors.textPrimary },
   summary: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   progressTrack: { height: 4, backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, marginTop: spacing.sm, overflow: "hidden" },

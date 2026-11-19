@@ -109,6 +109,67 @@ window.godrejWms = {
         });
     },
 
+    // Opens the camera, reads one QR code / barcode with the browser's BarcodeDetector and resolves with its text
+    // (null when cancelled). Needs Chrome / Edge and https or localhost; other browsers get a clear message.
+    scanCode: function (title) {
+        return new Promise(async (resolve, reject) => {
+            if (!("BarcodeDetector" in window)) {
+                reject(new Error("QR scanning is not supported in this browser. Use Chrome or Edge, or type the location."));
+                return;
+            }
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                reject(new Error("The camera is only available on https or localhost."));
+                return;
+            }
+            let stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+            } catch (e) {
+                reject(new Error("Camera access was denied or no camera was found."));
+                return;
+            }
+            const overlay = document.createElement("div");
+            overlay.style.cssText = "position:fixed;inset:0;z-index:3000;background:rgba(15,23,42,.85);display:flex;align-items:center;justify-content:center;padding:16px";
+            overlay.innerHTML = '<div style="background:#fff;border-radius:14px;padding:16px;max-width:520px;width:100%">' +
+                '<div style="font-weight:700;margin-bottom:8px"></div>' +
+                '<video playsinline muted style="width:100%;border-radius:10px;background:#000"></video>' +
+                '<div style="text-align:right;margin-top:10px"><button type="button" class="btn btn-outline-secondary">Cancel</button></div></div>';
+            overlay.querySelector("div div").textContent = title || "Scan QR code";
+            document.body.appendChild(overlay);
+            const video = overlay.querySelector("video");
+            video.srcObject = stream;
+            await video.play().catch(() => { });
+            const detector = new BarcodeDetector({ formats: ["qr_code", "code_128", "code_39", "ean_13", "data_matrix"] });
+            let done = false;
+            const finish = (value) => {
+                if (done) return;
+                done = true;
+                stream.getTracks().forEach((t) => t.stop());
+                overlay.remove();
+                resolve(value);
+            };
+            overlay.querySelector("button").addEventListener("click", () => finish(null));
+            const tick = async () => {
+                if (done) return;
+                try {
+                    const codes = await detector.detect(video);
+                    if (codes.length > 0 && codes[0].rawValue) { finish(codes[0].rawValue); return; }
+                } catch (e) { /* keep trying */ }
+                setTimeout(tick, 250);
+            };
+            tick();
+        });
+    },
+
+    // Prints only the framed print view (the GRN / pullout sheets), not the page around it.
+    printFrame: function (frameId) {
+        const frame = document.getElementById(frameId);
+        if (frame && frame.contentWindow) {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+        }
+    },
+
     downloadFile: function (fileName, base64Content, contentType) {
         const link = document.createElement('a');
         link.href = `data:${contentType};base64,${base64Content}`;

@@ -118,7 +118,7 @@ public sealed class RejectInwardHandler(
         if (reservedRows.Count > 0)
         {
             var references = string.Join(", ", reservedRows.Select(p => p.OverrideReason!.Replace("Reserved for pullout ", "")).Distinct());
-            var note = $" [{reservedRows.Sum(p => p.QuantityBoxes):0.###} box(es) are PICK-RESERVED for pullout {references} - use Refresh Pick there]";
+            var note = $" [{reservedRows.Sum(p => p.QuantityBoxes):0.###} box(es) are already picked (shown as GIT) for pullout {references} - use Refresh Pick there]";
             reason = reason.Length + note.Length > 500 ? reason[..Math.Max(0, 500 - note.Length)] + note : reason + note;
         }
 

@@ -194,7 +194,7 @@ public class PickerPutawayPostedTests
         // The reserved boxes are closed for the picker; the remainder is still a normal put-away.
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             Handler(db).Handle(new PickerPlaceInwardPutawayCommand(reserved.Id, 20, "OCT|2026", to, null), default));
-        Assert.Contains("PICK-RESERVED", ex.Message);
+        Assert.Contains("already picked", ex.Message);
         await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(rest.Id, 10, "OCT|2026", to, null, AcknowledgeWarning: true), default);
         Assert.Equal(0, OnHand(db, from));
         Assert.Equal(10, OnHand(db, to));

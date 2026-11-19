@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { KeyboardAvoidingView, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, spacing, typography } from "../../theme";
 
@@ -23,7 +23,9 @@ export function FullScreenModal({ visible, title, onClose, children }: Props) {
       {/* RN's Modal is its own native window on Android, so it doesn't inherit the Activity's
           windowSoftInputMode="adjustResize" - without this, the keyboard just overlays the bottom
           of the sheet (a fixed footer button, the last list row) instead of making room for it. */}
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      {/* "padding" on both platforms: Android's "height" mode left the sheet squeezed after the keyboard closed (footer floating
+          mid-screen and jumping between two positions while a field was focused). */}
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <View style={[styles.container, { paddingBottom: spacing.lg + insets.bottom }]}>
           <View style={styles.header}>
             <Text style={styles.title}>{title}</Text>

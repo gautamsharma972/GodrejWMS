@@ -103,7 +103,13 @@ public sealed record InwardHistoryDto(
     string? LrNumber = null,
     int LocationCount = 0,
     int SubmittedLocationCount = 0,
-    int VirtualLocationCount = 0);
+    int VirtualLocationCount = 0,
+    /// <summary>The quantity uploaded on the inbound (what <see cref="TotalQuantityBoxes"/> - the good boxes put away - is measured against).</summary>
+    decimal InboundBoxes = 0,
+    /// <summary>Boxes a supervisor recorded as damage / shortage / mismatch: accounted for, not put away as good stock.</summary>
+    decimal RecordedBoxes = 0,
+    /// <summary>Extra material recorded beyond the inbound volume.</summary>
+    decimal ExcessBoxes = 0);
 
 public sealed record InwardPutawayDto(
     string LocationCode,
@@ -118,12 +124,15 @@ public sealed record InwardPutawayDto(
     int PalletPositionId = 0,
     bool IsPickerPlaced = false,
     bool IsExcludedLocked = false,
-    bool IsVirtual = false);
+    bool IsVirtual = false,
+    /// <summary>The shelf location the put-away was originally allocated to (what a GIT-shown, already-picked row would have used).</summary>
+    string? PlannedLocationCode = null);
 
 /// <summary>A damage / shortage / mismatch / excess record a supervisor made against a GRN.</summary>
 public sealed record InwardVarianceDto(
     int Id, Domain.Entities.InwardVarianceType Type, long MaterialNumber, string MaterialDescription, string MfgMonthLabel, string LocationCode,
-    decimal QuantityBoxes, string Remarks, string? CreatedByUserName, DateTimeOffset CreatedAt);
+    decimal QuantityBoxes, string Remarks, string? CreatedByUserName, DateTimeOffset CreatedAt,
+    long? ActualMaterialNumber = null, string? ActualMfgMonthLabel = null, string? FromLocationCode = null);
 
 public sealed record InwardDetailLineDto(
     long MaterialNumber,

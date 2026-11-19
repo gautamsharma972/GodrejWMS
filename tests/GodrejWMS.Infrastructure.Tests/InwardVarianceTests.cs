@@ -93,16 +93,20 @@ public class InwardVarianceTests
         using var _ = db;
         var putaway = db.InwardPutaways.AsNoTracking().Single();
         await Record(db).Handle(new RecordInwardVarianceCommand(putaway.Id, InwardVarianceType.Shortage, 4, "Short"), default);
-        await Record(db).Handle(new RecordInwardVarianceCommand(putaway.Id, InwardVarianceType.Mismatch, 6, "Wrong pack"), default);
+        var otherId = db.Materials.AsNoTracking().Single(m => m.MaterialNumber == 40000002).Id;
+        await Record(db).Handle(new RecordInwardVarianceCommand(putaway.Id, InwardVarianceType.Mismatch, 6, "Wrong pack", otherId, "OCT|2026"), default);
 
-        Assert.Equal(20, Stock(db, LocationSubtypes.Good));
+        // 30 - 4 short - 6 mismatched = 20 of the inbound material; the 6 that arrived instead are Good stock of the other material.
+        Assert.Equal(20, db.StockBatches.AsNoTracking().Where(b => b.Material.MaterialNumber == 40000001).Sum(b => b.QuantityBoxes));
+        Assert.Equal(6, db.StockBatches.AsNoTracking().Where(b => b.Material.MaterialNumber == 40000002).Sum(b => b.QuantityBoxes));
+        Assert.Equal(26, Stock(db, LocationSubtypes.Good));
         Assert.Equal(0, Stock(db, LocationSubtypes.Damage));
 
         var transactionId = db.InwardTransactions.AsNoTracking().Single().Id;
         var refresh = new RefreshPostedInwardPutawayHandler(
             db, new PalletAllocationService(db, new SvcClock()), TestServices.Posting(db), TestServices.Virtuals(db), TestServices.Uow(db), new SvcClock(), new SvcUser());
         await Assert.ThrowsAsync<InvalidOperationException>(() => refresh.Handle(new RefreshPostedInwardPutawayCommand(transactionId), default));
-        Assert.Equal(20, Stock(db, LocationSubtypes.Good));
+        Assert.Equal(26, Stock(db, LocationSubtypes.Good));
 
         var detail = (await new GetInwardDetailHandler(db).Handle(new GetInwardDetailQuery(transactionId), default));
         var line = detail.Lines.Single();
@@ -263,6 +267,64 @@ public class InwardVarianceTests
                 db, new PalletAllocationService(db, new SvcClock()), TestServices.Posting(db), TestServices.Virtuals(db), TestServices.Uow(db), new SvcClock(), new SvcUser())
             .Handle(new RefreshPostedInwardPutawayCommand(transactionId), default));
         Assert.Equal(row.PalletPositionId, db.InwardPutaways.AsNoTracking().Single().PalletPositionId);
+    }
+
+    [Fact]
+    public async Task TheQueueAndHistory_ShowGoodOverInbound_WithRecordedAndExcessBoxes()
+    {
+        var (db, positions, _) = await SeedAsync();
+        using var _ = db;
+        var putaway = db.InwardPutaways.AsNoTracking().Single();
+        var transactionId = db.InwardTransactions.AsNoTracking().Single().Id;
+        var other = db.Materials.AsNoTracking().Single(m => m.MaterialNumber == 40000002);
+        await Record(db).Handle(new RecordInwardVarianceCommand(putaway.Id, InwardVarianceType.Damage, 2, "Wet"), default);
+        await Excess(db).Handle(new RecordExcessMaterialCommand(transactionId, other.Id, "OCT|2026", positions.Last().Id, 3, "Found"), default);
+
+        var item = Assert.Single((await new GetPickerPendingInwardHandler(db, new AllowAllPermissions()).Handle(new GetPickerPendingInwardQuery(), default)).Items);
+        Assert.Equal(28, item.TotalQuantityBoxes);   // good boxes put away
+        Assert.Equal(30, item.InboundBoxes);         // uploaded: shown as 28 / 30
+        Assert.Equal(2, item.RecordedBoxes);
+        Assert.Equal(3, item.ExcessBoxes);
+
+        var history = Assert.Single((await new GetInwardHistoryHandler(db).Handle(new GetInwardHistoryQuery(), default)).Items);
+        Assert.Equal(30, history.InboundBoxes);
+        Assert.Equal(2, history.RecordedBoxes);
+    }
+
+    [Fact]
+    public async Task Damage_CanBePutInAnotherLocation_AndRemovingTheRecordReversesIt()
+    {
+        var (db, positions, _) = await SeedAsync();
+        using var _ = db;
+        var putaway = db.InwardPutaways.AsNoTracking().Single();
+        var other = positions.First(p => p.Id != putaway.PalletPositionId);
+        var record = await Record(db).Handle(
+            new RecordInwardVarianceCommand(putaway.Id, InwardVarianceType.Damage, 5, "Crushed", DestinationPalletPositionId: other.Id), default);
+
+        Assert.Equal(other.LocationCode, record.LocationCode);
+        Assert.Equal(25, Stock(db, LocationSubtypes.Good));
+        Assert.Equal(5, db.StockBatches.AsNoTracking().Single(b => b.StockSubtypeId == LocationSubtypes.Damage).QuantityBoxes);
+        Assert.Equal(other.Id, db.StockBatches.AsNoTracking().Single(b => b.StockSubtypeId == LocationSubtypes.Damage).PalletPositionId);
+
+        await new RemoveInwardVarianceHandler(db, TestServices.Posting(db), TestServices.Uow(db), new SvcClock(), new SvcUser())
+            .Handle(new RemoveInwardVarianceCommand(record.Id), default);
+        Assert.Equal(30, Stock(db, LocationSubtypes.Good));
+        Assert.Equal(0, Stock(db, LocationSubtypes.Damage));
+    }
+
+    [Fact]
+    public async Task Mismatch_RequiresTheMaterialThatArrived_AndShortageCannotHaveALocation()
+    {
+        var (db, positions, material) = await SeedAsync();
+        using var _ = db;
+        var putaway = db.InwardPutaways.AsNoTracking().Single();
+        var other = positions.First(p => p.Id != putaway.PalletPositionId);
+        // Same material and PKM as the inbound is not a mismatch.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Record(db).Handle(
+            new RecordInwardVarianceCommand(putaway.Id, InwardVarianceType.Mismatch, 2, "x", material.Id, "OCT|2026"), default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Record(db).Handle(
+            new RecordInwardVarianceCommand(putaway.Id, InwardVarianceType.Shortage, 2, "x", DestinationPalletPositionId: other.Id), default));
+        Assert.Equal(30, Stock(db, LocationSubtypes.Good));
     }
 }
 

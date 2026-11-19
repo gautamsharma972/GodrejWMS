@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { ApiError } from "../api/client";
-import { confirmPulloutPick, getPalletPosition, getPickerLocationOptions, getPickRemainder, getRelocationSuggestions } from "../api/endpoints";
+import {
+  changePulloutPickLocation, confirmPulloutPick, getPalletPosition, getPickerLocationOptions, getPickRemainder, getPulloutPickOptions, getRelocationSuggestions,
+} from "../api/endpoints";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { AppIcon } from "./ui/AppIcon";
 import { Button } from "./ui/Button";
@@ -78,11 +80,15 @@ function StepHeader({ number, title, optional = false }: { number: number; title
  * when boxes are left at that location, optionally move the remainder to a lower / better location - all confirmed in one go. */
 export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props) {
   const [qty, setQty] = useState(0);
-  const [verified, setVerified] = useState(false);
   const [typedCode, setTypedCode] = useState("");
   const [remainder, setRemainder] = useState<PickRemainderDto | null>(null);
   const [suggestions, setSuggestions] = useState<RelocationSuggestionDto[]>([]);
   const [moveEnabled, setMoveEnabled] = useState(false);
+  // "Move the remaining boxes" is optional and stays hidden until the user switches it on.
+  const [showMove, setShowMove] = useState(false);
+  // Picking from a location other than the allocated one: older stock elsewhere makes that a FIFO override that needs a reason.
+  const [fifoReason, setFifoReason] = useState("");
+  const [needFifoReason, setNeedFifoReason] = useState(false);
   const [destination, setDestination] = useState<Destination | null>(null);
   const [moveQty, setMoveQty] = useState(0);
   const [destSearch, setDestSearch] = useState("");
@@ -100,11 +106,13 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
     // Resets the sheet for the pick it was opened on (same pattern as the other modals in this app).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setQty(pick.pickedQuantityBoxes ?? pick.quantityBoxes);
-    setVerified(pick.pickedQuantityBoxes != null); // an edit of an already confirmed pick: the location was verified before
     setTypedCode(pick.locationCode); // defaults to the pick's own location - the picker only edits this if the suggested location is wrong
     setRemainder(null);
     setSuggestions([]);
     setMoveEnabled(!!pick.moveToPalletPositionId);
+    setShowMove(!!pick.moveToPalletPositionId);
+    setFifoReason("");
+    setNeedFifoReason(false);
     setDestination(pick.moveToPalletPositionId && pick.moveToLocationCode ? { id: pick.moveToPalletPositionId, code: pick.moveToLocationCode } : null);
     setDestSearch("");
     setError(null);
@@ -176,22 +184,64 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
   if (!pick) return null;
 
   const matches = (value: string) => value.trim().toUpperCase() === pick.locationCode.toUpperCase();
+  // The location code is editable: a different code means the picker took the boxes from another location, so Submit moves the pick there first.
+  const codeChanged = typedCode.trim().length > 0 && !matches(typedCode);
 
   const submit = async () => {
     setSubmitting(true);
     setError(null);
     try {
-      const result = await confirmPulloutPick(token, pick.pickId, {
-        pickedQuantityBoxes: qty,
-        moveRemaining: qty > 0 && moveEnabled && destination && moveQty > 0
+      let pickId = pick.pickId;
+      let moveRemaining: { destinationPalletPositionId: number; quantityBoxes: number } | null =
+        qty > 0 && showMove && moveEnabled && destination && moveQty > 0
           ? { destinationPalletPositionId: destination.id, quantityBoxes: moveQty }
-          : null,
-      });
+          : null;
+
+      if (codeChanged) {
+        const wanted = typedCode.trim().toUpperCase();
+        const options = await getPulloutPickOptions(token, {
+          referenceNumber: pick.referenceNumber,
+          materialNumber: pick.materialNumber,
+          currentLocationCode: pick.locationCode,
+          mfgMonthLabel: pick.mfgMonthLabel,
+        });
+        const option = options.find((o) => !o.isCurrent && o.locationCode.toUpperCase() === wanted);
+        if (!option) {
+          throw new Error(`${typedCode.trim()} does not hold this material, so the pick cannot be taken from there. Check the code, or restore ${pick.locationCode}.`);
+        }
+
+        if (option.breaksFifo && fifoReason.trim().length === 0) {
+          setNeedFifoReason(true);
+          throw new Error(`Older stock of this material is available elsewhere, so picking from ${option.locationCode} skips FIFO. Enter a reason below and submit again.`);
+        }
+
+        const quantity = Math.min(planned, option.availableBoxes);
+        const changed = await changePulloutPickLocation(token, {
+          referenceNumber: pick.referenceNumber,
+          materialNumber: pick.materialNumber,
+          currentLocationCode: pick.locationCode,
+          mfgMonthLabel: pick.mfgMonthLabel,
+          sources: [{ palletPositionId: option.palletPositionId, mfgMonthLabel: option.mfgMonthLabel, quantityBoxes: quantity }],
+          reason: option.breaksFifo ? fifoReason.trim() : "",
+        });
+        const moved = changed.lines
+          .filter((line) => line.materialNumber === pick.materialNumber)
+          .flatMap((line) => line.picks)
+          .find((p) => p.pickId && p.locationCode.toUpperCase() === option.locationCode.toUpperCase() && p.mfgMonthLabel === option.mfgMonthLabel);
+        if (!moved?.pickId) {
+          throw new Error(`The pick was moved to ${option.locationCode}. Close this sheet and open the pick again to submit it.`);
+        }
+
+        pickId = moved.pickId;
+        moveRemaining = null; // the remainder of the original location no longer applies
+      }
+
+      const result = await confirmPulloutPick(token, pickId, { pickedQuantityBoxes: qty, moveRemaining });
       successPulse();
       onDone(result);
     } catch (err) {
       errorPulse();
-      setError(err instanceof ApiError ? err.message : "The pick could not be confirmed.");
+      setError(err instanceof ApiError || err instanceof Error ? err.message : "The pick could not be confirmed.");
     } finally {
       setSubmitting(false);
     }
@@ -223,57 +273,42 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
         {error && <Text style={styles.error}>{error}</Text>}
 
         <View style={styles.sectionCard}>
-          <StepHeader number={1} title="Verify the location" />
-          {verified ? (
-            <View style={styles.okRow}>
-              <View style={styles.okIcon}><AppIcon name="checkmark" size={18} color={colors.textOnPrimary} /></View>
-              <View>
-                <Text style={styles.okLabel}>LOCATION VERIFIED</Text>
-                <Text style={styles.okText}>You are at {pick.locationCode}</Text>
-              </View>
+          <StepHeader number={1} title="Pick location" />
+          <Button title="Scan location" size="lg" onPress={() => setScanning("verify")} icon={<AppIcon name="scan-outline" size={22} color={colors.textOnPrimary} />} />
+          <View style={styles.orRow}><View style={styles.orLine} /><Text style={styles.orText}>OR ENTER CODE</Text><View style={styles.orLine} /></View>
+          <TextField
+            label="Location code"
+            value={typedCode}
+            onChangeText={(text) => { setTypedCode(text); setNeedFifoReason(false); setError(null); }}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            size="lg"
+            placeholder={pick.locationCode}
+          />
+          {verifySearchResults.length > 0 && (
+            <View style={styles.destSearchResults}>
+              {verifySearchResults.map((option, index) => (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[styles.destSearchRow, index === verifySearchResults.length - 1 && styles.destSearchRowLast]}
+                  onPress={() => {
+                    setTypedCode(option.locationCode);
+                    lightTap();
+                  }}
+                >
+                  <Text style={styles.destSearchRowText}>{option.locationCode}</Text>
+                  <AppIcon name="chevron-forward" size={16} color={colors.textMuted} />
+                </TouchableOpacity>
+              ))}
             </View>
-          ) : (
-            <>
-              <Button title="Scan location" size="lg" onPress={() => setScanning("verify")} icon={<AppIcon name="scan-outline" size={22} color={colors.textOnPrimary} />} />
-              <View style={styles.orRow}><View style={styles.orLine} /><Text style={styles.orText}>OR ENTER CODE</Text><View style={styles.orLine} /></View>
-              <TextField
-                label="Location code"
-                value={typedCode}
-                onChangeText={setTypedCode}
-                autoCapitalize="characters"
-                autoCorrect={false}
-                size="lg"
-                placeholder={pick.locationCode}
-                onSubmitEditing={() => matches(typedCode) ? setVerified(true) : setError(`That is not ${pick.locationCode}.`)}
-              />
-              {verifySearchResults.length > 0 && (
-                <View style={styles.destSearchResults}>
-                  {verifySearchResults.map((option, index) => (
-                    <TouchableOpacity
-                      key={option.id}
-                      style={[styles.destSearchRow, index === verifySearchResults.length - 1 && styles.destSearchRowLast]}
-                      onPress={() => {
-                        setTypedCode(option.locationCode);
-                        lightTap();
-                      }}
-                    >
-                      <Text style={styles.destSearchRowText}>{option.locationCode}</Text>
-                      <AppIcon name="chevron-forward" size={16} color={colors.textMuted} />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-              <Button
-                title="Verify location"
-                variant="outline"
-                size="lg"
-                disabled={typedCode.trim().length === 0}
-                onPress={() => (matches(typedCode) ? (setError(null), setVerified(true)) : (errorPulse(), setError(`That is not ${pick.locationCode}.`)))}
-              />
-              <TouchableOpacity onPress={() => setVerified(true)} style={styles.skip}>
-                <Text style={styles.skipText}>Skip scanning</Text>
-              </TouchableOpacity>
-            </>
+          )}
+          {codeChanged && (
+            <View style={styles.hintBox}><AppIcon name="information-circle-outline" size={18} color={colors.info} /><Text style={styles.hint}>
+              This pick will be taken from {typedCode.trim().toUpperCase()} instead of {pick.locationCode} when you submit (same rules as Change location).
+            </Text></View>
+          )}
+          {codeChanged && needFifoReason && (
+            <TextField label="Reason for skipping older stock (FIFO)" value={fifoReason} onChangeText={setFifoReason} placeholder="Required" maxLength={250} />
           )}
         </View>
 
@@ -293,22 +328,32 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
           )}
         </View>
 
-        {remainingAfter > 0 && (
+        {remainingAfter > 0 && !codeChanged && (
           <View style={styles.sectionCard}>
-            <StepHeader number={3} title={`Move the remaining ${boxesLabel(remainingAfter)}?`} optional />
-            <Text style={styles.sectionIntro}>
-              {boxesLabel(remainingAfter)} of this material {remainingAfter === 1 ? "stays" : "stay"} at {pick.locationCode} unless you choose a location. Nothing moves until you confirm the pick-list, so you can still change your mind.
-            </Text>
+            <View style={styles.switchRow}>
+              <View style={styles.switchCopy}>
+                <Text style={styles.switchTitle}>Move the remaining {boxesLabel(remainingAfter)}?</Text>
+                <Text style={styles.switchIntro}>
+                  Optional. Off: {remainingAfter === 1 ? "it stays" : "they stay"} at {pick.locationCode}. Nothing moves until the pick-list is confirmed.
+                </Text>
+              </View>
+              <Switch
+                value={showMove}
+                onValueChange={(value) => {
+                  lightTap();
+                  setShowMove(value);
+                  if (!value) {
+                    setMoveEnabled(false);
+                    setDestination(null);
+                  }
+                }}
+                trackColor={{ false: colors.borderStrong, true: colors.primary }}
+                accessibilityLabel="Move the remaining boxes"
+              />
+            </View>
 
-            <TouchableOpacity
-              style={[styles.choice, !moveEnabled && styles.choiceActive]}
-              onPress={() => setMoveEnabled(false)}
-            >
-              <View style={[styles.choiceIcon, !moveEnabled && styles.choiceIconActive]}><AppIcon name="location-outline" size={20} color={!moveEnabled ? colors.primary : colors.textSecondary} /></View>
-              <View style={styles.choiceCopy}><Text style={styles.choiceTitle}>Leave them at {pick.locationCode}</Text><Text style={styles.choiceMeta}>Keep stock in its current location</Text></View>
-              <AppIcon name={!moveEnabled ? "checkmark-circle" : "ellipse-outline"} size={22} color={!moveEnabled ? colors.primary : colors.borderStrong} />
-            </TouchableOpacity>
-
+            {showMove && (
+              <>
             {suggestions.map((suggestion) => (
               <TouchableOpacity
                 key={suggestion.palletPositionId}
@@ -362,38 +407,37 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
                 <Stepper value={moveQty} min={1} max={remainingAfter} onChange={setMoveQty} />
               </View>
             )}
+              </>
+            )}
           </View>
         )}
       </ScrollView>
 
       <View style={styles.footer}>
         <View style={styles.footerSummary}>
-          <Text style={styles.footerSummaryLabel}>{verified || qty === 0 ? "Ready to confirm" : "Location verification required"}</Text>
+          <Text style={styles.footerSummaryLabel}>Ready to confirm</Text>
           <Text style={styles.footerSummaryValue}>{boxesLabel(qty)}</Text>
         </View>
         <Button
           title={qty === 0 ? "Submit · nothing picked (skip)" : `Submit pick · ${boxesLabel(qty)}`}
           size="lg"
           loading={submitting}
-          disabled={!verified && qty > 0}
           onPress={submit}
           icon={<AppIcon name="checkmark-circle-outline" size={22} color={colors.textOnPrimary} />}
         />
-        {!verified && qty > 0 && <Text style={styles.footerHint}>Verify the location first.</Text>}
-        {moveEnabled && destination && moveQty > 0 && remainingAfter > 0 && (
+        {showMove && moveEnabled && destination && moveQty > 0 && remainingAfter > 0 && !codeChanged && (
           <Text style={styles.footerHint}>{boxesLabel(moveQty)} will move to {destination.code} when you confirm the pick-list.</Text>
         )}
       </View>
 
       <BarcodeScannerModal
         visible={scanning !== null}
-        title={scanning === "verify" ? `Scan ${pick.locationCode}` : "Scan the destination location"}
+        title={scanning === "verify" ? "Scan the pick location" : "Scan the destination location"}
         onClose={() => setScanning(null)}
         onScan={(value) => {
           if (scanning === "verify") {
-            if (!matches(value)) return false;
             setError(null);
-            setVerified(true);
+            setTypedCode(value.trim().toUpperCase());
             setScanning(null);
             return true;
           }
@@ -407,6 +451,11 @@ export function PulloutPickConfirmModal({ pick, token, onClose, onDone }: Props)
 }
 
 const styles = StyleSheet.create({
+  switchRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  switchCopy: { flex: 1 },
+  // Stand-alone title + helper text beside the switch (the step styles are made for a row next to the step number).
+  switchTitle: { ...typography.subtitle, color: colors.textPrimary },
+  switchIntro: { ...typography.caption, color: colors.textSecondary, lineHeight: 18, marginTop: spacing.xs },
   scroll: { flex: 1, marginHorizontal: -spacing.lg },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs, paddingBottom: spacing.xl },
   hero: { backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: "#dfe4ff", borderRadius: radius.xl, padding: spacing.md, marginBottom: spacing.md },

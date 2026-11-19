@@ -23,7 +23,7 @@ public static class MaterialsEndpoints
                     PageSize: pageSize <= 0 ? 10 : pageSize);
                 return Results.Ok(await mediator.Send(query, cancellationToken));
             })
-            .RequireAuthorization("Permission:" + PermissionKeys.Inward.Create)
+            .RequireAuthorization("Permission:" + PermissionKeys.Inward.Create + "|" + PermissionKeys.Inward.Confirm + "|" + PermissionKeys.Pullout.Edit)
             .WithName("SearchMaterials");
 
         return group;

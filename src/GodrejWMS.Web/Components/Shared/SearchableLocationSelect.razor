@@ -8,6 +8,17 @@
     {
         <span class="input-group-text selected-location-check"><i class="bi bi-check-circle-fill" aria-hidden="true"></i></span>
     }
+    @if (AllowScan)
+    {
+        <button type="button" class="btn btn-outline-secondary location-scan-button" title="Scan location QR code with the camera" aria-label="Scan location QR code"
+                disabled="@_scanning" @onmousedown:preventDefault="true" @onclick="ScanAsync">
+            <i class="bi bi-qr-code-scan" aria-hidden="true"></i>
+        </button>
+    }
+    @if (_scanMessage is not null)
+    {
+        <div class="location-scan-message" role="status">@_scanMessage</div>
+    }
     @if (_showSuggestions)
     {
         <div class="location-suggestions">
@@ -40,6 +51,13 @@
     [Parameter] public int ContextKey { get; set; }
     [Parameter] public string Placeholder { get; set; } = "Search location...";
     [Parameter] public string AriaLabel { get; set; } = "Search and select location";
+    /// <summary>Shows a camera button that scans the location's QR code / barcode (Chrome, Edge; needs https or localhost).</summary>
+    [Parameter] public bool AllowScan { get; set; } = true;
+
+    [Inject] private IJSRuntime JsRuntime { get; set; } = null!;
+
+    private bool _scanning;
+    private string? _scanMessage;
 
     private string _searchText = string.Empty;
     private bool _showSuggestions;
@@ -92,6 +110,39 @@
         _searchText = option.LocationCode;
         _showSuggestions = false;
         await ValueChanged.InvokeAsync(option.Id);
+    }
+
+    // The scanned text is matched to the same option list the search uses: exact location code, case and spaces ignored.
+    private async Task ScanAsync()
+    {
+        _scanMessage = null;
+        _scanning = true;
+        try
+        {
+            var text = await JsRuntime.InvokeAsync<string?>("godrejWms.scanCode", "Scan location QR code");
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return;
+            }
+
+            var code = text.Trim();
+            var match = Options.FirstOrDefault(o => string.Equals(o.LocationCode, code, StringComparison.OrdinalIgnoreCase));
+            if (match is null)
+            {
+                _scanMessage = $"\"{code}\" is not an available location here.";
+                return;
+            }
+
+            await SelectAsync(match);
+        }
+        catch (JSException ex)
+        {
+            _scanMessage = ex.Message;
+        }
+        finally
+        {
+            _scanning = false;
+        }
     }
 
     private async Task OnBlur()

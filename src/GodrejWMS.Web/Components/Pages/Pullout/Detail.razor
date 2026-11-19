@@ -103,11 +103,11 @@
                     <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
                     Download Excel
                 </button>
-                <a class="btn btn-outline-secondary @(_detail.Lines.Any(l => l.Picks.Count > 0) ? null : "disabled")" href="/pullout/@_detail.Id/print" target="_blank" rel="noopener"
-                   title="Open the pick list and loading sheet as an A4 landscape print view (print or save as PDF)">
+                <button type="button" class="btn btn-outline-secondary" @onclick="() => _showPrint = true" disabled="@(!_detail.Lines.Any(l => l.Picks.Count > 0))"
+                        title="Show the pick list and loading sheet as an A4 landscape print view (print or save as PDF)">
                     <i class="bi bi-printer" aria-hidden="true"></i>
                     Print / PDF
-                </a>
+                </button>
             </div>
         }
 
@@ -256,6 +256,11 @@
     }
 </div>
 
+@if (_detail is not null)
+{
+    <PrintOverlay Visible="_showPrint" Url="@($"/pullout/{_detail.Id}/print")" Title="@($"{_detail.ReferenceNumber} - pick list and loading sheet")" OnClose="() => _showPrint = false" />
+}
+
 @code {
     [Parameter] public int TransactionId { get; set; }
 
@@ -325,6 +330,7 @@
     }
 
     private bool _refreshingPicks;
+    private bool _showPrint;
 
     private async Task RefreshPicksAsync()
     {

@@ -43,13 +43,17 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
             .Select(v => new
             {
                 v.Id, v.Type, v.Material.MaterialNumber, v.Material.Description, v.MfgMonth,
-                Location = v.PalletPosition.LocationCode, v.QuantityBoxes, v.Remarks, v.CreatedByUserName, v.CreatedAt
+                Location = v.DestinationPalletPosition != null ? v.DestinationPalletPosition.LocationCode : v.PalletPosition.LocationCode,
+                From = v.DestinationPalletPosition != null ? v.PalletPosition.LocationCode : null,
+                Actual = v.ActualMaterial != null ? (long?)v.ActualMaterial.MaterialNumber : null, v.ActualMfgMonth,
+                v.QuantityBoxes, v.Remarks, v.CreatedByUserName, v.CreatedAt
             })
             .ToListAsync(cancellationToken);
         var variances = varianceRows
             .Select(v => new InwardVarianceDto(
                 v.Id, v.Type, v.MaterialNumber, v.Description, MfgMonthParser.Format(v.MfgMonth), v.Location,
-                v.QuantityBoxes, v.Remarks, v.CreatedByUserName, v.CreatedAt))
+                v.QuantityBoxes, v.Remarks, v.CreatedByUserName, v.CreatedAt,
+                v.Actual, v.ActualMfgMonth is { } am ? MfgMonthParser.Format(am) : null, v.From))
             .ToList();
         var firstOfGroup = transaction.Lines.GroupBy(l => (l.MaterialId, l.MfgMonth)).Select(g => g.OrderBy(l => l.Id).First().Id).ToHashSet();
         // Boxes recorded as damage / shortage / mismatch are accounted for (shown on the group's first line, like the other group figures).
@@ -104,9 +108,9 @@ public sealed class GetInwardDetailHandler(IApplicationDbContext db)
                 l.Putaways
                     .OrderBy(p => p.PalletPosition.LocationCode)
                     .Select(p => new InwardPutawayDto(
-                        p.ExcludedLocation ?? p.PalletPosition.LocationCode, p.QuantityBoxes, p.IsConfirmed, p.Id, p.AllocationReason,
+                        (p.ExcludedLocation == PutawayPickReservation.Label ? "GIT" : p.ExcludedLocation) ?? p.PalletPosition.LocationCode, p.QuantityBoxes, p.IsConfirmed, p.Id, p.AllocationReason,
                         p.OverrideReason, p.ConfirmedAt, p.ConfirmedByUserName, p.ExcludedLocation, p.PalletPosition.Id, p.IsPickerPlaced, p.IsExcludedLocked,
-                        p.PalletPosition.IsVirtual))
+                        p.PalletPosition.IsVirtual, p.PalletPosition.LocationCode))
                     .ToList(),
                 l.Material.IsActive,
                 Split(l).Unplaced,

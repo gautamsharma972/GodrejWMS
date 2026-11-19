@@ -105,7 +105,7 @@ public sealed class PickerPlaceInwardPutawayHandler(
 
         if (putaway.ExcludedLocation == PutawayPickReservation.Label)
         {
-            throw new InvalidOperationException($"These boxes are PICK-RESERVED for a pullout ({putaway.OverrideReason}) and are not put away on the shelf.");
+            throw new InvalidOperationException($"These boxes are already picked for a pullout ({putaway.OverrideReason}) and show as GIT - they are not put away on the shelf.");
         }
 
         // A GIT / NO RACK entry can be corrected until a supervisor confirms the GRN, or it is rejected.

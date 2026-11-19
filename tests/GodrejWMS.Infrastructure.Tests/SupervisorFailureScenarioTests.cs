@@ -66,7 +66,8 @@ public class SupervisorFailureScenarioTests
         Assert.False(validator.Validate(new RecordInwardVarianceCommand(1, InwardVarianceType.Damage, -3, "x")).IsValid);
         Assert.False(validator.Validate(new RecordInwardVarianceCommand(1, InwardVarianceType.Damage, 5, " ")).IsValid);
         Assert.False(validator.Validate(new RecordInwardVarianceCommand(1, InwardVarianceType.Damage, 5, new string('x', 501))).IsValid);
-        Assert.True(validator.Validate(new RecordInwardVarianceCommand(1, InwardVarianceType.Mismatch, 5, "ok")).IsValid);
+        Assert.False(validator.Validate(new RecordInwardVarianceCommand(1, InwardVarianceType.Mismatch, 5, "ok")).IsValid); // needs the material / PKM that arrived
+        Assert.True(validator.Validate(new RecordInwardVarianceCommand(1, InwardVarianceType.Mismatch, 5, "ok", 2, "OCT|2026")).IsValid);
 
         var excess = new RecordExcessMaterialValidator();
         Assert.False(excess.Validate(new RecordExcessMaterialCommand(1, 1, "NOT A PKM", 1, 5, "x")).IsValid);
@@ -104,7 +105,8 @@ public class SupervisorFailureScenarioTests
         var s = await SeedAsync();
         using var _ = s.Db;
         var putaway = s.Db.InwardPutaways.AsNoTracking().Single();
-        var recorded = await Record(s.Db).Handle(new RecordInwardVarianceCommand(putaway.Id, InwardVarianceType.Mismatch, 30, "Wrong item"), default);
+        var otherId = s.Db.Materials.AsNoTracking().Single(m => m.MaterialNumber == 40000002).Id;
+        var recorded = await Record(s.Db).Handle(new RecordInwardVarianceCommand(putaway.Id, InwardVarianceType.Mismatch, 30, "Wrong item", otherId, "OCT|2026"), default);
 
         Assert.Empty(s.Db.InwardPutaways.AsNoTracking());
         Assert.Equal(0, s.Db.InwardTransactionLines.AsNoTracking().Single().AllocatedQuantityBoxes);

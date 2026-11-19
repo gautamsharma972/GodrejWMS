@@ -15,7 +15,9 @@ namespace GodrejWMS.Application.Features.Inward.Commands;
 /// boxes (so the put-away plus the records can never exceed the inbound quantity), the boxes leave Good stock, and damaged boxes stay in the same
 /// cell as Damage stock. Only while the GRN is not confirmed.</summary>
 [RequiresPermission(PermissionKeys.Inward.Confirm)]
-public sealed record RecordInwardVarianceCommand(int PutawayId, InwardVarianceType Type, decimal QuantityBoxes, string Remarks) : IRequest<InwardVarianceDto>;
+public sealed record RecordInwardVarianceCommand(
+    int PutawayId, InwardVarianceType Type, decimal QuantityBoxes, string Remarks,
+    int? ActualMaterialId = null, string? ActualMfgMonthText = null, int? DestinationPalletPositionId = null) : IRequest<InwardVarianceDto>;
 
 public sealed class RecordInwardVarianceValidator : AbstractValidator<RecordInwardVarianceCommand>
 {
@@ -26,6 +28,11 @@ public sealed class RecordInwardVarianceValidator : AbstractValidator<RecordInwa
             .WithMessage("Choose Damage, Shortage or Mismatch. Use Add excess material for extra boxes.");
         RuleFor(x => x.QuantityBoxes).GreaterThan(0).WithMessage("Quantity must be greater than zero.");
         RuleFor(x => x.Remarks).NotEmpty().WithMessage("Enter a remark.").MaximumLength(500);
+        When(x => x.Type == InwardVarianceType.Mismatch, () =>
+        {
+            RuleFor(x => x.ActualMaterialId).NotNull().GreaterThan(0).WithMessage("Select the material code that actually arrived.");
+            RuleFor(x => x.ActualMfgMonthText).Must(t => t is not null && MfgMonthParser.TryParse(t, out _)).WithMessage("Select the PKM that actually arrived.");
+        });
     }
 }
 
@@ -66,11 +73,48 @@ public sealed class RecordInwardVarianceHandler(
         }
 
         var position = putaway.PalletPosition;
+
+        // Damage and Mismatch boxes may be put in another location (default: they stay in the put-away's own cell).
+        PalletPosition? destination = null;
+        if (request.DestinationPalletPositionId is { } destinationId && destinationId != position.Id)
+        {
+            if (request.Type == InwardVarianceType.Shortage)
+            {
+                throw new InvalidOperationException("Shortage boxes did not arrive, so they have no location.");
+            }
+
+            destination = await InwardVariances.LoadDestinationAsync(db, destinationId, transaction.WarehouseId, request.Type, cancellationToken);
+        }
+
+        Material? actualMaterial = null;
+        var actualMfgMonth = 0;
+        if (request.Type == InwardVarianceType.Mismatch)
+        {
+            actualMaterial = await db.Materials.AsNoTracking().FirstOrDefaultAsync(m => m.Id == request.ActualMaterialId, cancellationToken)
+                ?? throw new InvalidOperationException("The material that actually arrived was not found.");
+            if (!actualMaterial.IsActive)
+            {
+                throw new InvalidOperationException($"Material {actualMaterial.MaterialNumber} is inactive in Material Master.");
+            }
+
+            MfgMonthParser.TryParse(request.ActualMfgMonthText!, out actualMfgMonth);
+            if (actualMaterial.Id == line.MaterialId && actualMfgMonth == mfgMonth)
+            {
+                throw new InvalidOperationException("The material and PKM that arrived are the same as the inbound, so this is not a mismatch.");
+            }
+        }
+
+        var landing = destination ?? position;
         var changes = new List<StockChange> { new(line.MaterialId, mfgMonth, LocationSubtypeIds.Good, position, -request.QuantityBoxes) };
         if (request.Type == InwardVarianceType.Damage)
         {
-            // The damaged boxes stay where they are, but are Damage stock in inventory.
-            changes.Add(new StockChange(line.MaterialId, mfgMonth, LocationSubtypeIds.Damage, position, request.QuantityBoxes));
+            // The damaged boxes are Damage stock in inventory - in the same cell, or in the location the supervisor chose.
+            changes.Add(new StockChange(line.MaterialId, mfgMonth, LocationSubtypeIds.Damage, landing, request.QuantityBoxes));
+        }
+        else if (request.Type == InwardVarianceType.Mismatch)
+        {
+            // What arrived instead is real Good stock of the other material / PKM.
+            changes.Add(new StockChange(actualMaterial!.Id, actualMfgMonth, LocationSubtypeIds.Good, landing, request.QuantityBoxes));
         }
 
         await posting.ApplyAsync(
@@ -99,6 +143,9 @@ public sealed class RecordInwardVarianceHandler(
             MaterialId = line.MaterialId,
             MfgMonth = mfgMonth,
             PalletPositionId = position.Id,
+            DestinationPalletPositionId = destination?.Id,
+            ActualMaterialId = actualMaterial?.Id,
+            ActualMfgMonth = actualMaterial is null ? null : actualMfgMonth,
             QuantityBoxes = request.QuantityBoxes,
             Remarks = request.Remarks.Trim(),
             CreatedAt = clock.UtcNow,
@@ -113,7 +160,8 @@ public sealed class RecordInwardVarianceHandler(
         await InwardVariances.SaveAsync(db, cancellationToken);
         return new InwardVarianceDto(
             variance.Id, variance.Type, line.Material.MaterialNumber, line.Material.Description, MfgMonthParser.Format(mfgMonth),
-            position.LocationCode, variance.QuantityBoxes, variance.Remarks, variance.CreatedByUserName, variance.CreatedAt);
+            landing.LocationCode, variance.QuantityBoxes, variance.Remarks, variance.CreatedByUserName, variance.CreatedAt,
+            actualMaterial?.MaterialNumber, actualMaterial is null ? null : MfgMonthParser.Format(actualMfgMonth), destination is null ? null : position.LocationCode);
     }
 }
 
@@ -132,6 +180,7 @@ public sealed class RemoveInwardVarianceHandler(
     {
         var variance = await db.InwardLineVariances
             .Include(v => v.PalletPosition)
+            .Include(v => v.DestinationPalletPosition)
             .Include(v => v.InwardTransaction).ThenInclude(t => t.Lines).ThenInclude(l => l.Putaways)
             .FirstOrDefaultAsync(v => v.Id == request.VarianceId, cancellationToken)
             ?? throw new NotFoundException(nameof(InwardLineVariance), request.VarianceId);
@@ -145,7 +194,11 @@ public sealed class RemoveInwardVarianceHandler(
                 changes.Add(new StockChange(variance.MaterialId, variance.MfgMonth, LocationSubtypeIds.Good, variance.PalletPosition, -variance.QuantityBoxes));
                 break;
             case InwardVarianceType.Damage:
-                changes.Add(new StockChange(variance.MaterialId, variance.MfgMonth, LocationSubtypeIds.Damage, variance.PalletPosition, -variance.QuantityBoxes));
+                changes.Add(new StockChange(variance.MaterialId, variance.MfgMonth, LocationSubtypeIds.Damage, variance.DestinationPalletPosition ?? variance.PalletPosition, -variance.QuantityBoxes));
+                changes.Add(new StockChange(variance.MaterialId, variance.MfgMonth, LocationSubtypeIds.Good, variance.PalletPosition, variance.QuantityBoxes));
+                break;
+            case InwardVarianceType.Mismatch when variance.ActualMaterialId is { } actualId && variance.ActualMfgMonth is { } actualMonth:
+                changes.Add(new StockChange(actualId, actualMonth, LocationSubtypeIds.Good, variance.DestinationPalletPosition ?? variance.PalletPosition, -variance.QuantityBoxes));
                 changes.Add(new StockChange(variance.MaterialId, variance.MfgMonth, LocationSubtypeIds.Good, variance.PalletPosition, variance.QuantityBoxes));
                 break;
             default:

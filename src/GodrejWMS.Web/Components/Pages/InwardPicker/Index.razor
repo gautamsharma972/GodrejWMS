@@ -7,6 +7,9 @@
 @using GodrejWMS.Application.Features.Inward.Commands
 @using GodrejWMS.Application.Features.Inward.Dtos
 @using GodrejWMS.Application.Features.Inward.Queries
+@using GodrejWMS.Application.Features.Materials.Dtos
+@using GodrejWMS.Application.Features.Materials.Queries
+@using GodrejWMS.Domain.Entities
 @using GodrejWMS.Domain.Enums
 @inject IMediator Mediator
 @inject GodrejWMS.Application.Common.Permissions.IPermissionService PermissionService
@@ -190,7 +193,11 @@
                     {
                         var rows = Rows();
                         var selected = _selectedPutawayId is { } sid ? rows.FirstOrDefault(r => r.Putaway.Id == sid) : null;
-                        @if (selected is null)
+                        @if (_reviewMode != 0)
+                        {
+                            @ReviewForm
+                        }
+                        else if (selected is null)
                         {
                             var done = rows.Count(r => r.Done);
                             <p class="text-muted mb-2">Tap a location to confirm or change it. <strong>@done of @rows.Count</strong> done.</p>
@@ -203,11 +210,15 @@
                                             <strong class="fs-5 @(row.Done ? "picker-location-code-done" : null)">@row.Putaway.LocationCode</strong><br />
                                             <span class="small text-muted">@row.Line.MaterialNumber &middot; @row.Putaway.QuantityBoxes.ToString("0.###") boxes &middot; @row.Line.MfgMonthLabel</span>
                                         </span>
-                                        <span class="status-pill @(row.Done ? "success" : "warning")">@(row.Putaway.ExcludedLocation is not null ? row.Putaway.ExcludedLocation : row.Putaway.IsPickerPlaced ? "Submitted" : row.Putaway.IsConfirmed && !row.Posted ? "Confirmed" : "To do")</span>
+                                        <span class="status-pill @(row.Done ? "success" : "warning")">@(row.Putaway.ExcludedLocation == "PICK-RESERVED" ? (row.Putaway.PlannedLocationCode ?? "Picked") : row.Putaway.ExcludedLocation is not null ? row.Putaway.ExcludedLocation : row.Putaway.IsPickerPlaced ? "Submitted" : row.Putaway.IsConfirmed && !row.Posted ? "Confirmed" : "To do")</span>
                                         @if (row.Putaway.IsVirtual) { <span class="status-pill info ms-1" title="Virtual overflow location">Virtual</span> }
                                     </button>
                                 }
                             </div>
+                            @if (_canConfirm && _detail.PostedAt.HasValue)
+                            {
+                                @ReviewPanel
+                            }
                             @if (rows.Any(r => !r.Putaway.IsExcludedLocked))
                             {
                                 // The picker only submits; the final Confirm belongs to a supervisor. Until it is given every location stays editable.
@@ -337,6 +348,318 @@
 </div>
 
 @code {
+    private RenderFragment ReviewPanel => __builder =>
+    {
+        var locked = _detail!.Lines.SelectMany(l => l.Putaways).Any(p => p.IsExcludedLocked && p.ExcludedLocation != "PICK-RESERVED");
+        <section class="border rounded-3 p-3 mt-3" aria-labelledby="review-heading">
+            <h3 id="review-heading" class="h6 mb-1">Damage, shortage, mismatch and excess</h3>
+            <p class="small text-muted">Recorded against the put-away while you review it. Damaged boxes stay as Damage stock (in their location or the one you choose); excess is extra material found while unloading and goes to stock at the location you choose.</p>
+            @if (_reviewError is not null)
+            {
+                <div class="alert alert-danger" role="alert">@_reviewError</div>
+            }
+            @foreach (var record in _detail.Variances ?? [])
+            {
+                <div class="d-flex justify-content-between align-items-start border-top py-2">
+                    <div>
+                        <span class="status-pill @(record.Type == InwardVarianceType.Excess ? "info" : record.Type == InwardVarianceType.Damage ? "danger" : "warning")">@record.Type</span>
+                        <strong class="ms-2">@record.QuantityBoxes.ToString("0.###") boxes</strong>
+                        <div class="small text-muted">@record.MaterialNumber &middot; @record.MfgMonthLabel &middot; @(record.FromLocationCode is null ? record.LocationCode : $"{record.FromLocationCode} → {record.LocationCode}")</div>
+                        @if (record.ActualMaterialNumber is not null)
+                        {
+                            <div class="small text-muted">Arrived instead: @record.ActualMaterialNumber &middot; @record.ActualMfgMonthLabel</div>
+                        }
+                        <div class="small">@record.Remarks</div>
+                    </div>
+                    @if (!locked)
+                    {
+                        <button type="button" class="btn btn-sm btn-outline-danger" title="Remove record" aria-label="Remove record" @onclick="() => RemoveRecordAsync(record.Id)">
+                            <i class="bi bi-x-lg" aria-hidden="true"></i>
+                        </button>
+                    }
+                </div>
+            }
+            @if (locked)
+            {
+                <p class="small text-muted mb-0">This GRN is confirmed, so records can no longer be changed.</p>
+            }
+            else
+            {
+                <div class="d-grid gap-2 mt-2">
+                    <button type="button" class="btn btn-outline-primary" disabled="@(RecordableRows().Count == 0)" @onclick="OpenRecordForm">Record damage / shortage / mismatch</button>
+                    <button type="button" class="btn btn-outline-primary" @onclick="OpenExcessForm">Add excess material</button>
+                </div>
+            }
+        </section>
+    };
+
+    private RenderFragment ReviewForm => __builder =>
+    {
+        <button type="button" class="picker-back-link" @onclick="CloseReviewForm">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i> Back
+        </button>
+        @if (_reviewMode == 1)
+        {
+            <h3 class="h5">Damage / shortage / mismatch</h3>
+            <div class="picker-form-grid">
+                <div class="picker-field">
+                    <label for="rec-row">Put-away</label>
+                    <select id="rec-row" class="form-select form-select-lg" @bind="_recRowId">
+                        <option value="0">Select put-away</option>
+                        @foreach (var row in RecordableRows())
+                        {
+                            <option value="@row.Putaway.Id">@row.Putaway.LocationCode &middot; @row.Line.MaterialNumber &middot; @row.Line.MfgMonthLabel &middot; @row.Putaway.QuantityBoxes.ToString("0.###") boxes</option>
+                        }
+                    </select>
+                </div>
+                <div class="picker-field">
+                    <label for="rec-type">Type</label>
+                    <select id="rec-type" class="form-select form-select-lg" @bind="_recType">
+                        <option value="@InwardVarianceType.Damage">Damage</option>
+                        <option value="@InwardVarianceType.Shortage">Shortage</option>
+                        <option value="@InwardVarianceType.Mismatch">Mismatch</option>
+                    </select>
+                </div>
+                @if (_recType == InwardVarianceType.Mismatch)
+                {
+                    <div class="picker-field">
+                        <label>Material code that arrived</label>
+                        <SearchableMaterialSelect Options="_materials" @bind-Value="_actualMaterialId" Placeholder="Search material code or description" />
+                    </div>
+                    <fieldset class="picker-field picker-pkm-field">
+                        <legend>PKM that arrived</legend>
+                        <div class="picker-pkm-inputs">
+                            <select class="form-select form-select-lg" title="PKM year" aria-label="PKM year that arrived" @bind="_actualYear">
+                                <option value="0">Year</option>
+                                @foreach (var year in YearOptions) { <option value="@year">@year</option> }
+                            </select>
+                            <select class="form-select form-select-lg" title="PKM month" aria-label="PKM month that arrived" @bind="_actualMonth">
+                                <option value="0">Month</option>
+                                @foreach (var month in MonthLabels) { <option value="@month.Value">@month.Label</option> }
+                            </select>
+                        </div>
+                    </fieldset>
+                }
+                <div class="picker-field picker-quantity-field">
+                    <label for="rec-qty">Quantity <span>(boxes)</span></label>
+                    <input id="rec-qty" type="number" inputmode="decimal" min="0" step="any" class="form-control form-control-lg" @bind="_recQty" @bind:event="oninput" />
+                </div>
+                @if (_recType != InwardVarianceType.Shortage)
+                {
+                    <div class="picker-field picker-location-field">
+                        <label>Location <span>(put these boxes in - leave empty to keep them in the put-away's own location)</span></label>
+                        <SearchableLocationSelect Options="_realLocationOptions" @bind-Value="_destinationId" Placeholder="Search location" AriaLabel="Search location for these boxes" />
+                    </div>
+                }
+                <div class="picker-field">
+                    <label for="rec-remarks">Remark</label>
+                    <input id="rec-remarks" class="form-control form-control-lg" maxlength="500" placeholder="What was found" @bind="_recRemarks" @bind:event="oninput" />
+                </div>
+            </div>
+            @if (_reviewError is not null)
+            {
+                <div class="alert alert-danger" role="alert">@_reviewError</div>
+            }
+            <div class="picker-form-actions">
+                <button type="button" class="btn btn-outline-secondary btn-lg" @onclick="CloseReviewForm">Cancel</button>
+                <button type="button" class="btn btn-primary btn-lg" disabled="@(_reviewSaving || !CanSaveRecord)" @onclick="SaveRecordAsync">
+                    @(_reviewSaving ? "Saving..." : "Save record")
+                </button>
+            </div>
+        }
+        else
+        {
+            <h3 class="h5">Add excess material</h3>
+            <div class="picker-form-grid">
+                <div class="picker-field">
+                    <label>Material code</label>
+                    <SearchableMaterialSelect Options="_materials" @bind-Value="_exMaterialId" Placeholder="Search material code or description" />
+                </div>
+                <fieldset class="picker-field picker-pkm-field">
+                    <legend>PKM</legend>
+                    <div class="picker-pkm-inputs">
+                        <select class="form-select form-select-lg" title="PKM year" aria-label="PKM year" @bind="_exYear">
+                            <option value="0">Year</option>
+                            @foreach (var year in YearOptions) { <option value="@year">@year</option> }
+                        </select>
+                        <select class="form-select form-select-lg" title="PKM month" aria-label="PKM month" @bind="_exMonth">
+                            <option value="0">Month</option>
+                            @foreach (var month in MonthLabels) { <option value="@month.Value">@month.Label</option> }
+                        </select>
+                    </div>
+                </fieldset>
+                <div class="picker-field picker-location-field">
+                    <label>Location</label>
+                    <SearchableLocationSelect Options="_realLocationOptions" @bind-Value="_exLocationId" Placeholder="Search location" AriaLabel="Search location for the excess material" />
+                </div>
+                <div class="picker-field picker-quantity-field">
+                    <label for="ex-qty">Quantity <span>(boxes)</span></label>
+                    <input id="ex-qty" type="number" inputmode="decimal" min="0" step="any" class="form-control form-control-lg" @bind="_exQty" @bind:event="oninput" />
+                </div>
+                <div class="picker-field">
+                    <label for="ex-remarks">Remark</label>
+                    <input id="ex-remarks" class="form-control form-control-lg" maxlength="500" placeholder="Where it was found" @bind="_exRemarks" @bind:event="oninput" />
+                </div>
+            </div>
+            @if (_reviewWarning is not null)
+            {
+                <div class="alert alert-warning" role="alert"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> @_reviewWarning</div>
+            }
+            @if (_reviewError is not null)
+            {
+                <div class="alert alert-danger" role="alert">@_reviewError</div>
+            }
+            <div class="picker-form-actions">
+                <button type="button" class="btn btn-outline-secondary btn-lg" @onclick="CloseReviewForm">Cancel</button>
+                <button type="button" class="btn btn-primary btn-lg" disabled="@(_reviewSaving || !CanSaveExcess)" @onclick="() => SaveExcessAsync(_reviewWarning is not null)">
+                    @(_reviewSaving ? "Saving..." : _reviewWarning is null ? "Save excess material" : "Save anyway")
+                </button>
+            </div>
+        }
+    };
+
+    // ---- supervisor review: damage / shortage / mismatch / excess
+    private int _reviewMode; // 0 = none, 1 = damage/shortage/mismatch form, 2 = excess form
+    private IReadOnlyList<MaterialDto> _materials = [];
+    private IReadOnlyList<AopLocationOptionDto> _realLocationOptions = [];
+    private string? _reviewError;
+    private string? _reviewWarning;
+    private bool _reviewSaving;
+    private int _recRowId;
+    private InwardVarianceType _recType = InwardVarianceType.Damage;
+    private decimal _recQty;
+    private string _recRemarks = string.Empty;
+    private int _actualMaterialId;
+    private int _actualYear;
+    private int _actualMonth;
+    private int _destinationId;
+    private int _exMaterialId;
+    private int _exYear;
+    private int _exMonth;
+    private int _exLocationId;
+    private decimal _exQty;
+    private string _exRemarks = string.Empty;
+
+    private bool CanSaveRecord => _recRowId > 0 && _recQty > 0 && !string.IsNullOrWhiteSpace(_recRemarks)
+        && (_recType != InwardVarianceType.Mismatch || (_actualMaterialId > 0 && _actualYear > 0 && _actualMonth > 0));
+
+    private bool CanSaveExcess => _exMaterialId > 0 && _exYear > 0 && _exMonth > 0 && _exLocationId > 0 && _exQty > 0 && !string.IsNullOrWhiteSpace(_exRemarks);
+
+    private List<PutawayRow> RecordableRows() => Rows().Where(r => r.Putaway.ExcludedLocation is null && r.Putaway.QuantityBoxes > 0).ToList();
+
+    private static string PkmText(int year, int month) =>
+        $"{System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetAbbreviatedMonthName(month).ToUpperInvariant()}|{year}";
+
+    private async Task EnsureReviewDataAsync()
+    {
+        if (_materials.Count == 0)
+        {
+            _materials = (await Mediator.Send(new GetMaterialsQuery(IsActive: true, PageSize: 5000))).Items;
+        }
+
+        _realLocationOptions = _locationOptions.Where(o => o.Id > 0).ToList();
+    }
+
+    private async Task OpenRecordForm()
+    {
+        await EnsureReviewDataAsync();
+        _recRowId = 0; _recType = InwardVarianceType.Damage; _recQty = 0; _recRemarks = string.Empty;
+        _actualMaterialId = 0; _actualYear = 0; _actualMonth = 0; _destinationId = 0;
+        _reviewError = null; _reviewWarning = null;
+        _reviewMode = 1;
+    }
+
+    private async Task OpenExcessForm()
+    {
+        await EnsureReviewDataAsync();
+        _exMaterialId = 0; _exYear = 0; _exMonth = 0; _exLocationId = 0; _exQty = 0; _exRemarks = string.Empty;
+        _reviewError = null; _reviewWarning = null;
+        _reviewMode = 2;
+    }
+
+    private void CloseReviewForm()
+    {
+        _reviewMode = 0;
+        _reviewError = null;
+        _reviewWarning = null;
+    }
+
+    private async Task ReloadDetailAsync()
+    {
+        if (_detail is not null)
+        {
+            _detail = await Mediator.Send(new GetInwardDetailQuery(_detail.Id));
+        }
+    }
+
+    private async Task SaveRecordAsync()
+    {
+        if (_reviewSaving || !CanSaveRecord) return;
+        _reviewSaving = true;
+        _reviewError = null;
+        try
+        {
+            var mismatch = _recType == InwardVarianceType.Mismatch;
+            await Mediator.Send(new RecordInwardVarianceCommand(
+                _recRowId, _recType, _recQty, _recRemarks.Trim(),
+                mismatch ? _actualMaterialId : null,
+                mismatch ? PkmText(_actualYear, _actualMonth) : null,
+                _recType != InwardVarianceType.Shortage && _destinationId > 0 ? _destinationId : null));
+            await ReloadDetailAsync();
+            CloseReviewForm();
+        }
+        catch (Exception ex)
+        {
+            _reviewError = ex.Message;
+        }
+        finally
+        {
+            _reviewSaving = false;
+        }
+    }
+
+    private async Task SaveExcessAsync(bool acknowledgeWarning)
+    {
+        if (_reviewSaving || _detail is null || !CanSaveExcess) return;
+        _reviewSaving = true;
+        _reviewError = null;
+        try
+        {
+            var result = await Mediator.Send(new RecordExcessMaterialCommand(
+                _detail.Id, _exMaterialId, PkmText(_exYear, _exMonth), _exLocationId, _exQty, _exRemarks.Trim(), acknowledgeWarning));
+            if (!result.Saved)
+            {
+                _reviewWarning = result.Warning ?? "Check the location.";
+                return;
+            }
+
+            await ReloadDetailAsync();
+            CloseReviewForm();
+        }
+        catch (Exception ex)
+        {
+            _reviewError = ex.Message;
+        }
+        finally
+        {
+            _reviewSaving = false;
+        }
+    }
+
+    private async Task RemoveRecordAsync(int varianceId)
+    {
+        _reviewError = null;
+        try
+        {
+            await Mediator.Send(new RemoveInwardVarianceCommand(varianceId));
+            await ReloadDetailAsync();
+        }
+        catch (Exception ex)
+        {
+            _reviewError = ex.Message;
+        }
+    }
+
     private const int GitOptionId = -1;
     private const int NoRackOptionId = -2;
 
@@ -461,6 +784,8 @@
         _detail = null;
         _detailError = null;
         _selectedPutawayId = null;
+        _reviewMode = 0;
+        _reviewError = null;
     }
 
     private void SelectRow(PutawayRow row)

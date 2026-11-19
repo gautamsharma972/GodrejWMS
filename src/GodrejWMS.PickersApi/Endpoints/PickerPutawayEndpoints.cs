@@ -13,7 +13,9 @@ public sealed record PickerPlaceInwardPutawayRequest(
     string? ExcludedLocation,
     bool AcknowledgeWarning = false);
 
-public sealed record RecordInwardVarianceRequest(Domain.Entities.InwardVarianceType Type, decimal QuantityBoxes, string Remarks);
+public sealed record RecordInwardVarianceRequest(
+    Domain.Entities.InwardVarianceType Type, decimal QuantityBoxes, string Remarks,
+    int? ActualMaterialId = null, string? ActualMfgMonthText = null, int? DestinationPalletPositionId = null);
 
 public sealed record RecordExcessMaterialRequest(
     int MaterialId, string MfgMonthText, int PalletPositionId, decimal QuantityBoxes, string Remarks, bool AcknowledgeWarning = false);
@@ -87,7 +89,9 @@ public static class PickerPutawayEndpoints
                 CancellationToken cancellationToken) =>
                 await ApiExceptionMapping.RunAsync(async () =>
                     Results.Ok(await mediator.Send(
-                        new RecordInwardVarianceCommand(putawayId, request.Type, request.QuantityBoxes, request.Remarks), cancellationToken))))
+                        new RecordInwardVarianceCommand(
+                            putawayId, request.Type, request.QuantityBoxes, request.Remarks,
+                            request.ActualMaterialId, request.ActualMfgMonthText, request.DestinationPalletPositionId), cancellationToken))))
             .RequireAuthorization("Permission:" + PermissionKeys.Inward.Confirm)
             .WithName("RecordInwardVariance");
 

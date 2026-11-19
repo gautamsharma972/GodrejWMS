@@ -103,6 +103,12 @@ export interface InwardHistoryDto {
   lrNumber?: string | null;
   locationCount: number;
   submittedLocationCount: number;
+  /** Boxes uploaded on the inbound: totalQuantityBoxes (good boxes put away) is measured against this. */
+  inboundBoxes?: number;
+  /** Boxes recorded as damage / shortage / mismatch. */
+  recordedBoxes?: number;
+  /** Extra material recorded beyond the inbound volume. */
+  excessBoxes?: number;
 }
 
 export interface InwardPutawayDto {
@@ -120,6 +126,8 @@ export interface InwardPutawayDto {
   isExcludedLocked: boolean;
   /** The location is an auto-generated virtual overflow location. */
   isVirtual?: boolean;
+  /** Shelf location originally allocated (shown on already-picked rows that display as GIT). */
+  plannedLocationCode?: string | null;
 }
 
 export const InwardVarianceType = { Damage: 1, Shortage: 2, Mismatch: 3, Excess: 4 } as const;
@@ -137,6 +145,11 @@ export interface InwardVarianceDto {
   remarks: string;
   createdByUserName?: string | null;
   createdAt: string;
+  /** Mismatch: the material / PKM that actually arrived. */
+  actualMaterialNumber?: number | null;
+  actualMfgMonthLabel?: string | null;
+  /** Damage / mismatch put in another location: the put-away's own cell (locationCode is where the boxes are now). */
+  fromLocationCode?: string | null;
 }
 
 export interface RecordExcessMaterialResult {

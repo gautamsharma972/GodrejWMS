@@ -9,6 +9,32 @@ public static class InwardVariances
 {
     public const string LedgerReferenceType = "GRN_VARIANCE";
 
+    /// <summary>The location a supervisor chose for damaged / mismatched boxes: active, in the GRN's warehouse, not GIT; a mismatch is Good stock so it needs a Good location,
+    /// damaged boxes may also go to a Damage location.</summary>
+    public static async Task<PalletPosition> LoadDestinationAsync(
+        IApplicationDbContext db, int positionId, int warehouseId, InwardVarianceType type, CancellationToken cancellationToken)
+    {
+        var position = await db.PalletPositions.Include(p => p.Rack).FirstOrDefaultAsync(p => p.Id == positionId, cancellationToken)
+            ?? throw new InvalidOperationException("The selected location was not found.");
+        if (!position.IsActive || !position.Rack.IsActive)
+        {
+            throw new InvalidOperationException($"Location {position.LocationCode} is not active.");
+        }
+
+        if (position.Rack.WarehouseId != warehouseId)
+        {
+            throw new InvalidOperationException($"Location {position.LocationCode} belongs to a different warehouse.");
+        }
+
+        if (position.ZoneTypeId == ZoneTypeIds.Git
+            || (position.LocationSubtypeId != LocationSubtypeIds.Good && !(type == InwardVarianceType.Damage && position.LocationSubtypeId == LocationSubtypeIds.Damage)))
+        {
+            throw new InvalidOperationException($"Location {position.LocationCode} cannot hold {(type == InwardVarianceType.Damage ? "damaged" : "good")} stock.");
+        }
+
+        return position;
+    }
+
     /// <summary>Saves; a lost race against another user (concurrency token, unique key) becomes a clear message instead of a database error.</summary>
     public static async Task SaveAsync(IApplicationDbContext db, CancellationToken cancellationToken)
     {

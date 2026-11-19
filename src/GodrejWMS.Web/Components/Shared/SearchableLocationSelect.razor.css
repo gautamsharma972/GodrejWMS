@@ -15,6 +15,17 @@
     background: #eff6ff;
 }
 
+.location-scan-button {
+    border-color: var(--bs-border-color, #ced4da);
+}
+
+.location-scan-message {
+    flex-basis: 100%;
+    margin-top: 0.35rem;
+    color: #b45309;
+    font-size: 0.82rem;
+}
+
 .selected-location-check {
     color: #15803d;
     background: #f0fdf4;

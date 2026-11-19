@@ -85,7 +85,7 @@ public static class InwardNoPkmEndpoints
                 CancellationToken cancellationToken) =>
                 await ApiExceptionMapping.RunAsync(async () =>
                     Results.Ok(await mediator.Send(new GetInwardDetailQuery(id), cancellationToken))))
-            .RequireAuthorization("Permission:" + PermissionKeys.Menu.ViewInwardNoPkm)
+            .RequireAuthorization("Permission:" + PermissionKeys.Menu.ViewInwardNoPkm + "|" + PermissionKeys.Inward.AssignPkm + "|" + PermissionKeys.Inward.Confirm)
             .WithName("GetInwardNoPkmDetail");
 
         group.MapGet("/inward-no-pkm/{id:int}/download", async (
