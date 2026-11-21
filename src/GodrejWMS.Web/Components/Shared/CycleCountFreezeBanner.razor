@@ -1,0 +1,38 @@
+@* Tells the user that a cycle count is open for the warehouse, so new Inward / Pullout requests cannot be created. This is only the visible
+   part: the same rule is enforced in the submit handlers, so the API and every upload path are blocked regardless of this banner. *@
+@using GodrejWMS.Application.Features.CycleCount
+@using GodrejWMS.Application.Features.CycleCount.Queries
+@inject IMediator Mediator
+
+@if (_freeze is { IsFrozen: true })
+{
+    <div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+        <i class="bi bi-snow2" aria-hidden="true"></i>
+        <div><strong>Cycle count in progress.</strong> @_freeze.Message</div>
+    </div>
+}
+
+@code {
+    [Parameter] public int? WarehouseId { get; set; }
+
+    /// <summary>True while a cycle count blocks new requests for the selected warehouse.</summary>
+    [Parameter] public bool Frozen { get; set; }
+
+    [Parameter] public EventCallback<bool> FrozenChanged { get; set; }
+
+    private CycleCountFreezeDto? _freeze;
+    private int? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (WarehouseId == _loadedFor && _freeze is not null) return;
+        _loadedFor = WarehouseId;
+        _freeze = WarehouseId is null ? null : await Mediator.Send(new GetCycleCountFreezeQuery(WarehouseId.Value));
+        var frozen = _freeze?.IsFrozen == true;
+        if (frozen != Frozen)
+        {
+            Frozen = frozen;
+            await FrozenChanged.InvokeAsync(frozen);
+        }
+    }
+}

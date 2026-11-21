@@ -1,0 +1,376 @@
+@page "/cycle-count/batches"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewCycleCount)]
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Features.CycleCount
+@using GodrejWMS.Application.Features.CycleCount.Commands
+@using GodrejWMS.Application.Features.CycleCount.Queries
+@using GodrejWMS.Domain.Entities
+@inject IMediator Mediator
+@inject ILogger<Batches> Logger
+
+<PageTitle>Cycle Count Batches - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Cycle Count</div>
+            <h1>Cycle Count Batches</h1>
+            <p class="page-kicker">Progress of every scheduled count. Open a batch to see its racks and history, and to extend, shorten, close partially, close or drop it.</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.Schedule">
+                <a class="btn btn-primary" href="/cycle-count/schedule"><i class="bi bi-calendar-plus" aria-hidden="true"></i> Schedule</a>
+            </PermissionAuthorize>
+        </div>
+    </div>
+
+    @if (_message is not null)
+    {
+        <div class="alert alert-success" role="status">@_message</div>
+    }
+    @if (_error is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_error</div>
+    }
+
+    <section class="panel" aria-labelledby="batches-heading">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <h2 id="batches-heading" class="panel-title mb-0">Batches</h2>
+            <div class="toolbar-group">
+                <WarehouseSelect WarehouseId="_warehouseId" WarehouseIdChanged="OnWarehouseChanged" Placeholder="All warehouses" AllowClear="true" />
+                <input class="form-control" style="min-width:14rem" placeholder="Batch number or rack" @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+                <select class="form-select filter-control" @bind="_statusText" @bind:after="ReloadAsync">
+                    <option value="">All statuses</option>
+                    @foreach (var status in Enum.GetValues<CycleCountBatchStatus>())
+                    {
+                        <option value="@status">@StatusText(status)</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        @if (_page is null)
+        {
+            <div class="loading-panel"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Loading...</div>
+        }
+        else if (_page.Items.Count == 0)
+        {
+            <div class="empty-state"><i class="bi bi-clipboard2-check" aria-hidden="true"></i><strong>No cycle counts</strong></div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr><th>Batch</th><th>Warehouse</th><th>Window</th><th>Racks</th><th style="min-width:14rem">Progress</th><th>Status</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _page.Items)
+                        {
+                            <tr>
+                                <td><span class="record-code">@item.BatchNumber</span><div class="small text-muted">@item.CreatedByUserName, @item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy")</div></td>
+                                <td>@item.WarehouseName</td>
+                                <td>@item.ScheduleFrom.ToLocalTime().ToString("dd MMM HH:mm") &ndash; @item.ScheduleTo.ToLocalTime().ToString("dd MMM HH:mm")</td>
+                                <td>@string.Join(", ", item.Racks.Select(r => r.RackCode))<div class="small text-muted">@item.TotalLocations location(s)</div></td>
+                                <td>
+                                    <div class="progress" role="progressbar" aria-label="Completion" aria-valuenow="@item.CompletionPercent" aria-valuemin="0" aria-valuemax="100" style="height:.8rem">
+                                        <div class="progress-bar bg-success" style="width:@(item.CompletionPercent.ToString(System.Globalization.CultureInfo.InvariantCulture))%"></div>
+                                    </div>
+                                    <div class="small text-muted">
+                                        @item.CompletedCards of @item.TotalCards cards (@item.CompletionPercent.ToString("0.#")%) &middot; @item.SubmittedCards submitted &middot; @item.PendingReviewCount pending review
+                                    </div>
+                                </td>
+                                <td><span class="status-pill @StatusClass(item.Status)">@StatusText(item.Status)</span></td>
+                                <td class="table-actions">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => ToggleAsync(item.Id)" aria-label="Open @item.BatchNumber">
+                                        <i class="bi bi-@(_openId == item.Id ? "chevron-up" : "chevron-down")" aria-hidden="true"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            @if (_openId == item.Id && _detail is not null)
+                            {
+                                <tr>
+                                    <td colspan="7" class="bg-light">
+                                        @RenderDetail(_detail)
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <nav class="pagination-bar" aria-label="Batch pagination">
+                <ul class="pagination mb-0">
+                    <li class="page-item @(_page.HasPreviousPage ? "" : "disabled")"><button class="page-link" @onclick="() => LoadAsync(_pageNumber - 1)">Previous</button></li>
+                    <li class="page-item disabled"><span class="page-link">Page @_page.PageNumber of @Math.Max(1, _page.TotalPages)</span></li>
+                    <li class="page-item @(_page.HasNextPage ? "" : "disabled")"><button class="page-link" @onclick="() => LoadAsync(_pageNumber + 1)">Next</button></li>
+                </ul>
+            </nav>
+        }
+    </section>
+</div>
+
+@code {
+    private RenderFragment RenderDetail(CycleCountBatchDetailDto detail) => __builder =>
+    {
+        var b = detail.Batch;
+        <div class="row g-3">
+            <div class="col-lg-7">
+                <h3 class="h6">Racks</h3>
+                <table class="table table-sm mb-3">
+                    <thead><tr><th>Rack</th><th>Status</th><th class="text-end">Cards</th><th class="text-end">Completed</th><th class="text-end">Pending</th><th>Submitted</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in b.Racks)
+                        {
+                            <tr>
+                                <td><strong>@r.RackCode</strong></td>
+                                <td>@r.Status</td>
+                                <td class="text-end">@r.TotalCards</td>
+                                <td class="text-end">@r.CompletedCards</td>
+                                <td class="text-end">@r.PendingCards</td>
+                                <td>@(r.SubmittedAt is null ? "-" : $"{r.SubmittedByUserName}, {r.SubmittedAt.Value.ToLocalTime():dd MMM HH:mm}")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div class="small text-muted mb-2">
+                    Actual start: @(b.ActualStartAt?.ToLocalTime().ToString("dd MMM yyyy HH:mm") ?? "not started") &middot;
+                    Actual end: @(b.ActualEndAt?.ToLocalTime().ToString("dd MMM yyyy HH:mm") ?? "-") &middot;
+                    @b.ExcludedCards excluded card(s) &middot;
+                    Freeze: @(b.AutoReleaseFreezeAtScheduleEnd ? "ends at Schedule To" : "until closed or dropped")
+                </div>
+                @if (!string.IsNullOrWhiteSpace(b.Remarks)) { <div class="small">Remarks: @b.Remarks</div> }
+                @if (!string.IsNullOrWhiteSpace(b.DropReason)) { <div class="small text-danger">Dropped: @b.DropReason</div> }
+
+                @if (CycleCountBatch.IsOpen(b.Status))
+                {
+                    <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.ManageSchedule">
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                            @if (b.Status is CycleCountBatchStatus.Scheduled or CycleCountBatchStatus.InProgress or CycleCountBatchStatus.Extended)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick='() => StartAction("extend", b)'>Extend</button>
+                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick='() => StartAction("reduce", b)'>Reduce</button>
+                            }
+                            @if (b.Status is CycleCountBatchStatus.InProgress or CycleCountBatchStatus.Extended)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-warning" @onclick='() => StartAction("partial", b)'>Close partially</button>
+                            }
+                            <button type="button" class="btn btn-sm btn-outline-success" @onclick='() => StartAction("close", b)'>Close</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick='() => StartAction("drop", b)'>Drop</button>
+                        </div>
+                    </PermissionAuthorize>
+                }
+
+                @if (_action is not null && _openId == b.Id)
+                {
+                    <div class="border rounded bg-white p-3 mt-3">
+                        <strong>@ActionTitle</strong>
+                        @if (_action is "extend" or "reduce")
+                        {
+                            <div class="mt-2">
+                                <label class="form-label">New Schedule To</label>
+                                <input type="datetime-local" class="form-control" @bind="_newTo" />
+                            </div>
+                        }
+                        @if (_action is not "close")
+                        {
+                            <div class="mt-2">
+                                <label class="form-label">Reason @(_action is "drop" ? "(required)" : "")</label>
+                                <input class="form-control" maxlength="500" @bind="_reason" @bind:event="oninput" />
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="mt-2">
+                                <label class="form-label">Remarks (optional)</label>
+                                <input class="form-control" maxlength="500" @bind="_reason" @bind:event="oninput" />
+                            </div>
+                        }
+                        @if (_actionWarning is not null)
+                        {
+                            <div class="alert alert-warning mt-2 mb-0">@_actionWarning</div>
+                        }
+                        <div class="d-flex gap-2 mt-3">
+                            <button type="button" class="btn btn-primary" @onclick="() => RunActionAsync(b)" disabled="@_busy">@(_actionWarning is null ? "Confirm" : "Confirm anyway")</button>
+                            <button type="button" class="btn btn-outline-secondary" @onclick="CancelAction" disabled="@_busy">Cancel</button>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="col-lg-5">
+                <h3 class="h6">History</h3>
+                <div class="small" style="max-height:18rem;overflow:auto">
+                    @foreach (var h in detail.History)
+                    {
+                        <div class="border-bottom py-1">
+                            <strong>@h.Action.Replace('_', ' ')</strong> @(h.RackCode is null ? "" : $"[{h.RackCode}]")
+                            <span class="text-muted">&middot; @h.UserName &middot; @h.OccurredAt.ToLocalTime().ToString("dd MMM HH:mm")</span>
+                            @if (!string.IsNullOrWhiteSpace(h.PreviousValue) || !string.IsNullOrWhiteSpace(h.NewValue))
+                            {
+                                <div>@h.PreviousValue @(string.IsNullOrWhiteSpace(h.PreviousValue) ? "" : "→") @h.NewValue</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(h.Reason)) { <div class="text-muted">@h.Reason</div> }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    };
+
+    private PaginatedList<CycleCountBatchDto>? _page;
+    private CycleCountBatchDetailDto? _detail;
+    private int? _openId;
+    private int? _warehouseId;
+    private string? _search;
+    private string _statusText = string.Empty;
+    private int _pageNumber = 1;
+    private string? _message;
+    private string? _error;
+    private bool _busy;
+    private string? _action;
+    private string? _reason;
+    private string? _actionWarning;
+    private DateTime _newTo = DateTime.Now.AddDays(1);
+
+    private string ActionTitle => _action switch
+    {
+        "extend" => "Extend the schedule",
+        "reduce" => "Reduce the schedule",
+        "partial" => "Close partially: uncounted cards are excluded; completed racks can still be submitted",
+        "close" => "Close the cycle count (every rack must be submitted or excluded)",
+        "drop" => "Drop the cycle count: counts that were not submitted are never applied to stock",
+        _ => string.Empty
+    };
+
+    protected override Task OnInitializedAsync() => LoadAsync(1);
+
+    private Task ReloadAsync() => LoadAsync(1);
+
+    private async Task OnWarehouseChanged(int? warehouseId)
+    {
+        _warehouseId = warehouseId;
+        await LoadAsync(1);
+    }
+
+    private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadAsync(1);
+
+    private async Task LoadAsync(int page)
+    {
+        if (page < 1) return;
+        _pageNumber = page;
+        try
+        {
+            _page = await Mediator.Send(new GetCycleCountBatchesQuery(
+                _warehouseId, Enum.TryParse<CycleCountBatchStatus>(_statusText, out var status) ? status : null, _search, null, null, page, 15));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load cycle count batches");
+            _error = ex.Message;
+        }
+    }
+
+    private async Task ToggleAsync(int id)
+    {
+        CancelAction();
+        if (_openId == id)
+        {
+            _openId = null;
+            _detail = null;
+            return;
+        }
+
+        _openId = id;
+        _detail = null;
+        await LoadDetailAsync(id);
+    }
+
+    private async Task LoadDetailAsync(int id)
+    {
+        try
+        {
+            _detail = await Mediator.Send(new GetCycleCountBatchDetailQuery(id));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load cycle count {Id}", id);
+            _error = ex.Message;
+        }
+    }
+
+    private void StartAction(string action, CycleCountBatchDto batch)
+    {
+        _action = action;
+        _reason = null;
+        _actionWarning = null;
+        _error = null;
+        _newTo = batch.ScheduleTo.ToLocalTime().DateTime.AddDays(action == "extend" ? 1 : -1);
+    }
+
+    private void CancelAction()
+    {
+        _action = null;
+        _reason = null;
+        _actionWarning = null;
+    }
+
+    private static DateTimeOffset Local(DateTime value) => new(DateTime.SpecifyKind(value, DateTimeKind.Local));
+
+    private async Task RunActionAsync(CycleCountBatchDto batch)
+    {
+        if (_busy || _action is null) return;
+        _busy = true;
+        _error = null;
+        _message = null;
+        try
+        {
+            var acknowledged = _actionWarning is not null;
+            CycleCountBatchDto result = _action switch
+            {
+                "extend" => await Mediator.Send(new ExtendCycleCountCommand(batch.Id, Local(_newTo), _reason ?? string.Empty)),
+                "reduce" => await Mediator.Send(new ReduceCycleCountCommand(batch.Id, Local(_newTo), _reason ?? string.Empty, acknowledged)),
+                "partial" => await Mediator.Send(new PartiallyCloseCycleCountCommand(batch.Id, _reason ?? string.Empty)),
+                "close" => await Mediator.Send(new CloseCycleCountCommand(batch.Id, _reason)),
+                _ => await Mediator.Send(new DropCycleCountCommand(batch.Id, _reason ?? string.Empty))
+            };
+            _message = $"{result.BatchNumber} is now {StatusText(result.Status)}.";
+            CancelAction();
+            await LoadDetailAsync(batch.Id);
+            await LoadAsync(_pageNumber);
+        }
+        catch (GodrejWMS.Application.Common.Exceptions.ValidationException ex)
+        {
+            _error = string.Join(" ", ex.Errors.SelectMany(e => e.Value));
+        }
+        catch (InvalidOperationException ex) when (_action == "reduce" && _actionWarning is null && ex.Message.Contains("pending", StringComparison.OrdinalIgnoreCase))
+        {
+            _actionWarning = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Cycle count action failed");
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string StatusText(CycleCountBatchStatus status) => status switch
+    {
+        CycleCountBatchStatus.InProgress => "In Progress",
+        CycleCountBatchStatus.PartiallyClosed => "Partially Closed",
+        CycleCountBatchStatus.PendingReview => "Pending Review",
+        _ => status.ToString()
+    };
+
+    private static string StatusClass(CycleCountBatchStatus status) => status switch
+    {
+        CycleCountBatchStatus.Closed => "success",
+        CycleCountBatchStatus.Dropped => "danger",
+        CycleCountBatchStatus.PendingReview or CycleCountBatchStatus.PartiallyClosed => "warning",
+        CycleCountBatchStatus.InProgress or CycleCountBatchStatus.Extended => "info",
+        _ => "neutral"
+    };
+}

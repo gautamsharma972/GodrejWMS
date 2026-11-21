@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Features.CycleCount;
 using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common;
@@ -69,6 +70,8 @@ public sealed class SubmitInwardHandler(
 
     private async Task<InwardResultDto> RunAsync(SubmitInwardCommand request, List<SubmitInwardLine> requestLines, CancellationToken cancellationToken)
     {
+        // Stock must stand still while the warehouse is being cycle-counted (this covers manual entry, every upload and the API).
+        await CycleCountFreeze.EnsureNotFrozenAsync(db, clock, request.WarehouseId, cancellationToken);
         var materialCodes = requestLines.Select(l => l.MaterialCode).ToList();
         var materialsByCode = await db.Materials
             .Where(m => m.IsActive && materialCodes.Contains(m.MaterialNumber))

@@ -22,7 +22,7 @@ public sealed class GetPickerPendingCountsHandler(IApplicationDbContext db, IPer
         // A picker: GRNs with a location still to submit. A supervisor: every GRN not confirmed yet.
         var putaway = inwardReviewer
             ? await open.CountAsync(t => t.Lines.Any(l => l.Putaways.Any(p => p.QuantityBoxes > 0 && !p.IsExcludedLocked
-                && (!p.IsConfirmed || t.PostedAt != null || p.ExcludedLocation != null))), cancellationToken)
+                && (!p.IsConfirmed || t.PostedAt != null || p.ExcludedLocation != null || p.IsPickerPlaced))), cancellationToken)
             : await open.CountAsync(t => t.Lines.Any(l => l.Putaways.Any(p => p.QuantityBoxes > 0 && !p.IsExcludedLocked && !p.IsPickerPlaced && p.ExcludedLocation == null
                 && (!p.IsConfirmed || t.PostedAt != null))), cancellationToken);
 

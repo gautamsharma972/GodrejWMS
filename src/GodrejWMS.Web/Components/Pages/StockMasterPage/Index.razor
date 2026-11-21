@@ -127,6 +127,18 @@
                     <option value="@season.Id">@season.DisplayName</option>
                 }
             </select>
+            <select class="form-select filter-control" value="@_stockTypeFilter" @onchange="OnStockTypeFilterChanged" title="Good stock, damaged stock or both">
+                <option value="">All stock types</option>
+                <option value="1">Good stock</option>
+                <option value="2">Damage stock</option>
+            </select>
+            <select class="form-select filter-control" value="@_flowStatusFilter" @onchange="OnFlowStatusFilterChanged"
+                    title="IN-STOCK: put-away confirmed. GIT-IN: inward uploaded, put-away not confirmed yet. GIT-OUT: pullout uploaded, pick not confirmed yet (already deducted from the stock).">
+                <option value="">All stock statuses</option>
+                <option value="IN-STOCK">IN-STOCK</option>
+                <option value="GIT-IN">GIT-IN</option>
+                <option value="GIT-OUT">GIT-OUT</option>
+            </select>
             <select class="form-select filter-control" value="@_virtualFilter" @onchange="OnVirtualFilterChanged" title="Stock in physical or virtual (overflow) locations">
                 <option value="">All locations</option>
                 <option value="physical">Physical locations</option>
@@ -145,6 +157,16 @@
             <span class="sync-chip">@_page.TotalCount.ToString("N0") records</span>
         }
     </div>
+
+    @if (_flowTotals is not null)
+    {
+        <div class="d-flex flex-wrap gap-2 align-items-center mb-2" aria-label="Boxes by stock status">
+            <span class="status-pill success" title="Put-away confirmed">IN-STOCK @_flowTotals.InStockBoxes.ToString("N0")</span>
+            <span class="status-pill warning" title="Inward uploaded, put-away not confirmed yet (already in the stock)">GIT-IN @_flowTotals.GitInBoxes.ToString("N0")</span>
+            <span class="status-pill info" title="Pullout uploaded, pick not confirmed yet (already deducted from the stock, still on the rack)">GIT-OUT @_flowTotals.GitOutBoxes.ToString("N0")</span>
+            <span class="small text-muted">Stock = IN-STOCK + GIT-IN. GIT-OUT boxes are already deducted and are not part of the stock.</span>
+        </div>
+    }
 
     @if (_page is null)
     {
@@ -170,6 +192,8 @@
                         <th><button class="sort-button" @onclick='@(() => SortBy("season"))'>Season <i class='bi @SortIcon("season")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("active"))'>Active <i class='bi @SortIcon("active")'></i></button></th>
                         <th class="text-end"><button class="sort-button" @onclick='@(() => SortBy("quantity"))'>Stock in CFB <i class='bi @SortIcon("quantity")'></i></button></th>
+                        <th>Stock type</th>
+                        <th><button class="sort-button" @onclick='@(() => SortBy("status"))'>Status <i class='bi @SortIcon("status")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("mfg"))'>Mfg Month <i class='bi @SortIcon("mfg")'></i></button></th>
                         <th><button class="sort-button" @onclick='@(() => SortBy("location"))'>Pallet Position <i class='bi @SortIcon("location")'></i></button></th>
                         <th class="table-actions">Action</th>
@@ -186,16 +210,25 @@
                             <td><span class="status-pill @SeasonClass(row.SeasonCode)">@row.SeasonName</span></td>
                             <td><span class="status-pill @(row.IsActive ? "success" : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span></td>
                             <td class="text-end fw-semibold">@row.QuantityBoxes</td>
+                            <td><span class="status-pill @StockTypeClass(row.StockSubtypeId)">@row.StockSubtypeName</span></td>
+                            <td><span class="status-pill @FlowStatusClass(row.StockStatus)" title="@FlowStatusHint(row.StockStatus)">@row.StockStatus</span></td>
                             <td>@row.MfgMonthLabel</td>
                             <td>
                                 <span class="status-pill">@row.PalletPositionCode</span>
                                 @if (row.IsVirtualLocation) { <span class="status-pill info ms-1" title="Auto-generated overflow location">Virtual</span> }
                             </td>
                             <td class="table-actions">
-                                <button type="button" class="btn btn-sm btn-outline-primary inventory-adjust-button" @onclick="() => OpenAdjustment(row)">
-                                    <i class="bi bi-sliders" aria-hidden="true"></i>
-                                    Adjust
-                                </button>
+                                @if (row.StockBatchId > 0)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-primary inventory-adjust-button" @onclick="() => OpenAdjustment(row)">
+                                        <i class="bi bi-sliders" aria-hidden="true"></i>
+                                        Adjust
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="small text-muted" title="Already deducted from the stock: nothing to adjust until the pick is confirmed">-</span>
+                                }
                             </td>
                         </tr>
                     }
@@ -349,6 +382,34 @@
                             <div class="form-text">The system SKU will be replaced only after this request is approved.</div>
                         </div>
                     }
+                    <div class="adjustment-physical-sku-field">
+                        <label class="form-label" for="adjustment-stock-type">Physical stock type <span class="text-danger">*</span></label>
+                        <select id="adjustment-stock-type" class="form-select" @bind="_physicalSubtypeId">
+                            @foreach (var option in StockTypeOptions())
+                            {
+                                <option value="@option.Id">@option.Name</option>
+                            }
+                        </select>
+                        <div class="form-text">
+                            @(StockTypeChanged ? "The stock type differs from the system record; the system stock type will be replaced only after this request is approved." : "Change it only when the boxes are of a different stock type (for example damaged) than the system record.")
+                        </div>
+                    </div>
+                    <fieldset class="adjustment-physical-sku-field">
+                        <legend class="form-label fs-6">Physical PKM <span class="text-danger">*</span></legend>
+                        <div class="d-flex gap-2">
+                            <select class="form-select" aria-label="PKM year" title="PKM year" @bind="_pkmYear">
+                                <option value="0">Year</option>
+                                @foreach (var year in PkmYearOptions()) { <option value="@year">@year</option> }
+                            </select>
+                            <select class="form-select" aria-label="PKM month" title="PKM month" @bind="_pkmMonth">
+                                <option value="0">Month</option>
+                                @for (var m = 1; m <= 12; m++) { <option value="@m">@PkmMonthLabels[m - 1]</option> }
+                            </select>
+                        </div>
+                        <div class="form-text">
+                            @(PkmChanged ? "The PKM differs from the system record; the system PKM will be replaced only after this request is approved." : "Change it only when the PKM found on the boxes differs from the system record.")
+                        </div>
+                    </fieldset>
                     <div class="adjustment-quantity-comparison">
                         <div>
                             <span>System quantity</span>
@@ -415,6 +476,32 @@
     private int? _seasonFilter;
     private string _activeFilterText = string.Empty;
     private string _virtualFilter = string.Empty;
+    private string _stockTypeFilter = string.Empty;
+    private string _flowStatusFilter = string.Empty;
+    private StockFlowTotalsDto? _flowTotals;
+
+    private async Task OnFlowStatusFilterChanged(ChangeEventArgs e)
+    {
+        _flowStatusFilter = e.Value?.ToString() ?? string.Empty;
+        await LoadPage(1);
+    }
+
+    private static string FlowStatusClass(string status) => status switch { "GIT-IN" => "warning", "GIT-OUT" => "info", _ => "success" };
+
+    private static string FlowStatusHint(string status) => status switch
+    {
+        "GIT-IN" => "Inward uploaded, put-away not confirmed yet. Already counted in the stock.",
+        "GIT-OUT" => "Pullout uploaded, pick not confirmed yet. Already deducted from the stock; the boxes are still on the rack.",
+        _ => "Put-away confirmed"
+    };
+
+    private async Task OnStockTypeFilterChanged(ChangeEventArgs e)
+    {
+        _stockTypeFilter = e.Value?.ToString() ?? string.Empty;
+        await LoadPage(1);
+    }
+
+    private static string StockTypeClass(int stockSubtypeId) => stockSubtypeId switch { 1 => "success", 2 => "danger", _ => "warning" };
     private string _sortBy = "material";
     private bool _sortDescending;
     private bool _importing;
@@ -438,13 +525,45 @@
     private int _loadSequence;
     private IDisposable? _realtimeSubscription;
 
+    private int _pkmYear;
+    private int _physicalSubtypeId;
+
+    /// <summary>True when the stock type chosen for the physical count differs from the system record's.</summary>
+    private bool StockTypeChanged => _adjustmentRow is not null && _physicalSubtypeId > 0 && _physicalSubtypeId != _adjustmentRow.StockSubtypeId;
+
+    private IEnumerable<(int Id, string Name)> StockTypeOptions()
+    {
+        var options = new List<(int, string)> { (1, "Good"), (2, "Damage") };
+        if (_adjustmentRow is not null && options.All(o => o.Item1 != _adjustmentRow.StockSubtypeId))
+        {
+            options.Add((_adjustmentRow.StockSubtypeId, _adjustmentRow.StockSubtypeName));
+        }
+
+        return options;
+    }
+    private int _pkmMonth;
+    private static readonly string[] PkmMonthLabels = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+    /// <summary>True when the PKM chosen for the physical count differs from the system record's PKM.</summary>
+    private bool PkmChanged => _adjustmentRow is not null && _pkmYear > 0 && _pkmMonth > 0 && (_pkmYear * 100) + _pkmMonth != _adjustmentRow.MfgMonth;
+
+    private IEnumerable<int> PkmYearOptions()
+    {
+        var years = Enumerable.Range(DateTime.Today.Year - 3, 5).ToList();
+        if (_adjustmentRow is not null && !years.Contains(_adjustmentRow.MfgMonth / 100)) years.Add(_adjustmentRow.MfgMonth / 100);
+        return years.OrderBy(y => y);
+    }
+
     private decimal AdjustmentVariance => _adjustmentRow is null ? 0 : _countedQuantity - _adjustmentRow.QuantityBoxes;
     private string VarianceText => $"{(AdjustmentVariance > 0 ? "+" : string.Empty)}{AdjustmentVariance:0}";
     private string VarianceClass => AdjustmentVariance < 0 ? "negative" : AdjustmentVariance > 0 ? "positive" : "neutral";
     private bool CanSubmitAdjustment =>
         _adjustmentRow is not null && _countedQuantity >= 0 &&
-        (AdjustmentVariance != 0 || (_changeMaterial && _physicalMaterialId > 0)) &&
+        (AdjustmentVariance != 0 || (_changeMaterial && _physicalMaterialId > 0) || PkmChanged || StockTypeChanged) &&
         (!_changeMaterial || (_physicalMaterialId > 0 && _countedQuantity > 0)) &&
+        (_pkmYear > 0 && _pkmMonth > 0) &&
+        (!PkmChanged || _countedQuantity > 0) &&
+        (!StockTypeChanged || _countedQuantity > 0) &&
         !string.IsNullOrWhiteSpace(_adjustmentReasonCode) &&
         (_adjustmentReasonCode != InventoryAdjustmentReasonCodes.Other || !string.IsNullOrWhiteSpace(_adjustmentNotes));
 
@@ -507,7 +626,7 @@
         {
             if (sequence != _loadSequence) return;
 
-            var result = await Mediator.Send(new GetStockMasterQuery(
+            var query = new GetStockMasterQuery(
                 MaterialSearch: _search,
                 DesignType: string.IsNullOrWhiteSpace(_designTypeFilter) ? null : _designTypeFilter.Trim(),
                 MovementTypeId: _movementFilter,
@@ -518,11 +637,17 @@
                 SortDescending: _sortDescending,
                 PageNumber: page,
                 PageSize: 50,
-                IsVirtual: _virtualFilter switch { "virtual" => true, "physical" => false, _ => null }));
+                IsVirtual: _virtualFilter switch { "virtual" => true, "physical" => false, _ => null },
+                StockSubtypeId: int.TryParse(_stockTypeFilter, out var stockType) ? stockType : null,
+                WithFlowStatus: true,
+                FlowStatus: string.IsNullOrWhiteSpace(_flowStatusFilter) ? null : _flowStatusFilter);
+            var result = await Mediator.Send(query);
+            var totals = await Mediator.Send(new GetStockFlowTotalsQuery(query));
 
             if (sequence != _loadSequence) return;
             _pageNumber = page;
             _page = result;
+            _flowTotals = totals;
         }
         finally
         {
@@ -600,6 +725,9 @@
         _adjustmentError = null;
         _changeMaterial = false;
         _physicalMaterialId = 0;
+        _pkmYear = row.MfgMonth / 100;
+        _pkmMonth = row.MfgMonth % 100;
+        _physicalSubtypeId = row.StockSubtypeId;
     }
 
     private void CloseAdjustment()
@@ -634,7 +762,9 @@
         {
             var result = await Mediator.Send(new SubmitInventoryAdjustmentCommand(
                 stockBatchId, _countedQuantity, _adjustmentReasonCode, _adjustmentNotes,
-                _changeMaterial ? _physicalMaterialId : null));
+                _changeMaterial ? _physicalMaterialId : null,
+                PkmChanged ? (_pkmYear * 100) + _pkmMonth : null,
+                StockTypeChanged ? _physicalSubtypeId : null));
             var message = result.Status == InventoryAdjustmentStatus.Approved
                 ? $"Adjustment {result.AdjustmentNumber} approved and inventory updated."
                 : $"Adjustment {result.AdjustmentNumber} submitted for approval.";

@@ -64,6 +64,10 @@ public class InwardLineVariance : AuditableEntity
 
     public decimal QuantityBoxes { get; set; }
 
+    /// <summary>Of <see cref="QuantityBoxes"/>, the boxes the picker never put away (the row was entered below what the system allocated), so there was no
+    /// Good stock behind them to take out; the rest came out of the put-away row's stock.</summary>
+    public decimal FromRemainderBoxes { get; set; }
+
     public string Remarks { get; set; } = string.Empty;
 
     public string? CreatedByUserName { get; set; }

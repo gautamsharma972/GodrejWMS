@@ -57,7 +57,7 @@ export function SupervisorPutawayReview({ token, detail, locationOptions, onChan
   const putawayRows = useMemo(
     () => detail.lines.flatMap((line) =>
       line.putaways
-        .filter((p) => !p.excludedLocation && p.quantityBoxes > 0)
+        .filter((p) => !p.excludedLocation && p.quantityBoxes > 0 && (p.isConfirmed || p.isPickerPlaced))
         .map((p) => ({ id: p.id, label: `${p.locationCode} · ${line.materialNumber} · ${line.mfgMonthLabel}`, quantityBoxes: p.quantityBoxes }))),
     [detail],
   );

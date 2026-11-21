@@ -379,7 +379,7 @@ public class PulloutPickConfirmationTests
         var freeChange = await change.Handle(new ChangePulloutPickLocationCommand(
             s.Reference, s.Material.MaterialNumber, "A-02-01", "NOV|2026", [new PulloutPickSource(s.Other.Id, "OCT|2026", 45)], ""), default);
         Assert.Equal(s.Other.Id, s.Db.PulloutPicks.AsNoTracking().Single().PalletPositionId);
-        Assert.Null(s.Db.PulloutPicks.AsNoTracking().Single().OverrideReason);
+        Assert.Equal("Location changed", s.Db.PulloutPicks.AsNoTracking().Single().OverrideReason); // marks a hand-chosen location so Refresh Pick leaves it alone
     }
 
     /// <summary>Regression test for the merged-row bug: GetPulloutDetailQuery used to collapse two

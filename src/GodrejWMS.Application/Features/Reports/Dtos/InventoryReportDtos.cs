@@ -5,7 +5,13 @@ public sealed record MaterialStockReportRowDto(
     string MaterialDescription,
     int Pkm,
     decimal Mrp,
-    decimal BoxQuantity);
+    decimal BoxQuantity,
+    /// <summary>Book stock whose put-away is confirmed (BoxQuantity = InStockBoxes + GitInBoxes).</summary>
+    decimal InStockBoxes = 0,
+    /// <summary>Book stock posted by an inward upload whose put-away the picker has not confirmed yet.</summary>
+    decimal GitInBoxes = 0,
+    /// <summary>Boxes of unconfirmed picks: already deducted from the stock, still on the rack. NOT part of BoxQuantity.</summary>
+    decimal GitOutBoxes = 0);
 
 public sealed record LocationStockReportRowDto(
     string LocationCode,
@@ -15,7 +21,11 @@ public sealed record LocationStockReportRowDto(
     string? DesignType,
     int? Pkm,
     decimal StockQty,
-    int? Capacity);
+    int? Capacity,
+    decimal InStockQty = 0,
+    decimal GitInQty = 0,
+    /// <summary>Boxes of unconfirmed picks at this location: already deducted, still on the rack. NOT part of StockQty.</summary>
+    decimal GitOutQty = 0);
 
 public sealed record InventoryValuationRowDto(
     int MaterialId,

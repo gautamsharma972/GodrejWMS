@@ -205,7 +205,7 @@
                                 @foreach (var row in rows)
                                 {
                                     <button type="button" class="btn text-start border rounded-3 p-3 d-flex justify-content-between align-items-center @(row.Done ? "picker-location-done" : "btn-outline-primary")"
-                                            disabled="@(row.Putaway.IsExcludedLocked || (!row.Posted && row.Putaway.IsConfirmed && row.Putaway.ExcludedLocation is null))" @onclick="() => SelectRow(row)">
+                                            disabled="@(row.Putaway.IsExcludedLocked || (!row.Posted && row.Putaway.IsConfirmed && !row.Putaway.IsPickerPlaced && row.Putaway.ExcludedLocation is null))" @onclick="() => SelectRow(row)">
                                         <span>
                                             <strong class="fs-5 @(row.Done ? "picker-location-code-done" : null)">@row.Putaway.LocationCode</strong><br />
                                             <span class="small text-muted">@row.Line.MaterialNumber &middot; @row.Putaway.QuantityBoxes.ToString("0.###") boxes &middot; @row.Line.MfgMonthLabel</span>
@@ -215,7 +215,7 @@
                                     </button>
                                 }
                             </div>
-                            @if (_canConfirm && _detail.PostedAt.HasValue)
+                            @if (_canConfirm)
                             {
                                 @ReviewPanel
                             }
@@ -240,11 +240,11 @@
                                     }
                                     <button type="button" class="btn btn-primary btn-lg w-100" disabled="@(_confirming || done < rows.Count)" @onclick="ConfirmGrnAsync">
                                         <i class="bi bi-check2-all" aria-hidden="true"></i>
-                                        @(_confirming ? "Confirming..." : "Confirm put-away")
+                                        @(_confirming ? "Saving..." : "Unloading Completed")
                                     </button>
                                     <p class="small text-muted mt-2 mb-0">
                                         @(done < rows.Count
-                                            ? "Submit every location first, then confirm. Until you confirm you can still change a location, its PKM or GIT / NO RACK."
+                                            ? "Submit every location first, then press Unloading Completed. Until you do you can still change a location, its PKM or GIT / NO RACK."
                                             : "Until you confirm you can still change any location, its PKM or GIT / NO RACK.")
                                     </p>
                                 </div>
@@ -545,7 +545,7 @@
 
     private bool CanSaveExcess => _exMaterialId > 0 && _exYear > 0 && _exMonth > 0 && _exLocationId > 0 && _exQty > 0 && !string.IsNullOrWhiteSpace(_exRemarks);
 
-    private List<PutawayRow> RecordableRows() => Rows().Where(r => r.Putaway.ExcludedLocation is null && r.Putaway.QuantityBoxes > 0).ToList();
+    private List<PutawayRow> RecordableRows() => Rows().Where(r => r.Putaway.ExcludedLocation is null && r.Putaway.QuantityBoxes > 0 && (r.Putaway.IsConfirmed || r.Putaway.IsPickerPlaced)).ToList();
 
     private static string PkmText(int year, int month) =>
         $"{System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetAbbreviatedMonthName(month).ToUpperInvariant()}|{year}";
@@ -554,7 +554,7 @@
     {
         if (_materials.Count == 0)
         {
-            _materials = (await Mediator.Send(new GetMaterialsQuery(IsActive: true, PageSize: 5000))).Items;
+            _materials = (await SendAsync(new GetMaterialsQuery(IsActive: true, PageSize: 5000))).Items;
         }
 
         _realLocationOptions = _locationOptions.Where(o => o.Id > 0).ToList();
@@ -588,7 +588,7 @@
     {
         if (_detail is not null)
         {
-            _detail = await Mediator.Send(new GetInwardDetailQuery(_detail.Id));
+            _detail = await SendAsync(new GetInwardDetailQuery(_detail.Id));
         }
     }
 
@@ -600,7 +600,7 @@
         try
         {
             var mismatch = _recType == InwardVarianceType.Mismatch;
-            await Mediator.Send(new RecordInwardVarianceCommand(
+            await SendAsync(new RecordInwardVarianceCommand(
                 _recRowId, _recType, _recQty, _recRemarks.Trim(),
                 mismatch ? _actualMaterialId : null,
                 mismatch ? PkmText(_actualYear, _actualMonth) : null,
@@ -625,7 +625,7 @@
         _reviewError = null;
         try
         {
-            var result = await Mediator.Send(new RecordExcessMaterialCommand(
+            var result = await SendAsync(new RecordExcessMaterialCommand(
                 _detail.Id, _exMaterialId, PkmText(_exYear, _exMonth), _exLocationId, _exQty, _exRemarks.Trim(), acknowledgeWarning));
             if (!result.Saved)
             {
@@ -651,7 +651,7 @@
         _reviewError = null;
         try
         {
-            await Mediator.Send(new RemoveInwardVarianceCommand(varianceId));
+            await SendAsync(new RemoveInwardVarianceCommand(varianceId));
             await ReloadDetailAsync();
         }
         catch (Exception ex)
@@ -709,11 +709,28 @@
     protected override async Task OnInitializedAsync()
     {
         _canConfirm = await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Inward.Confirm);
-        var options = (await Mediator.Send(new GetAopLocationOptionsQuery())).ToList();
+        var options = (await SendAsync(new GetAopLocationOptionsQuery())).ToList();
         options.Insert(0, new AopLocationOptionDto(NoRackOptionId, 0, "", 0, "", 0, 0, "NO RACK"));
         options.Insert(0, new AopLocationOptionDto(GitOptionId, 0, "", 0, "", 0, 0, "GIT"));
         _locationOptions = options;
         await LoadPageAsync(1);
+    }
+
+    // Every database call on this page goes through here: the circuit shares one DbContext, so two overlapping
+    // requests (e.g. opening a GRN while the list or the material lookup is still loading) must queue, not run together.
+    private readonly SemaphoreSlim _dbGate = new(1, 1);
+
+    private async Task<TResponse> SendAsync<TResponse>(MediatR.IRequest<TResponse> request)
+    {
+        await _dbGate.WaitAsync();
+        try
+        {
+            return await Mediator.Send(request);
+        }
+        finally
+        {
+            _dbGate.Release();
+        }
     }
 
     // Blazor Server shares one DbContext per circuit: never run two queries at once (see Inward (No PKM) History).
@@ -733,7 +750,7 @@
             do
             {
                 _reloadQueued = false;
-                _history = await Mediator.Send(new GetPickerPendingInwardQuery(_search, _pageNumber, 10));
+                _history = await SendAsync(new GetPickerPendingInwardQuery(_search, _pageNumber, 10));
             }
             while (_reloadQueued);
         }
@@ -768,7 +785,7 @@
         _isDetailOpen = true;
         try
         {
-            _detail = await Mediator.Send(new GetInwardDetailQuery(id));
+            _detail = await SendAsync(new GetInwardDetailQuery(id));
         }
         catch (Exception ex)
         {
@@ -825,7 +842,7 @@
         _confirmError = null;
         try
         {
-            var result = await Mediator.Send(new ConfirmPickerPutawayCommand(_detail.Id));
+            var result = await SendAsync(new ConfirmPickerPutawayCommand(_detail.Id));
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast",
                 $"{result.ReferenceNumber} put-away confirmed and inventory updated.", "success");
             CloseDetail();
@@ -851,7 +868,7 @@
         _submitError = null;
         try
         {
-            var result = await Mediator.Send(new PickerPlaceInwardPutawayCommand(
+            var result = await SendAsync(new PickerPlaceInwardPutawayCommand(
                 id, _qty, pkmText, excluded is null ? _newLocationId : null, excluded, AcknowledgeWarning: _warning is not null));
             if (!result.Saved)
             {
@@ -862,7 +879,7 @@
             _warning = null;
             _selectedPutawayId = null;
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast", excluded is null ? "Put-away location saved." : $"Set aside as {excluded}.", "success");
-            _detail = await Mediator.Send(new GetInwardDetailQuery(_detail.Id));
+            _detail = await SendAsync(new GetInwardDetailQuery(_detail.Id));
         }
         catch (Exception ex)
         {

@@ -177,6 +177,14 @@
                                     {
                                         <span class="status-pill warning"><i class="bi bi-arrow-right"></i> @row.PhysicalMaterialNumber</span>
                                     }
+                                    @if (row.PhysicalStockSubtypeName is not null)
+                                    {
+                                        <span class="status-pill warning" title="Stock type found differs from the system record"><i class="bi bi-arrow-right"></i> @row.PhysicalStockSubtypeName</span>
+                                    }
+                                    @if (row.PhysicalMfgMonthLabel is not null)
+                                    {
+                                        <span class="status-pill warning" title="PKM found differs from the system PKM"><i class="bi bi-arrow-right"></i> PKM @row.PhysicalMfgMonthLabel</span>
+                                    }
                                 </div>
                             </td>
                             <td><span class="status-pill neutral">@row.LocationCode</span></td>
@@ -233,15 +241,16 @@
                         <div><span>PKM</span><strong>@_selected.MfgMonthLabel</strong></div>
                         <div><span>Stock type</span><strong>@_selected.StockSubtypeName</strong></div>
                     </div>
-                    @if (_selected.PhysicalMaterialNumber.HasValue)
+                    @if (_selected.PhysicalMaterialNumber.HasValue || _selected.PhysicalMfgMonthLabel is not null || _selected.PhysicalStockSubtypeName is not null)
                     {
                         <div class="putaway-info-bar transaction-status-bar mb-4" role="note">
                             <div class="info-bar-icon"><i class="bi bi-arrow-left-right" aria-hidden="true"></i></div>
                             <div class="info-bar-content">
-                                <h2>SKU correction requested</h2>
+                                <h2>@(_selected.PhysicalMaterialNumber.HasValue ? "SKU correction requested" : _selected.PhysicalMfgMonthLabel is not null ? "PKM correction requested" : "Stock type correction requested")</h2>
                                 <p>
-                                    Replace <strong>@_selected.MaterialNumber — @_selected.MaterialDescription</strong>
-                                    with <strong>@_selected.PhysicalMaterialNumber — @_selected.PhysicalMaterialDescription</strong>
+                                    Replace <strong>@_selected.MaterialNumber — @_selected.MaterialDescription</strong> (PKM @_selected.MfgMonthLabel, @_selected.StockSubtypeName stock)
+                                    with <strong>@(_selected.PhysicalMaterialNumber ?? _selected.MaterialNumber)@(_selected.PhysicalMaterialDescription is null ? "" : " — " + _selected.PhysicalMaterialDescription)</strong>
+                                    (PKM @(_selected.PhysicalMfgMonthLabel ?? _selected.MfgMonthLabel), @(_selected.PhysicalStockSubtypeName ?? _selected.StockSubtypeName) stock)
                                     at @_selected.LocationCode after approval.
                                 </p>
                             </div>

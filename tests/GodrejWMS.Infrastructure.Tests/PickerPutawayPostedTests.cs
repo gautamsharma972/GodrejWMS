@@ -104,7 +104,112 @@ public class PickerPutawayPostedTests
         Assert.True(db.InwardPutaways.AsNoTracking().Single().IsConfirmed);
         var locked = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", positions.Last().Id, null), default));
-        Assert.Contains("already confirmed", locked.Message);
+        Assert.Contains("already been confirmed", locked.Message);
+    }
+
+    [Fact]
+    public async Task ShortPutawayOfAPendingOrder_CanBeConfirmed_OnceTheMissingBoxesAreRecordedAsShortage()
+    {
+        var (db, _, _, putaway) = await SeedAsync();
+        using var _ = db;
+        var transaction = await db.InwardTransactions.SingleAsync();
+        transaction.PostedAt = null; // not posted on upload (Inward without PKM)
+        putaway.IsConfirmed = false;
+        db.StockBatches.RemoveRange(db.StockBatches);
+        db.StockLedgerEntries.RemoveRange(db.StockLedgerEntries);
+        await db.SaveChangesAsync();
+        var confirm = new ConfirmPickerPutawayHandler(db, new PPAllow(), TestServices.Posting(db), new SvcClock(), new SvcUser());
+
+        // Only 4 of the 30 boxes arrived: the picker puts away 4. The system allocated 30, so the confirm is refused ...
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 4, "OCT|2026", putaway.PalletPositionId, null), default);
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => confirm.Handle(new ConfirmPickerPutawayCommand(transaction.Id), default));
+        Assert.Contains("less than the 30", refused.Message);
+
+        // ... until the supervisor records the 26 that did not arrive as shortage: they are accounted for, so the confirm goes through.
+        var row = await db.InwardPutaways.AsNoTracking().SingleAsync();
+        await new RecordInwardVarianceHandler(db, TestServices.Posting(db), TestServices.Uow(db), new SvcClock(), new SvcUser())
+            .Handle(new RecordInwardVarianceCommand(row.Id, InwardVarianceType.Shortage, 26, "Only 4 boxes arrived"), default);
+        await confirm.Handle(new ConfirmPickerPutawayCommand(transaction.Id), default);
+
+        Assert.Equal(4, OnHand(db, putaway.PalletPositionId)); // the 26 never reached stock, so no stock was taken out for them
+        Assert.True(db.InwardPutaways.AsNoTracking().Single().IsExcludedLocked);
+    }
+
+    [Fact]
+    public async Task ShortageOfBoxesNeverPutAway_TakesNoStock_AndRemovingItLeavesTheRowAsItWas()
+    {
+        var (db, _, _, putaway) = await SeedAsync();
+        using var _ = db;
+        var transaction = await db.InwardTransactions.SingleAsync();
+        transaction.PostedAt = null;
+        putaway.IsConfirmed = false;
+        db.StockBatches.RemoveRange(db.StockBatches);
+        db.StockLedgerEntries.RemoveRange(db.StockLedgerEntries);
+        await db.SaveChangesAsync();
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 4, "OCT|2026", putaway.PalletPositionId, null), default);
+        var row = await db.InwardPutaways.AsNoTracking().SingleAsync();
+        var record = new RecordInwardVarianceHandler(db, TestServices.Posting(db), TestServices.Uow(db), new SvcClock(), new SvcUser());
+
+        // 30 allocated, 4 put away: at most 30 can be recorded against the row (4 in stock + 26 not put away).
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            record.Handle(new RecordInwardVarianceCommand(row.Id, InwardVarianceType.Shortage, 31, "too many"), default));
+        var saved = await record.Handle(new RecordInwardVarianceCommand(row.Id, InwardVarianceType.Shortage, 26, "Only 4 arrived"), default);
+        Assert.Equal(4, db.InwardPutaways.AsNoTracking().Single().QuantityBoxes);
+        Assert.Equal(4, OnHand(db, putaway.PalletPositionId));
+
+        await new RemoveInwardVarianceHandler(db, TestServices.Posting(db), TestServices.Uow(db), new SvcClock(), new SvcUser())
+            .Handle(new RemoveInwardVarianceCommand(saved.Id), default);
+        Assert.Equal(4, db.InwardPutaways.AsNoTracking().Single().QuantityBoxes);
+        Assert.Equal(4, OnHand(db, putaway.PalletPositionId));
+    }
+
+    [Fact]
+    public async Task PutawayAboveTheAllocation_UpToTheInbound_CanBeConfirmed()
+    {
+        var (db, _, _, putaway) = await SeedAsync();
+        using var _ = db;
+        // The inbound holds 30 boxes but the system could only find locations for 20 of them.
+        var transaction = await db.InwardTransactions.SingleAsync();
+        transaction.PostedAt = null;
+        var line = await db.InwardTransactionLines.SingleAsync();
+        line.AllocatedQuantityBoxes = 20;
+        putaway.QuantityBoxes = 20;
+        putaway.IsConfirmed = false;
+        db.StockBatches.RemoveRange(db.StockBatches);
+        db.StockLedgerEntries.RemoveRange(db.StockLedgerEntries);
+        await db.SaveChangesAsync();
+
+        // The picker found room for all 30 on the floor.
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", putaway.PalletPositionId, null), default);
+        await new ConfirmPickerPutawayHandler(db, new PPAllow(), TestServices.Posting(db), new SvcClock(), new SvcUser())
+            .Handle(new ConfirmPickerPutawayCommand(transaction.Id), default);
+
+        Assert.Equal(30, OnHand(db, putaway.PalletPositionId));
+        Assert.True(db.InwardPutaways.AsNoTracking().Single().IsExcludedLocked);
+    }
+
+    [Fact]
+    public async Task RowSubmittedBeforePostingOnSubmit_IsPostedWhenARecordIsMadeAgainstIt()
+    {
+        var (db, _, _, putaway) = await SeedAsync();
+        using var _ = db;
+        var transaction = await db.InwardTransactions.SingleAsync();
+        transaction.PostedAt = null;
+        putaway.IsConfirmed = false;
+        putaway.IsPickerPlaced = true;      // submitted by the picker under the old rules: reserved, nothing in inventory
+        putaway.SuggestedQuantityBoxes = 30;
+        putaway.QuantityBoxes = 4;
+        db.StockBatches.RemoveRange(db.StockBatches);
+        db.StockLedgerEntries.RemoveRange(db.StockLedgerEntries);
+        await db.SaveChangesAsync();
+
+        await new RecordInwardVarianceHandler(db, TestServices.Posting(db), TestServices.Uow(db), new SvcClock(), new SvcUser())
+            .Handle(new RecordInwardVarianceCommand(putaway.Id, InwardVarianceType.Shortage, 26, "Only 4 arrived"), default);
+        await new ConfirmPickerPutawayHandler(db, new PPAllow(), TestServices.Posting(db), new SvcClock(), new SvcUser())
+            .Handle(new ConfirmPickerPutawayCommand(transaction.Id), default);
+
+        Assert.Equal(4, OnHand(db, putaway.PalletPositionId)); // posted once - not twice
+        Assert.True(db.InwardPutaways.AsNoTracking().Single().IsExcludedLocked);
     }
 
     [Fact]

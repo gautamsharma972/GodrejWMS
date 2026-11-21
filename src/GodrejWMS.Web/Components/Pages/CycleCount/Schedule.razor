@@ -1,0 +1,200 @@
+@page "/cycle-count/schedule"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.Schedule)]
+@using GodrejWMS.Application.Features.CycleCount
+@using GodrejWMS.Application.Features.CycleCount.Commands
+@using GodrejWMS.Application.Features.CycleCount.Queries
+@inject IMediator Mediator
+@inject ILogger<Schedule> Logger
+
+<PageTitle>Schedule Cycle Count - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Cycle Count</div>
+            <h1>Schedule Cycle Count</h1>
+            <p class="page-kicker">Choose the warehouse, the counting window and the racks. From the start time until the batch is closed or dropped, new Inward and Pullout requests are blocked for the warehouse.</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-outline-secondary" href="/cycle-count/batches"><i class="bi bi-list-check" aria-hidden="true"></i> Batches</a>
+        </div>
+    </div>
+
+    @if (_created is not null)
+    {
+        <div class="alert alert-success" role="status">
+            Cycle count <strong>@_created.BatchNumber</strong> is scheduled.
+            <a href="/cycle-count/batches" class="alert-link">Open batches</a>
+        </div>
+    }
+
+    <section class="panel" aria-labelledby="schedule-heading">
+        <h2 id="schedule-heading" class="panel-title">New batch</h2>
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Warehouse</label>
+                <div><WarehouseSelect WarehouseId="_warehouseId" WarehouseIdChanged="OnWarehouseChanged" Placeholder="Select warehouse..." /></div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" for="cc-from">Schedule From</label>
+                <input id="cc-from" type="datetime-local" class="form-control" @bind="_from" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" for="cc-to">Schedule To</label>
+                <input id="cc-to" type="datetime-local" class="form-control" @bind="_to" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Batch number</label>
+                <input class="form-control" value="Generated when scheduled" disabled />
+            </div>
+            <div class="col-12">
+                <label class="form-label">Racks to count</label>
+                @if (_warehouseId is null)
+                {
+                    <div class="text-muted small">Select a warehouse to see its racks.</div>
+                }
+                else if (_racks.Count == 0)
+                {
+                    <div class="text-muted small">This warehouse has no racks.</div>
+                }
+                else
+                {
+                    <div class="form-check mb-2">
+                        <input id="cc-selectall" class="form-check-input" type="checkbox" checked="@AllSelected" @onchange="ToggleAll" />
+                        <label class="form-check-label" for="cc-selectall">Select all racks (@_racks.Count)</label>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        @foreach (var rack in _racks)
+                        {
+                            var selected = _selected.Contains(rack.RackCode);
+                            <button type="button" class="btn btn-sm @(selected ? "btn-primary" : "btn-outline-secondary")" aria-pressed="@(selected ? "true" : "false")"
+                                    @onclick="() => ToggleRack(rack.RackCode)">
+                                @rack.RackCode <span class="small">(@rack.Locations)</span>
+                            </button>
+                        }
+                    </div>
+                    <div class="small text-muted mt-1">@_selected.Count rack(s) selected. Only these racks are shown to the counters.</div>
+                }
+            </div>
+            <div class="col-12">
+                <div class="form-check">
+                    <input id="cc-autorelease" class="form-check-input" type="checkbox" @bind="_autoRelease" />
+                    <label class="form-check-label" for="cc-autorelease">Close this cycle count automatically when Schedule To is over (Inward and Pullout are allowed again)</label>
+                </div>
+                <div class="small text-muted">Off (default): the warehouse stays frozen until the batch is closed or dropped. Either way the batch also closes by itself once every rack is submitted and reviewed.</div>
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="cc-remarks">Remarks (optional)</label>
+                <input id="cc-remarks" class="form-control" maxlength="500" @bind="_remarks" @bind:event="oninput" />
+            </div>
+        </div>
+
+        @if (_warnings is { Messages.Count: > 0 })
+        {
+            <div class="alert alert-warning mt-3" role="alert">
+                <strong>Check before scheduling</strong>
+                <ul class="mb-2">
+                    @foreach (var message in _warnings.Messages) { <li>@message</li> }
+                </ul>
+                <div class="form-check">
+                    <input id="cc-ack" class="form-check-input" type="checkbox" @bind="_acknowledge" />
+                    <label class="form-check-label" for="cc-ack">I understand and want to schedule anyway</label>
+                </div>
+            </div>
+        }
+
+        @if (_error is not null)
+        {
+            <div class="alert alert-danger mt-3 mb-0" role="alert">@_error</div>
+        }
+
+        <div class="mt-3">
+            <button type="button" class="btn btn-success" @onclick="SaveAsync"
+                    disabled="@(_busy || _warehouseId is null || _selected.Count == 0 || (_warnings is { Messages.Count: > 0 } && !_acknowledge))">
+                <i class="bi bi-calendar-check" aria-hidden="true"></i> Schedule cycle count
+            </button>
+        </div>
+    </section>
+</div>
+
+@code {
+    private int? _warehouseId;
+    private DateTime _from = DateTime.Now.Date.AddHours(DateTime.Now.Hour + 1);
+    private DateTime _to = DateTime.Now.Date.AddDays(1).AddHours(18);
+    private string? _remarks;
+    private List<CycleCountRackOptionDto> _racks = [];
+    private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private CycleCountScheduleWarningsDto? _warnings;
+    private bool _acknowledge;
+    private bool _autoRelease;
+    private bool _busy;
+    private string? _error;
+    private CycleCountBatchDto? _created;
+
+    private async Task OnWarehouseChanged(int? warehouseId)
+    {
+        _warehouseId = warehouseId;
+        _selected.Clear();
+        _racks = [];
+        _warnings = null;
+        _acknowledge = false;
+        _error = null;
+        if (warehouseId is null) return;
+        try
+        {
+            _racks = (await Mediator.Send(new GetCycleCountRackOptionsQuery(warehouseId.Value))).ToList();
+            _warnings = await Mediator.Send(new GetCycleCountScheduleWarningsQuery(warehouseId.Value));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to load cycle count options");
+            _error = ex.Message;
+        }
+    }
+
+    private bool AllSelected => _racks.Count > 0 && _racks.All(r => _selected.Contains(r.RackCode));
+
+    private void ToggleAll(ChangeEventArgs e)
+    {
+        if (e.Value is true)
+        {
+            foreach (var rack in _racks) _selected.Add(rack.RackCode);
+        }
+        else
+        {
+            _selected.Clear();
+        }
+    }
+
+    private void ToggleRack(string code)
+    {
+        if (!_selected.Remove(code)) _selected.Add(code);
+    }
+
+    private static DateTimeOffset Local(DateTime value) => new(DateTime.SpecifyKind(value, DateTimeKind.Local));
+
+    private async Task SaveAsync()
+    {
+        if (_busy || _warehouseId is null) return;
+        _busy = true;
+        _error = null;
+        _created = null;
+        try
+        {
+            _created = await Mediator.Send(new ScheduleCycleCountCommand(
+                _warehouseId.Value, Local(_from), Local(_to), _selected.ToList(), _remarks, _acknowledge, _autoRelease));
+            _selected.Clear();
+            _acknowledge = false;
+            _warnings = await Mediator.Send(new GetCycleCountScheduleWarningsQuery(_warehouseId.Value));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unable to schedule the cycle count");
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

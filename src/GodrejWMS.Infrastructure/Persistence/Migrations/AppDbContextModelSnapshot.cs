@@ -267,6 +267,375 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.ToTable("Cities", (string)null);
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.CycleCountBatch", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset?>("ActualEndAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("ActualStartAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<bool>("AutoReleaseFreezeAtScheduleEnd")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("BatchNumber")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<bool>("CardsGenerated")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("CreatedByUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<string>("DropReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int unsigned");
+
+                    b.Property<DateTimeOffset>("ScheduleFrom")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset>("ScheduleTo")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("UpdatedByUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchNumber")
+                        .IsUnique();
+
+                    b.HasIndex("WarehouseId", "Status");
+
+                    b.ToTable("CycleCountBatches", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.CycleCountBatchRack", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<int>("CycleCountBatchId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IncludesDamageStock")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("RackCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int unsigned");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("SubmittedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("SubmittedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("SubmittedByUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CycleCountBatchId", "RackCode")
+                        .IsUnique();
+
+                    b.ToTable("CycleCountBatchRacks", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.CycleCountCard", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset?>("CountedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CountedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("CountedByUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<int>("CycleCountBatchId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("DifferenceBoxes")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
+                    b.Property<bool>("IsExcluded")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("IsExtra")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<int>("PalletPositionId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("PhysicalMaterialId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("PhysicalMfgMonth")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("PhysicalQuantityBoxes")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
+                    b.Property<int?>("PhysicalStockSubtypeId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RackCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int unsigned");
+
+                    b.Property<string>("SequenceKey")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("SubmittedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("SubmittedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("SubmittedByUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<int?>("SystemMaterialId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("SystemMfgMonth")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("SystemQuantityBoxes")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
+                    b.Property<int>("SystemStockSubtypeId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PalletPositionId");
+
+                    b.HasIndex("PhysicalMaterialId");
+
+                    b.HasIndex("SystemMaterialId");
+
+                    b.HasIndex("CycleCountBatchId", "PalletPositionId");
+
+                    b.HasIndex("CycleCountBatchId", "RackCode", "SequenceKey");
+
+                    b.ToTable("CycleCountCards", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.CycleCountHistory", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<int>("CycleCountBatchId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CycleCountCardId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NewValue")
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("PreviousValue")
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)");
+
+                    b.Property<string>("RackCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("UserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("UserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CycleCountCardId");
+
+                    b.HasIndex("CycleCountBatchId", "OccurredAt");
+
+                    b.ToTable("CycleCountHistory", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.CycleCountReview", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<int>("CycleCountBatchId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RackCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<string>("ReviewRemarks")
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("ReviewedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("ReviewedByUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CycleCountBatchId", "RackCode")
+                        .IsUnique();
+
+                    b.ToTable("CycleCountReviews", (string)null);
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.DesignType", b =>
                 {
                     b.Property<int>("Id")
@@ -452,7 +821,13 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Property<int?>("PhysicalMaterialId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("PhysicalMfgMonth")
+                        .HasColumnType("int");
+
                     b.Property<int?>("PhysicalStockBatchIdAtCount")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("PhysicalStockSubtypeId")
                         .HasColumnType("int");
 
                     b.Property<decimal?>("PhysicalSystemQuantityAtCount")
@@ -524,6 +899,10 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
 
                     b.Property<int?>("DestinationPalletPositionId")
                         .HasColumnType("int");
+
+                    b.Property<decimal>("FromRemainderBoxes")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
 
                     b.Property<int?>("InwardPutawayId")
                         .HasColumnType("int");
@@ -1036,6 +1415,156 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.HasIndex("SeasonId");
 
                     b.ToTable("Materials", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.MaterialConversion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ConversionNumber")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<int>("FromMaterialId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReasonText")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("RequestedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("RequestedByUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<string>("ReviewComment")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("ReviewedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<string>("ReviewedByUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int unsigned");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ToMaterialId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("TotalBoxes")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConversionNumber")
+                        .IsUnique();
+
+                    b.HasIndex("ToMaterialId");
+
+                    b.HasIndex("FromMaterialId", "ToMaterialId");
+
+                    b.HasIndex("WarehouseId", "Status", "RequestedAt");
+
+                    b.ToTable("MaterialConversions", (string)null);
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.MaterialConversionLine", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<uint>("BatchRowVersionAtRequest")
+                        .HasColumnType("int unsigned");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<int>("MaterialConversionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MfgMonth")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PalletPositionId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("QuantityBoxes")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
+                    b.Property<int?>("StockBatchId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("StockSubtypeId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("SystemQuantityAtRequest")
+                        .HasPrecision(14, 3)
+                        .HasColumnType("decimal(14,3)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MaterialConversionId");
+
+                    b.HasIndex("PalletPositionId");
+
+                    b.HasIndex("StockBatchId");
+
+                    b.ToTable("MaterialConversionLines", (string)null);
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.MovementReason", b =>
@@ -2563,6 +3092,83 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Navigation("State");
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.CycleCountBatch", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.CycleCountBatchRack", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.CycleCountBatch", "CycleCountBatch")
+                        .WithMany("Racks")
+                        .HasForeignKey("CycleCountBatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CycleCountBatch");
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.CycleCountCard", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.CycleCountBatch", "CycleCountBatch")
+                        .WithMany("Cards")
+                        .HasForeignKey("CycleCountBatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GodrejWMS.Domain.Entities.PalletPosition", "PalletPosition")
+                        .WithMany()
+                        .HasForeignKey("PalletPositionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GodrejWMS.Domain.Entities.Material", "PhysicalMaterial")
+                        .WithMany()
+                        .HasForeignKey("PhysicalMaterialId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GodrejWMS.Domain.Entities.Material", "SystemMaterial")
+                        .WithMany()
+                        .HasForeignKey("SystemMaterialId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("CycleCountBatch");
+
+                    b.Navigation("PalletPosition");
+
+                    b.Navigation("PhysicalMaterial");
+
+                    b.Navigation("SystemMaterial");
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.CycleCountHistory", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.CycleCountBatch", "CycleCountBatch")
+                        .WithMany("History")
+                        .HasForeignKey("CycleCountBatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CycleCountBatch");
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.CycleCountReview", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.CycleCountBatch", "CycleCountBatch")
+                        .WithMany()
+                        .HasForeignKey("CycleCountBatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CycleCountBatch");
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.InventoryAdjustment", b =>
                 {
                     b.HasOne("GodrejWMS.Domain.Entities.Warehouse", "Warehouse")
@@ -2769,6 +3375,59 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Navigation("PreferredZoneType");
 
                     b.Navigation("Season");
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.MaterialConversion", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.Material", "FromMaterial")
+                        .WithMany()
+                        .HasForeignKey("FromMaterialId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GodrejWMS.Domain.Entities.Material", "ToMaterial")
+                        .WithMany()
+                        .HasForeignKey("ToMaterialId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GodrejWMS.Domain.Entities.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("FromMaterial");
+
+                    b.Navigation("ToMaterial");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.MaterialConversionLine", b =>
+                {
+                    b.HasOne("GodrejWMS.Domain.Entities.MaterialConversion", "MaterialConversion")
+                        .WithMany("Lines")
+                        .HasForeignKey("MaterialConversionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GodrejWMS.Domain.Entities.PalletPosition", "PalletPosition")
+                        .WithMany()
+                        .HasForeignKey("PalletPositionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GodrejWMS.Domain.Entities.StockBatch", "StockBatch")
+                        .WithMany()
+                        .HasForeignKey("StockBatchId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("MaterialConversion");
+
+                    b.Navigation("PalletPosition");
+
+                    b.Navigation("StockBatch");
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.PalletPosition", b =>
@@ -3113,6 +3772,15 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
                     b.Navigation("Materials");
                 });
 
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.CycleCountBatch", b =>
+                {
+                    b.Navigation("Cards");
+
+                    b.Navigation("History");
+
+                    b.Navigation("Racks");
+                });
+
             modelBuilder.Entity("GodrejWMS.Domain.Entities.InventoryAdjustment", b =>
                 {
                     b.Navigation("Lines");
@@ -3133,6 +3801,11 @@ namespace GodrejWMS.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("GodrejWMS.Domain.Entities.Material", b =>
                 {
                     b.Navigation("StockBatches");
+                });
+
+            modelBuilder.Entity("GodrejWMS.Domain.Entities.MaterialConversion", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("GodrejWMS.Domain.Entities.PalletPosition", b =>

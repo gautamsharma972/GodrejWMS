@@ -20,7 +20,20 @@ public sealed record GetStockMasterQuery(
     bool SortDescending = false,
     int PageNumber = 1,
     int PageSize = 50,
-    bool? IsVirtual = null) : IRequest<PaginatedList<StockMasterRowDto>>;
+    bool? IsVirtual = null,
+    /// <summary>Good / Damage stock (see <c>LocationSubtypeIds</c>); null = every stock type.</summary>
+    int? StockSubtypeId = null,
+    /// <summary>When true every row carries its flow status (IN-STOCK / GIT-IN / GIT-OUT, see <see cref="StockFlowStatus"/>): a cell that still holds
+    /// unconfirmed put-away boxes is split in two rows, and boxes of unconfirmed picks are added as GIT-OUT rows. Default off: the grid
+    /// of any other caller is exactly as before.</summary>
+    bool WithFlowStatus = false,
+    /// <summary>Only rows of this flow status (needs <see cref="WithFlowStatus"/>).</summary>
+    string? FlowStatus = null) : IRequest<PaginatedList<StockMasterRowDto>>;
+
+/// <summary>Boxes per flow status for the same filters as the grid (book stock = IN-STOCK + GIT-IN; GIT-OUT is already deducted).</summary>
+public sealed record StockFlowTotalsDto(decimal InStockBoxes, decimal GitInBoxes, decimal GitOutBoxes);
+
+public sealed record GetStockFlowTotalsQuery(GetStockMasterQuery Filter) : IRequest<StockFlowTotalsDto>;
 
 public sealed class GetStockMasterHandler(IApplicationDbContext db)
     : IRequestHandler<GetStockMasterQuery, PaginatedList<StockMasterRowDto>>
@@ -47,12 +60,18 @@ public sealed class GetStockMasterHandler(IApplicationDbContext db)
                 b.Material.IsActive,
                 b.QuantityBoxes,
                 b.MfgMonth,
+                b.StockSubtypeId,
                 StockSubtypeName = b.StockSubtype.DisplayName,
                 b.PalletPosition.LocationCode,
                 RackCode = b.PalletPosition.Rack.Code,
                 b.PalletPosition.Rack.WarehouseId,
                 IsVirtualLocation = b.PalletPosition.IsVirtual
             });
+
+        if (request.StockSubtypeId.HasValue)
+        {
+            query = query.Where(b => b.StockSubtypeId == request.StockSubtypeId.Value);
+        }
 
         if (request.IsVirtual.HasValue)
         {
@@ -96,6 +115,20 @@ public sealed class GetStockMasterHandler(IApplicationDbContext db)
             query = query.Where(b => b.RackCode == request.RackCode);
         }
 
+        if (request.WithFlowStatus)
+        {
+            var flow = await StockFlowRows.LoadAsync(db, request, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(request.FlowStatus))
+            {
+                flow = flow.Where(r => string.Equals(r.Status, request.FlowStatus, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+
+            var sortedFlow = StockFlowRows.Sort(flow, request.SortBy, request.SortDescending);
+            var flowPage = sortedFlow.Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize)
+                .Select(StockFlowRows.ToDto).ToList();
+            return new PaginatedList<StockMasterRowDto>(flowPage, flow.Count, request.PageNumber, request.PageSize);
+        }
+
         var ordered = (request.SortBy, request.SortDescending) switch
         {
             ("description", false) => query.OrderBy(b => b.Description).ThenBy(b => b.MaterialNumber),
@@ -131,9 +164,22 @@ public sealed class GetStockMasterHandler(IApplicationDbContext db)
             .Select(b => new StockMasterRowDto(
                 b.MaterialNumber, b.Description, b.DesignType, b.QuantityBoxes,
                 MfgMonthParser.Format(b.MfgMonth), b.LocationCode, b.MovementTypeCode, b.MovementTypeName, b.SeasonCode, b.SeasonName, b.IsActive,
-                b.StockBatchId, b.MaterialId, b.PalletPositionId, b.MfgMonth, b.StockSubtypeName, b.IsVirtualLocation))
+                b.StockBatchId, b.MaterialId, b.PalletPositionId, b.MfgMonth, b.StockSubtypeName, b.IsVirtualLocation, b.StockSubtypeId))
             .ToList();
 
         return new PaginatedList<StockMasterRowDto>(items, totalCount, request.PageNumber, request.PageSize);
+    }
+}
+
+public sealed class GetStockFlowTotalsHandler(IApplicationDbContext db) : IRequestHandler<GetStockFlowTotalsQuery, StockFlowTotalsDto>
+{
+    public async Task<StockFlowTotalsDto> Handle(GetStockFlowTotalsQuery request, CancellationToken cancellationToken)
+    {
+        // Totals ignore the status filter itself: the chips above the grid show all three figures for the current search.
+        var rows = await StockFlowRows.LoadAsync(db, request.Filter with { WithFlowStatus = true, FlowStatus = null }, cancellationToken);
+        return new StockFlowTotalsDto(
+            rows.Where(r => r.Status == StockFlowStatus.InStock).Sum(r => r.QuantityBoxes),
+            rows.Where(r => r.Status == StockFlowStatus.GitIn).Sum(r => r.QuantityBoxes),
+            rows.Where(r => r.Status == StockFlowStatus.GitOut).Sum(r => r.QuantityBoxes));
     }
 }

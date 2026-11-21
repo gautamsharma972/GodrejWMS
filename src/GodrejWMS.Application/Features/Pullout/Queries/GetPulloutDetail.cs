@@ -1,6 +1,7 @@
 using GodrejWMS.Application.Common;
 using GodrejWMS.Application.Common.Exceptions;
 using GodrejWMS.Application.Common.Interfaces;
+using GodrejWMS.Application.Features.Inward;
 using GodrejWMS.Application.Features.Pullout.Commands;
 using GodrejWMS.Application.Features.Pullout.Dtos;
 using GodrejWMS.Domain.Entities;
@@ -51,6 +52,31 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
                 preview.HeaderFields, warehouseAddress);
         }
 
+        // Boxes of this pullout's picks that sit on inward put-aways reserved for it (the GRN is still being unloaded / put away).
+        var reservedReason = PutawayPickReservation.ReasonFor(transaction.ReferenceNumber);
+        var reservedRows = transaction.IsConfirmed
+            ? await db.InwardPutaways.AsNoTracking()
+                .Where(p => p.ExcludedLocation == PutawayPickReservation.Label && p.OverrideReason == reservedReason
+                    && !p.InwardTransactionLine.InwardTransaction.IsRejected && p.InwardTransactionLine.MfgMonth != null)
+                .Select(p => new { p.InwardTransactionLine.MaterialId, Mfg = p.InwardTransactionLine.MfgMonth!.Value, p.PalletPositionId, p.QuantityBoxes })
+                .ToListAsync(cancellationToken)
+            : [];
+        var reservedLeft = reservedRows
+            .GroupBy(r => (r.MaterialId, r.Mfg, r.PalletPositionId))
+            .ToDictionary(g => g.Key, g => g.Sum(r => r.QuantityBoxes));
+        decimal TakeOnVehicle(int materialId, int mfgMonth, int positionId, decimal quantity)
+        {
+            var key = (materialId, mfgMonth, positionId);
+            if (!reservedLeft.TryGetValue(key, out var left) || left <= 0)
+            {
+                return 0m;
+            }
+
+            var taken = Math.Min(left, quantity);
+            reservedLeft[key] = left - taken;
+            return taken;
+        }
+
         var lines = transaction.Lines
             .OrderBy(l => l.Id)
             .Select(l => new PulloutDetailLineDto(
@@ -81,7 +107,8 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
                         p.PickedQuantityBoxes,
                         p.MoveToPalletPositionId,
                         p.MoveToPalletPosition != null ? p.MoveToPalletPosition.LocationCode : null,
-                        p.MoveQuantityBoxes))
+                        p.MoveQuantityBoxes,
+                        TakeOnVehicle(l.MaterialId, p.MfgMonth, p.PalletPositionId, p.QuantityBoxes)))
                     .ToList(),
                 l.PlantName,
                 l.Priority))
@@ -97,6 +124,7 @@ public sealed class GetPulloutDetailHandler(IApplicationDbContext db)
         if (transaction.IsConfirmed && !transaction.IsRejected && transaction.ConfirmedAt == null && transaction.UploadHash != null)
         {
             canRefreshPick = transaction.Lines.Any(l => l.PickedQuantityBoxes < l.RequestedQuantityBoxes)
+                || transaction.Lines.Any(l => l.Picks.Any(RefreshPulloutPicksHandler.IsRechoosable)) // unsubmitted picks can be re-chosen
                 || (await RefreshPulloutPicksHandler.FindInvalidAsync(db, transaction.ReferenceNumber, cancellationToken)).Count > 0;
         }
 

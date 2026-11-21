@@ -21,7 +21,11 @@ public sealed record InventoryAdjustmentListDto(
     string? RequestedByUserId,
     string? RequestedByUserName,
     string? ReviewedByUserName,
-    DateTimeOffset? ReviewedAt);
+    DateTimeOffset? ReviewedAt,
+    /// <summary>The PKM physically found when it differs from the system record's PKM.</summary>
+    string? PhysicalMfgMonthLabel = null,
+    /// <summary>The stock type physically found when it differs from the system record's.</summary>
+    string? PhysicalStockSubtypeName = null);
 
 public sealed record InventoryAdjustmentDetailDto(
     int Id,
@@ -47,4 +51,6 @@ public sealed record InventoryAdjustmentDetailDto(
     string? ReviewComment,
     decimal? ActualQuantityBeforePosting,
     decimal? ActualQuantityAfterPosting,
-    decimal? ActualPhysicalQuantityBeforePosting);
+    decimal? ActualPhysicalQuantityBeforePosting,
+    string? PhysicalMfgMonthLabel = null,
+    string? PhysicalStockSubtypeName = null);

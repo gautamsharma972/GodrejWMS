@@ -58,8 +58,43 @@ public class MixedLocationInventoryImportTests
     }
 
     private static Task<ImportStockMasterResult> ImportAsync(AppDbContext db, MemoryStream file, int? warehouseId = 1) =>
-        new ImportStockMasterFromExcelHandler(db, new ClosedXmlExcelService(), new MixClock(), new MixUser(), new MixAllow(), new MixWarehouses())
+        new ImportStockMasterFromExcelHandler(db, new ClosedXmlExcelService(), new MixClock(), new MixUser(), new MixAllow(), new MixWarehouses(), TestServices.Posting(db))
             .Handle(new ImportStockMasterFromExcelCommand(file, warehouseId), default);
+
+    [Fact]
+    public async Task Import_LeavesALedgerEntryForEveryClearedChangedAndNewBatch_AndLedgerMatchesInventory()
+    {
+        var (db, a, b, _) = await SeedAsync();
+        using var _ = db;
+
+        await ImportAsync(db, Workbook((40000001, 10, "MAR|2026", "M-01-01"), (40000002, 7, "MAR|2026", "M-01-01")));
+        // Second file: A changes to 12, B (same location) is not listed and is cleared, A gets a new PKM batch.
+        var result = await ImportAsync(db, Workbook((40000001, 12, "MAR|2026", "M-01-01"), (40000001, 3, "APR|2026", "M-01-01")));
+
+        Assert.Equal(1, result.Cleared);
+        var entries = await db.StockLedgerEntries.Where(e => e.EntryType == StockLedgerEntryTypes.StockImport).ToListAsync();
+        Assert.All(entries, e => Assert.NotNull(e.ReferenceNumber));
+        Assert.Contains(entries, e => e.MaterialId == b.Id && e.QuantityBoxes == -7 && e.BalanceAfterBoxes == 0);
+        Assert.Contains(entries, e => e.MaterialId == a.Id && e.QuantityBoxes == 2 && e.BalanceAfterBoxes == 12);
+        Assert.Contains(entries, e => e.MaterialId == a.Id && e.QuantityBoxes == 3 && e.BalanceAfterBoxes == 3);
+        foreach (var batch in await db.StockBatches.ToListAsync())
+        {
+            Assert.Equal(batch.QuantityBoxes, entries.Where(e => e.MaterialId == batch.MaterialId && e.MfgMonth == batch.MfgMonth).Sum(e => e.QuantityBoxes));
+        }
+    }
+
+    [Fact]
+    public async Task Import_OfUnchangedQuantity_WritesNoLedgerEntry()
+    {
+        var (db, _, _, _) = await SeedAsync();
+        using var _ = db;
+
+        await ImportAsync(db, Workbook((40000001, 10, "MAR|2026", "M-01-01")));
+        var before = await db.StockLedgerEntries.CountAsync();
+        await ImportAsync(db, Workbook((40000001, 10, "MAR|2026", "M-01-01")));
+
+        Assert.Equal(before, await db.StockLedgerEntries.CountAsync());
+    }
 
     [Fact]
     public async Task SeveralMaterialsAndPkmsInOneLocation_AreAllLoaded()

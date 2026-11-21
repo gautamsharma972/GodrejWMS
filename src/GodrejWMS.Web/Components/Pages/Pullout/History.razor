@@ -157,8 +157,9 @@
     private string _confirmationFilter = string.Empty;
     private int? _warehouseFilter;
     private Task ReloadHistoryAsync() => LoadHistoryPage(1);
-    private string _historyFrom = string.Empty;
-    private string _historyTo = string.Empty;
+    // By default the last month up to today; the user can change or clear the dates to look further back.
+    private string _historyFrom = DateTime.Today.AddMonths(-1).ToString("yyyy-MM-dd");
+    private string _historyTo = DateTime.Today.ToString("yyyy-MM-dd");
     private string _historySortBy = "created";
     private bool _historySortDescending = true;
 

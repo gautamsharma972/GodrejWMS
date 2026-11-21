@@ -37,6 +37,7 @@ builder.Services.AddScoped<IdentityRedirectManager>();
 builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddSingleton<IRealtimeNotificationService, RealtimeNotificationService>();
+builder.Services.AddHostedService<GodrejWMS.Web.Services.CycleCountAutoCloseService>();
 
 builder.Services.AddDataProtection()
     .SetApplicationName("GodrejWMS")

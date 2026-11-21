@@ -90,7 +90,9 @@ public sealed class GetInventoryAdjustmentsHandler(IApplicationDbContext db, ICu
                 x.Adjustment.RequestedByUserId,
                 x.Adjustment.RequestedByUserName,
                 x.Adjustment.ReviewedByUserName,
-                x.Adjustment.ReviewedAt
+                x.Adjustment.ReviewedAt,
+                x.Line.PhysicalMfgMonth,
+                x.Line.PhysicalStockSubtypeId
             })
             .ToListAsync(cancellationToken);
 
@@ -99,7 +101,9 @@ public sealed class GetInventoryAdjustmentsHandler(IApplicationDbContext db, ICu
             x.MaterialDescription, x.PhysicalMaterialNumber, x.PhysicalMaterialDescription,
             x.LocationCode, MfgMonthParser.Format(x.MfgMonth),
             x.SystemQuantityAtCount, x.CountedQuantity, x.VarianceQuantity, x.ReasonCode,
-            x.ReasonText, x.RequestedByUserId, x.RequestedByUserName, x.ReviewedByUserName, x.ReviewedAt)).ToList();
+            x.ReasonText, x.RequestedByUserId, x.RequestedByUserName, x.ReviewedByUserName, x.ReviewedAt,
+            x.PhysicalMfgMonth is { } pm ? MfgMonthParser.Format(pm) : null,
+            InventoryAdjustmentMapper.StockTypeName(x.PhysicalStockSubtypeId))).ToList();
 
         return new PaginatedList<InventoryAdjustmentListDto>(items, totalCount, request.PageNumber, request.PageSize);
     }

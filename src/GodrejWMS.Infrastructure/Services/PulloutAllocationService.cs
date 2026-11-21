@@ -16,7 +16,8 @@ namespace GodrejWMS.Infrastructure.Services;
 /// preference can flip mid-allocation. If the preferred kind runs out within the current
 /// PKM/virtual-tier group, the other kind is used instead rather than skipping ahead. Finally,
 /// locations are drained ground level first (across all columns), then upward, then by rack and
-/// column - mirroring the put-away fill order.
+/// column - mirroring the put-away fill order. Before splitting a quantity over several locations, a single location of the
+/// current PKM that can cover the whole remaining quantity is used (FIFO still decides the PKM first).
 /// Only good stock in active good locations is pickable; damage, expired, and hold stock remain isolated.
 /// </summary>
 public class PulloutAllocationService(IApplicationDbContext db, IOptions<PickingOptions>? options = null) : IPulloutAllocationService
@@ -101,6 +102,25 @@ public class PulloutAllocationService(IApplicationDbContext db, IOptions<Picking
                     full.Add(batch);
                 else
                     partial.Add(batch);
+            }
+
+            // Whole quantity from ONE location when a single location of this PKM can cover it: no splitting across locations while
+            // one has enough. Among the locations that can, the same full-vs-partial preference applies, then the lowest location first.
+            decimal Available(StockBatch b) => Math.Max(0, b.QuantityBoxes - reserved.GetValueOrDefault((b.PalletPositionId, b.MfgMonth)));
+            var single = (remaining >= palletCapacityBoxes ? full.Concat(partial) : partial.Concat(full))
+                .FirstOrDefault(b => Available(b) >= remaining);
+            if (single is not null)
+            {
+                single.QuantityBoxes -= remaining;
+                single.RowVersion++;
+                picks.Add(new PulloutPickLine(single.PalletPosition.LocationCode, single.MfgMonth, remaining));
+                remaining = 0;
+                if (!preview && single.QuantityBoxes <= 0)
+                {
+                    db.StockBatches.Remove(single);
+                }
+
+                break;
             }
 
             var fi = 0;

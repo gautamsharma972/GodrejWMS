@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Features.CycleCount;
 using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common;
@@ -77,12 +78,14 @@ public sealed class SubmitPulloutHandler(
                 throw new InvalidOperationException("This pullout was rejected and can no longer be refreshed or confirmed.");
             if (transaction.IsConfirmed)
                 throw new InvalidOperationException("This pullout has already been confirmed.");
+            await CycleCountFreeze.EnsureNotFrozenAsync(db, clock, transaction.WarehouseId, cancellationToken);
             savedPreview = JsonSerializer.Deserialize<PulloutResultDto>(transaction.PreviewJson!)!;
             lines = savedPreview.Lines.Select(l => new SubmitPulloutLine(l.MaterialNumber, l.RequestedQuantityBoxes, l.PlantName, l.Priority, l.MaterialDescription)).ToList();
         }
         else
         {
             var createdAt = clock.UtcNow;
+            await CycleCountFreeze.EnsureNotFrozenAsync(db, clock, request.WarehouseId!.Value, cancellationToken);
             // Re-uploading the same file must not deduct the stock twice.
             var uploadHash = UploadFingerprint.Compute(
                 request.WarehouseId!.Value,

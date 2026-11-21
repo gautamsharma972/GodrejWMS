@@ -16,10 +16,13 @@ public static class DependencyInjection
         services.AddMediatR(cfg =>
         {
             cfg.RegisterServicesFromAssembly(assembly);
+            // First registered = outermost: the gate must also cover authorization, which reads the same DbContext.
+            cfg.AddOpenBehavior(typeof(SerialisedExecutionBehaviour<,>));
             cfg.AddOpenBehavior(typeof(AuthorizationBehaviour<,>));
             cfg.AddOpenBehavior(typeof(ValidationBehaviour<,>));
         });
 
+        services.AddScoped<DbOperationGate>();
         services.AddValidatorsFromAssembly(assembly);
         services.AddSingleton<PermissionRevision>();
         services.AddScoped<IPermissionService, PermissionService>();

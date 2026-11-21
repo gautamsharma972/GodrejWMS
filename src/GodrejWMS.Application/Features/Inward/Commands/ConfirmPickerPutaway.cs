@@ -93,16 +93,28 @@ public sealed class ConfirmPickerPutawayHandler(
             throw new InvalidOperationException($"Assign a PKM for {string.Join(", ", withoutPkm)} before confirming.");
         }
 
-        // The picker's entries for each material must add up to exactly what the system allocated.
+        // The picker's entries for each material must add up to exactly what the system allocated. Boxes a supervisor recorded as damage /
+        // shortage / mismatch against a location are accounted for: they shrank that location's row (its suggested quantity keeps the original),
+        // so they count as entered.
+        var recordedOnRows = (await db.InwardLineVariances.AsNoTracking()
+                .Where(v => v.InwardTransactionId == transaction.Id && v.Type != InwardVarianceType.Excess && v.InwardPutawayId != null)
+                .Select(v => new { v.MaterialId, v.QuantityBoxes })
+                .ToListAsync(cancellationToken))
+            .GroupBy(v => v.MaterialId)
+            .ToDictionary(g => g.Key, g => g.Sum(v => v.QuantityBoxes));
         foreach (var material in transaction.Lines.GroupBy(l => l.Material))
         {
             var rows = material.SelectMany(l => l.Putaways).ToList();
             var allocated = rows.Sum(p => p.SuggestedQuantityBoxes ?? p.QuantityBoxes);
-            var entered = rows.Sum(p => p.QuantityBoxes);
-            if (entered != allocated)
+            var entered = rows.Sum(p => p.QuantityBoxes) + recordedOnRows.GetValueOrDefault(material.Key.Id);
+            // Less than the system allocated is refused (record the missing boxes as shortage / damage / mismatch). More is fine up to what the inbound
+            // itself holds: the system may have found locations for only part of it, and the picker can find room for the rest on the floor.
+            var inbound = material.Sum(l => l.RequestedQuantityBoxes);
+            if (entered < allocated || entered > Math.Max(allocated, inbound))
             {
-                throw new InvalidOperationException(
-                    $"Qty cannot be {(entered < allocated ? "less" : "more")} than the {allocated:0.###} box(es) the system allocated for material {material.Key.MaterialNumber} on this GRN. Total entered is {entered:0.###}.");
+                throw new InvalidOperationException(entered < allocated
+                    ? $"Qty cannot be less than the {allocated:0.###} box(es) the system allocated for material {material.Key.MaterialNumber} on this GRN. Total entered is {entered:0.###}."
+                    : $"Qty cannot be more than the {Math.Max(allocated, inbound):0.###} box(es) on the inbound for material {material.Key.MaterialNumber} on this GRN. Total entered is {entered:0.###}.");
             }
         }
 

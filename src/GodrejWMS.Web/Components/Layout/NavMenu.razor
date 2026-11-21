@@ -52,6 +52,13 @@
                         </NavLink>
                     </div>
                 </PermissionAuthorize>
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewMaterialConversion">
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="material-conversion" aria-label="Material Code Conversion" data-bs-title="Material Code Conversion" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-arrow-left-right" aria-hidden="true"></i> <span class="nav-link-text">Material Conversion</span>
+                        </NavLink>
+                    </div>
+                </PermissionAuthorize>
                 <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewRacks">
                     <div class="nav-item">
                         <NavLink class="nav-link" href="racks" aria-label="Racks & Pallets" data-tour="nav-racks"data-bs-title="Racks & Pallets" data-bs-toggle="tooltip" data-bs-placement="right">
@@ -375,6 +382,64 @@
                         </div>
                     }
                 </PermissionAuthorize>
+
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewCycleCount">
+                    <div class="nav-item nav-group">
+                        <button type="button"
+                                @ref="_cycleCountButton"
+                                class="nav-link nav-parent @(IsCycleCountSection() ? "active" : string.Empty)"
+                                aria-label="Cycle Count"
+                                data-bs-title="Cycle Count"
+                                data-bs-toggle="tooltip"
+                                data-bs-placement="right"
+                                aria-expanded="@(SidebarCollapsed ? IsCollapsedFlyoutOpen("cycle-count") : IsCycleCountMenuOpen)"
+                                @onclick="ToggleCycleCountMenuAsync"
+                                @onclick:stopPropagation="true">
+                            <i class="bi bi-clipboard2-check" aria-hidden="true"></i>
+                            <span class="nav-link-text">Cycle Count</span>
+                            <i class="bi bi-chevron-down nav-chevron @(IsCycleCountMenuOpen ? "expanded" : string.Empty)" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    @if (!SidebarCollapsed)
+                    {
+                        <div class="nav-submenu @(IsCycleCountMenuOpen ? "expanded" : null)">
+                            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.Schedule">
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="cycle-count/schedule"><i class="bi bi-calendar-plus" aria-hidden="true"></i> <span class="nav-link-text">Schedule</span></NavLink>
+                            </div>
+                            </PermissionAuthorize>
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="cycle-count/batches"><i class="bi bi-list-check" aria-hidden="true"></i> <span class="nav-link-text">Batches</span></NavLink>
+                            </div>
+                            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.Perform">
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="cycle-count/count"><i class="bi bi-check2-square" aria-hidden="true"></i> <span class="nav-link-text">Count</span></NavLink>
+                            </div>
+                            </PermissionAuthorize>
+                            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.Review">
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="cycle-count/review"><i class="bi bi-clipboard-check" aria-hidden="true"></i> <span class="nav-link-text">Review</span></NavLink>
+                            </div>
+                            </PermissionAuthorize>
+                        </div>
+                    }
+                    @if (SidebarCollapsed && IsCollapsedFlyoutOpen("cycle-count"))
+                    {
+                        <div class="collapsed-nav-flyout" style="top: @(_collapsedFlyoutTop)px">
+                            <div class="collapsed-nav-flyout-title">Cycle Count</div>
+                            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.Schedule">
+                            <NavLink class="collapsed-nav-flyout-link" href="cycle-count/schedule" @onclick="CloseCollapsedFlyout"><i class="bi bi-calendar-plus"></i><span>Schedule</span></NavLink>
+                            </PermissionAuthorize>
+                            <NavLink class="collapsed-nav-flyout-link" href="cycle-count/batches" @onclick="CloseCollapsedFlyout"><i class="bi bi-list-check"></i><span>Batches</span></NavLink>
+                            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.Perform">
+                            <NavLink class="collapsed-nav-flyout-link" href="cycle-count/count" @onclick="CloseCollapsedFlyout"><i class="bi bi-check2-square"></i><span>Count</span></NavLink>
+                            </PermissionAuthorize>
+                            <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.Review">
+                            <NavLink class="collapsed-nav-flyout-link" href="cycle-count/review" @onclick="CloseCollapsedFlyout"><i class="bi bi-clipboard-check"></i><span>Review</span></NavLink>
+                            </PermissionAuthorize>
+                        </div>
+                    }
+                </PermissionAuthorize>
                 </div>
 
                 <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewReports">
@@ -437,6 +502,13 @@
                         </NavLink>
                     </div>
                 </PermissionAuthorize>
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.Reports">
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="reports/cycle-count" aria-label="Cycle Count Reports" data-bs-title="Cycle Count Reports" data-bs-toggle="tooltip" data-bs-placement="right">
+                            <i class="bi bi-clipboard2-data" aria-hidden="true"></i> <span class="nav-link-text">Cycle Count Reports</span>
+                        </NavLink>
+                    </div>
+                </PermissionAuthorize>
 
                 <div class="nav-spacer"></div>
             </Authorized>
@@ -489,12 +561,14 @@
     private bool? _inwardNoPkmMenuExpanded;
     private bool? _pulloutMenuExpanded;
     private bool? _inventoryMovementMenuExpanded;
+    private bool? _cycleCountMenuExpanded;
     private string? _collapsedFlyout;
     private double _collapsedFlyoutTop = 88;
     private ElementReference _inwardButton;
     private ElementReference _inwardNoPkmButton;
     private ElementReference _pulloutButton;
     private ElementReference _movementButton;
+    private ElementReference _cycleCountButton;
     private bool _showTransactionsLabel;
     private bool _revealActiveItemPending = true;
     private bool _previousSidebarCollapsed;
@@ -511,7 +585,8 @@
             await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInwardNoPkm) ||
             await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Inward.AssignPkm) ||
             await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewPullout) ||
-            await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInventoryMovement);
+            await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewInventoryMovement) ||
+            await PermissionService.HasPermissionAsync(GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewCycleCount);
     }
 
     protected override void OnParametersSet()
@@ -557,6 +632,11 @@
 
     private bool IsInventoryMovementMenuOpen => _inventoryMovementMenuExpanded ?? IsInventoryMovementSection();
 
+    private bool IsCycleCountMenuOpen => _cycleCountMenuExpanded ?? IsCycleCountSection();
+
+    private Task ToggleCycleCountMenuAsync() => ToggleMenuAsync("cycle-count", _cycleCountButton,
+        () => _cycleCountMenuExpanded = !IsCycleCountMenuOpen);
+
     private Task ToggleInwardMenuAsync() => ToggleMenuAsync("inward", _inwardButton,
         () => _inwardMenuExpanded = !IsInwardMenuOpen);
 
@@ -599,6 +679,7 @@
         _inwardNoPkmMenuExpanded = null;
         _pulloutMenuExpanded = null;
         _inventoryMovementMenuExpanded = null;
+        _cycleCountMenuExpanded = null;
         _revealActiveItemPending = true;
         _ = InvokeAsync(StateHasChanged);
     }
@@ -622,6 +703,12 @@
         var path = NavManager.ToBaseRelativePath(NavManager.Uri).Trim('/');
         return path.Equals("pullout", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("pullout/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsCycleCountSection()
+    {
+        var path = NavManager.ToBaseRelativePath(NavManager.Uri).Trim('/');
+        return path.StartsWith("cycle-count", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool IsInventoryMovementSection()

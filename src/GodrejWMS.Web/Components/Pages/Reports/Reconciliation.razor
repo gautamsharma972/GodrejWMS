@@ -18,6 +18,11 @@
 
     <section class="filter-bar" aria-label="Filters">
         <div class="filter-grid">
+            <label class="filter-field filter-field-wide">
+                <span>Search</span>
+                <input type="search" class="form-control" placeholder="Material code, location, GRN or PICK number" autocomplete="off"
+                       @bind="_search" @bind:event="oninput" aria-label="Search by material code, location, GRN or PICK reference" />
+            </label>
             <label class="filter-field">
                 <span>Warehouse</span>
                 <select class="form-select" @bind="_warehouseText">
@@ -118,6 +123,7 @@
     private string _warehouseText = string.Empty;
     private string _checkFilter = string.Empty;
     private string _severityFilter = "issues";
+    private string _search = string.Empty;
     private bool _loading = true;
     private string? _error;
 
@@ -131,7 +137,23 @@
         _report!.Issues
             .Where(i => string.IsNullOrEmpty(_checkFilter) || i.Check == _checkFilter)
             .Where(i => _severityFilter != "issues" || i.Severity != "Info")
+            .Where(Matches)
             .ToList();
+
+    // Search: material code, location name, and GRN / PICK reference numbers (the Reference column, plus any GRN / PICK number the description mentions).
+    private bool Matches(ReconciliationIssueDto issue)
+    {
+        var term = _search?.Trim();
+        if (string.IsNullOrEmpty(term))
+        {
+            return true;
+        }
+
+        return (issue.MaterialNumber?.ToString() ?? string.Empty).Contains(term, StringComparison.OrdinalIgnoreCase)
+            || issue.Location.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || issue.Reference.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || issue.Detail.Contains(term, StringComparison.OrdinalIgnoreCase);
+    }
 
     private async Task LoadAsync()
     {

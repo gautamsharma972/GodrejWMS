@@ -130,4 +130,7 @@ public interface IExcelService
 
     byte[] WriteOperationalReport(string title, IReadOnlyList<(string Header, Func<ReportRow, string> Value)> columns,
         IReadOnlyList<ReportRow> rows);
+
+    /// <summary>A plain one-sheet table (header row + text rows) for reports whose columns are not the operational-report shape.</summary>
+    byte[] WriteTable(string title, IReadOnlyList<string> headers, IReadOnlyList<IReadOnlyList<string>> rows);
 }

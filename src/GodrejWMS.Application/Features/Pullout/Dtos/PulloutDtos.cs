@@ -100,7 +100,10 @@ public sealed record PulloutPickDto(
     decimal? PickedQuantityBoxes = null,
     int? MoveToPalletPositionId = null,
     string? MoveToLocationCode = null,
-    decimal? MoveQuantityBoxes = null);
+    decimal? MoveQuantityBoxes = null,
+    /// <summary>Of <see cref="QuantityBoxes"/>, the boxes taken from an inward GRN that is still being unloaded / put away (the put-away rows are reserved for this
+    /// pullout and show as GIT): they may not be on the shelf at <see cref="LocationCode"/> yet.</summary>
+    decimal OnVehicleBoxes = 0);
 
 public sealed record PulloutPickChangeOptionDto(
     int PalletPositionId,

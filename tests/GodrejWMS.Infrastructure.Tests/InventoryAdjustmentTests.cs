@@ -221,6 +221,128 @@ public class InventoryAdjustmentTests
         return new AppDbContext(options, user, new AdjustmentClock());
     }
 
+    [Fact]
+    public async Task PkmCorrection_OfTheSameMaterial_ReplacesTheSystemPkmAfterApproval_AndLedgersBothPkms()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var requester = new AdjustmentUser("operator", "operator@test", "Office Staff");
+        await using var operatorDb = CreateDb(databaseName, requester);
+        var batchId = await SeedAsync(operatorDb, 40);                       // 40 boxes recorded as PKM OCT|2026
+
+        var submitted = await new SubmitInventoryAdjustmentHandler(
+                operatorDb, new AdjustmentClock(), requester, new AdjustmentNotifications(), new FakeAdjustmentPermissions(requester))
+            .Handle(new SubmitInventoryAdjustmentCommand(
+                batchId, 40, InventoryAdjustmentReasonCodes.DataEntryCorrection, "Boxes are marked SEP|2026", PhysicalMfgMonth: 202609), CancellationToken.None);
+
+        Assert.Equal(InventoryAdjustmentStatus.PendingApproval, submitted.Status);
+        Assert.Equal("SEP|2026", submitted.PhysicalMfgMonthLabel);
+        Assert.Null(submitted.PhysicalMaterialNumber);
+        Assert.Equal(40, operatorDb.StockBatches.Single().QuantityBoxes);   // nothing changes until approval
+        Assert.Equal(202610, operatorDb.StockBatches.Single().MfgMonth);
+
+        var supervisor = new AdjustmentUser("supervisor", "supervisor@test", "Supervisor");
+        await using var supervisorDb = CreateDb(databaseName, supervisor);
+        var approved = await new ApproveInventoryAdjustmentHandler(
+                supervisorDb, new AdjustmentClock(), supervisor, new AdjustmentNotifications(), new FakeAdjustmentPermissions(supervisor))
+            .Handle(new ApproveInventoryAdjustmentCommand(submitted.Id), CancellationToken.None);
+
+        Assert.Equal(InventoryAdjustmentStatus.Approved, approved.Status);
+        var stock = supervisorDb.StockBatches.AsNoTracking().Where(b => b.QuantityBoxes > 0).ToList();
+        var replacement = Assert.Single(stock);
+        Assert.Equal(202609, replacement.MfgMonth);
+        Assert.Equal(40, replacement.QuantityBoxes);
+        Assert.DoesNotContain(supervisorDb.StockBatches.AsNoTracking(), b => b.MfgMonth == 202610);
+        var ledger = supervisorDb.StockLedgerEntries.AsNoTracking().OrderBy(e => e.Id).ToList();
+        Assert.Equal(2, ledger.Count);
+        Assert.Contains(ledger, e => e.MfgMonth == 202610 && e.QuantityBoxes == -40 && e.BalanceAfterBoxes == 0);
+        Assert.Contains(ledger, e => e.MfgMonth == 202609 && e.QuantityBoxes == 40 && e.BalanceAfterBoxes == 40);
+    }
+
+    [Fact]
+    public async Task PkmAndSkuCorrection_Together_MoveTheBoxesToTheFoundSkuAndPkm_MergingIntoAnExistingBatch()
+    {
+        var supervisor = new AdjustmentUser("supervisor", "supervisor@test", "Supervisor");
+        await using var db = CreateDb(Guid.NewGuid().ToString(), supervisor);
+        var batchId = await SeedAsync(db, 40);
+        var found = NewMaterial(40039574, "Found SKU");
+        db.Materials.Add(found);
+        await db.SaveChangesAsync();
+        var position = db.StockBatches.Single().PalletPositionId;
+        db.StockBatches.Add(new StockBatch { MaterialId = found.Id, PalletPositionId = position, MfgMonth = 202608, StockSubtypeId = LocationSubtypeIds.Good, QuantityBoxes = 5, RowVersion = 1 });
+        await db.SaveChangesAsync();
+
+        var result = await new SubmitInventoryAdjustmentHandler(
+                db, new AdjustmentClock(), supervisor, new AdjustmentNotifications(), new FakeAdjustmentPermissions(supervisor))
+            .Handle(new SubmitInventoryAdjustmentCommand(
+                batchId, 38, InventoryAdjustmentReasonCodes.DataEntryCorrection, "Different SKU and PKM", found.Id, 202608), CancellationToken.None);
+
+        Assert.Equal(InventoryAdjustmentStatus.Approved, result.Status);        // a supervisor approves their own request
+        var live = db.StockBatches.AsNoTracking().Where(b => b.QuantityBoxes > 0).Single();
+        Assert.Equal((found.Id, 202608, 38m), (live.MaterialId, live.MfgMonth, live.QuantityBoxes));   // the found stock is set to what was counted
+        Assert.DoesNotContain(db.StockBatches.AsNoTracking(), b => b.MaterialId != found.Id);          // the wrongly recorded batch is gone
+    }
+
+    [Fact]
+    public async Task PkmCorrection_NeedsAQuantity_AValidMonth_AndNoOtherPendingRequestOnTheCell()
+    {
+        var requester = new AdjustmentUser("operator", "operator@test", "Office Staff");
+        await using var db = CreateDb(Guid.NewGuid().ToString(), requester);
+        var batchId = await SeedAsync(db, 40);
+        var validator = new SubmitInventoryAdjustmentValidator();
+        Assert.False(validator.Validate(new SubmitInventoryAdjustmentCommand(batchId, 0, InventoryAdjustmentReasonCodes.DataEntryCorrection, null, PhysicalMfgMonth: 202609)).IsValid);
+        Assert.False(validator.Validate(new SubmitInventoryAdjustmentCommand(batchId, 5, InventoryAdjustmentReasonCodes.DataEntryCorrection, null, PhysicalMfgMonth: 202613)).IsValid);
+        Assert.True(validator.Validate(new SubmitInventoryAdjustmentCommand(batchId, 5, InventoryAdjustmentReasonCodes.DataEntryCorrection, null, PhysicalMfgMonth: 202609)).IsValid);
+
+        var handler = new SubmitInventoryAdjustmentHandler(db, new AdjustmentClock(), requester, new AdjustmentNotifications(), new FakeAdjustmentPermissions(requester));
+        // the same PKM as the system record and the same quantity is no adjustment at all
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new SubmitInventoryAdjustmentCommand(batchId, 40, InventoryAdjustmentReasonCodes.DataEntryCorrection, null, PhysicalMfgMonth: 202610), CancellationToken.None));
+        await handler.Handle(new SubmitInventoryAdjustmentCommand(batchId, 40, InventoryAdjustmentReasonCodes.DataEntryCorrection, null, PhysicalMfgMonth: 202609), CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new SubmitInventoryAdjustmentCommand(batchId, 40, InventoryAdjustmentReasonCodes.DataEntryCorrection, null, PhysicalMfgMonth: 202608), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task StockTypeCorrection_MovesTheBoxesFromGoodToDamage_AfterApproval_AndLedgersBothStockTypes()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var requester = new AdjustmentUser("operator", "operator@test", "Office Staff");
+        await using var operatorDb = CreateDb(databaseName, requester);
+        var batchId = await SeedAsync(operatorDb, 40);
+        operatorDb.LocationSubtypes.Add(new LocationSubtype { Id = LocationSubtypeIds.Damage, Code = "Damage", DisplayName = "Damage" });
+        await operatorDb.SaveChangesAsync();
+        var position = operatorDb.StockBatches.Single().PalletPositionId;
+        var material = operatorDb.StockBatches.Single().MaterialId;
+        // damaged boxes of the same material and PKM already sit in the cell
+        operatorDb.StockBatches.Add(new StockBatch { MaterialId = material, PalletPositionId = position, MfgMonth = 202610, StockSubtypeId = LocationSubtypeIds.Damage, QuantityBoxes = 2, RowVersion = 1 });
+        await operatorDb.SaveChangesAsync();
+
+        var validator = new SubmitInventoryAdjustmentValidator();
+        Assert.False(validator.Validate(new SubmitInventoryAdjustmentCommand(batchId, 0, InventoryAdjustmentReasonCodes.DamagedStock, null, PhysicalStockSubtypeId: LocationSubtypeIds.Damage)).IsValid);
+        Assert.False(validator.Validate(new SubmitInventoryAdjustmentCommand(batchId, 5, InventoryAdjustmentReasonCodes.DamagedStock, null, PhysicalStockSubtypeId: LocationSubtypeIds.Expire)).IsValid);
+
+        var submitted = await new SubmitInventoryAdjustmentHandler(
+                operatorDb, new AdjustmentClock(), requester, new AdjustmentNotifications(), new FakeAdjustmentPermissions(requester))
+            .Handle(new SubmitInventoryAdjustmentCommand(
+                batchId, 40, InventoryAdjustmentReasonCodes.DamagedStock, "All 40 boxes are damaged", PhysicalStockSubtypeId: LocationSubtypeIds.Damage), CancellationToken.None);
+
+        Assert.Equal(InventoryAdjustmentStatus.PendingApproval, submitted.Status);
+        Assert.Equal("Damage", submitted.PhysicalStockSubtypeName);
+        Assert.Equal(40, operatorDb.StockBatches.Single(b => b.StockSubtypeId == LocationSubtypeIds.Good).QuantityBoxes);   // nothing changes before approval
+
+        var supervisor = new AdjustmentUser("supervisor", "supervisor@test", "Supervisor");
+        await using var supervisorDb = CreateDb(databaseName, supervisor);
+        await new ApproveInventoryAdjustmentHandler(
+                supervisorDb, new AdjustmentClock(), supervisor, new AdjustmentNotifications(), new FakeAdjustmentPermissions(supervisor))
+            .Handle(new ApproveInventoryAdjustmentCommand(submitted.Id), CancellationToken.None);
+
+        Assert.DoesNotContain(supervisorDb.StockBatches.AsNoTracking(), b => b.StockSubtypeId == LocationSubtypeIds.Good);          // the Good batch is gone
+        Assert.Equal(40, supervisorDb.StockBatches.AsNoTracking().Single(b => b.StockSubtypeId == LocationSubtypeIds.Damage).QuantityBoxes);   // set to what was counted
+        var ledger = supervisorDb.StockLedgerEntries.AsNoTracking().ToList();
+        Assert.Contains(ledger, e => e.StockSubtypeId == LocationSubtypeIds.Good && e.QuantityBoxes == -40 && e.BalanceAfterBoxes == 0);
+        Assert.Contains(ledger, e => e.StockSubtypeId == LocationSubtypeIds.Damage && e.QuantityBoxes == 38 && e.BalanceAfterBoxes == 40);
+    }
+
     private static async Task<int> SeedAsync(AppDbContext db, decimal quantity)
     {
         var subtype = new LocationSubtype { Id = LocationSubtypeIds.Good, Code = "Good", DisplayName = "Good" };

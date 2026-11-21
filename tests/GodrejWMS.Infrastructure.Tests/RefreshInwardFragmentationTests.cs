@@ -286,7 +286,11 @@ public class PickerPlaceInwardPutawayTests
         Assert.Equal(positions[1].Id, saved.PalletPositionId);
         Assert.Equal(30, saved.QuantityBoxes);
         Assert.True(saved.IsPickerPlaced);
-        Assert.False(saved.IsConfirmed);
+        Assert.True(saved.IsConfirmed); // the submitted location is in inventory
+        var stock = Assert.Single(db.StockBatches.Where(b => b.QuantityBoxes > 0));
+        Assert.Equal(positions[1].Id, stock.PalletPositionId);
+        Assert.Equal(202611, stock.MfgMonth);
+        Assert.Equal(30, stock.QuantityBoxes);
     }
 
     [Fact]
@@ -318,7 +322,7 @@ public class PickerPlaceInwardPutawayTests
                 .Handle(new ConfirmInwardPutawayCommand("GRN-1"), default));
         Assert.Contains("less than the 30", ex.Message);
         Assert.Contains("28", ex.Message);
-        Assert.False(db.InwardPutaways.Single().IsConfirmed);
+        Assert.Equal(28, db.StockBatches.Where(b => b.PalletPositionId == positions[0].Id).Sum(b => b.QuantityBoxes)); // the 28 submitted are in stock already
     }
 
     [Fact]
@@ -390,15 +394,85 @@ public class PickerPlaceInwardPutawayTests
         Assert.Equal("GIT", saved.ExcludedLocation); // still labelled GIT even though it now tracks a real location
         var gitLocation = db.PalletPositions.Single(p => p.ZoneTypeId == ZoneTypeIds.Git);
         Assert.Equal(gitLocation.Id, saved.PalletPositionId);
-        // A pending order's GIT stock, like a real location, waits for the supervisor's confirmation - nothing posted yet.
-        Assert.False(saved.IsConfirmed);
+        // A pending order's submitted location - GIT like a real one - reaches inventory at once (it no longer waits for the confirmation).
+        Assert.True(saved.IsConfirmed);
+        Assert.Equal(30, db.StockBatches.Where(b => b.PalletPositionId == gitLocation.Id).Sum(b => b.QuantityBoxes));
+    }
+
+    [Fact]
+    public async Task TheLimitIsOnTheMaterial_NotOnItsPkm_SoBoxesCanShiftBetweenPkmsOfTheSameInbound()
+    {
+        var (db, _, _, grn, first, positions) = await SeedAsync();
+        using var _ = db;
+        // Inward order: material A 50 boxes PKM AUG|2026 and 50 boxes PKM SEP|2026.
+        var aug = grn.Lines.Single();
+        aug.MfgMonth = 202608; aug.RequestedQuantityBoxes = 50; aug.AllocatedQuantityBoxes = 50;
+        first.QuantityBoxes = 50;
+        var sep = new InwardTransactionLine { MaterialId = aug.MaterialId, MfgMonth = 202609, RequestedQuantityBoxes = 50, AllocatedQuantityBoxes = 50 };
+        var second = new InwardPutaway { PalletPositionId = positions[1].Id, QuantityBoxes = 50 };
+        sep.Putaways.Add(second);
+        grn.Lines.Add(sep);
+        await db.SaveChangesAsync();
+
+        // Physically 25 AUG and 75 SEP arrived: the AUG row goes down first, then the SEP row up - the material total (100) never changes.
+        Assert.True((await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(first.Id, 25, "AUG|2026", positions[0].Id, null), default)).Saved);
+        Assert.True((await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(second.Id, 75, "SEP|2026", positions[1].Id, null), default)).Saved);
+
+        var lines = db.InwardTransactionLines.AsNoTracking().OrderBy(l => l.MfgMonth).ToList();
+        Assert.Equal([25m, 75m], lines.Select(l => l.AllocatedQuantityBoxes).ToArray());
+        Assert.Equal([25m, 75m], lines.Select(l => l.RequestedQuantityBoxes).ToArray()); // the ordered quantity followed the boxes
+        Assert.Equal(100, lines.Sum(l => l.RequestedQuantityBoxes));
+        Assert.All(lines, l => Assert.Equal(AllocationStatus.Fulfilled, l.Status));
+
+        // The material's total is still the limit.
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => Handler(db).Handle(
+            new PickerPlaceInwardPutawayCommand(second.Id, 76, "SEP|2026", positions[1].Id, null), default));
+        Assert.Contains("more than the 100", ex.Message);
+    }
+
+    [Fact]
+    public async Task SeveralLocationsOfOneLine_CanAllBeMovedToTheSameCorrectedPkm()
+    {
+        var (db, _, _, grn, first, positions) = await SeedAsync();
+        using var _ = db;
+        // One inbound line of 50 boxes (PKM OCT) put away in two locations: 30 + 20.
+        var line = grn.Lines.Single();
+        line.RequestedQuantityBoxes = 50;
+        line.AllocatedQuantityBoxes = 50;
+        var second = new InwardPutaway { PalletPositionId = positions[1].Id, QuantityBoxes = 20 };
+        line.Putaways.Add(second);
+        await db.SaveChangesAsync();
+
+        // The picker finds that the real PKM is AUG for both locations. The first one creates the AUG line ...
+        Assert.True((await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(first.Id, 30, "AUG|2026", positions[0].Id, null), default)).Saved);
+        // ... and the second must be accepted too: together they are exactly the 50 boxes of the inbound.
+        Assert.True((await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(second.Id, 20, "AUG|2026", positions[1].Id, null), default)).Saved);
+
+        Assert.All(db.InwardPutaways.AsNoTracking().Include(p => p.InwardTransactionLine).ToList(), p => Assert.Equal(202608, p.InwardTransactionLine.MfgMonth));
+        // More than the inbound is still refused.
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => Handler(db).Handle(
+            new PickerPlaceInwardPutawayCommand(second.Id, 21, "AUG|2026", positions[1].Id, null), default));
+        Assert.Contains("more than the", ex.Message);
+    }
+
+    [Fact]
+    public async Task SubmittedLocationOfAPendingOrder_IsInInventoryAtOnce_AndCanBePicked()
+    {
+        var (db, _, _, grn, putaway, positions) = await SeedAsync();
+        using var _ = db;
         Assert.Empty(db.StockBatches);
 
-        await new ConfirmInwardPutawayHandler(db, TestServices.Posting(db), new FragClock(), new FragUser(), new AllowAll())
-            .Handle(new ConfirmInwardPutawayCommand("GRN-1"), default);
+        await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, "OCT|2026", positions[0].Id, null), default);
 
-        Assert.True(db.InwardPutaways.AsNoTracking().Single().IsConfirmed);
-        Assert.Equal(30, db.StockBatches.Where(b => b.PalletPositionId == gitLocation.Id).Sum(b => b.QuantityBoxes));
+        // Submitted -> posted: it shows in Current Inventory without waiting for the confirmation of the whole transaction ...
+        var batch = Assert.Single(db.StockBatches.AsNoTracking());
+        Assert.Equal(30, batch.QuantityBoxes);
+        Assert.Equal(positions[0].Id, batch.PalletPositionId);
+        // ... and an outward order picks it straight away.
+        var warehouseId = grn.WarehouseId;
+        var allocation = await new PulloutAllocationService(db).AllocateAsync(batch.MaterialId, 10, warehouseId, preview: true);
+        Assert.Equal(GodrejWMS.Domain.Enums.AllocationStatus.Fulfilled, allocation.Status);
+        Assert.Equal([positions[0].LocationCode], allocation.Picks.Select(p => p.LocationCode).ToArray());
     }
 
     [Fact]
@@ -413,9 +487,10 @@ public class PickerPlaceInwardPutawayTests
         Assert.True(result.Saved);
         var saved = db.InwardPutaways.Single();
         Assert.Null(saved.ExcludedLocation);
-        Assert.False(saved.IsConfirmed);
-        Assert.Null(saved.ConfirmedAt);
+        Assert.True(saved.IsConfirmed); // stock moved from GIT into the real location
         Assert.Equal(positions[2].Id, saved.PalletPositionId);
+        Assert.Equal(30, db.StockBatches.Where(b => b.PalletPositionId == positions[2].Id).Sum(b => b.QuantityBoxes));
+        Assert.Equal(30, db.StockBatches.Sum(b => b.QuantityBoxes));
 
         // and a real location can be set aside again
         await Handler(db).Handle(new PickerPlaceInwardPutawayCommand(putaway.Id, 30, null, null, "NO RACK"), default);

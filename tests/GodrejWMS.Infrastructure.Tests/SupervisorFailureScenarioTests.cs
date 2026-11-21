@@ -146,11 +146,15 @@ public class SupervisorFailureScenarioTests
 
         var transaction = await s.Db.InwardTransactions.SingleAsync();
         transaction.PostedAt = null;
+        var row = await s.Db.InwardPutaways.SingleAsync();
+        row.IsConfirmed = false; // a location of a not-posted order that has not been submitted yet: no stock behind it
         await s.Db.SaveChangesAsync();
-        Assert.Contains("not been posted", await RefusedAsync(() =>
+        Assert.Contains("Submit", await RefusedAsync(() =>
             Record(s.Db).Handle(new RecordInwardVarianceCommand(putaway.Id, InwardVarianceType.Damage, 1, "x"), default)));
 
         transaction = await s.Db.InwardTransactions.SingleAsync();
+        row = await s.Db.InwardPutaways.SingleAsync();
+        row.IsConfirmed = true;
         transaction.PostedAt = DateTimeOffset.UtcNow;
         transaction.IsRejected = true;
         await s.Db.SaveChangesAsync();

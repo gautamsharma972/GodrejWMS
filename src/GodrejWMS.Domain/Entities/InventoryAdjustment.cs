@@ -41,6 +41,10 @@ public class InventoryAdjustmentLine : AuditableEntity
     /// Null means this is a quantity-only adjustment.
     /// </summary>
     public int? PhysicalMaterialId { get; set; }
+    /// <summary>The PKM physically found when it differs from the system record's PKM (<see cref="MfgMonth"/>); null = same PKM.</summary>
+    public int? PhysicalMfgMonth { get; set; }
+    /// <summary>The stock type (Good / Damage ...) physically found when it differs from the system record's <see cref="StockSubtypeId"/>; null = same.</summary>
+    public int? PhysicalStockSubtypeId { get; set; }
     public Material? PhysicalMaterial { get; set; }
     public int PalletPositionId { get; set; }
     public PalletPosition PalletPosition { get; set; } = null!;

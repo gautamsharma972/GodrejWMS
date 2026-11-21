@@ -65,6 +65,7 @@ export default function HomeScreen() {
   // Mirrors the web app's naming: the picker-facing queue is "Picker Pick-list" (/pullout-picker),
   // the supervisor's is "Pullout Queue" (/pullout/history) - same route on mobile, different label.
   const isPickerPulloutRole = permissions.includes("Pullout.Pick");
+  const canCycleCount = permissions.includes("CycleCount.Perform");
 
   const [counts, setCounts] = useState<Record<string, number | null>>({});
 
@@ -130,6 +131,15 @@ export default function HomeScreen() {
       title: isPickerPulloutRole ? "Picker Pick-list" : "Pullout queue",
       subtitle: isPickerPulloutRole ? "Confirm each pick as you take it" : "Confirm picks, change locations",
       route: "/pullout-queue",
+    },
+    canCycleCount && {
+      key: "cycle-count",
+      icon: "checkbox-outline",
+      color: "#0891b2",
+      softColor: "#cffafe",
+      title: "Cycle count",
+      subtitle: "Count racks, verify or correct stock",
+      route: "/cycle-count-queue",
     },
   ].filter(Boolean) as ActionTile[];
 

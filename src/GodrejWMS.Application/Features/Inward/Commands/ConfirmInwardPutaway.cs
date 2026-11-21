@@ -64,10 +64,14 @@ public sealed class ConfirmInwardPutawayHandler(
             var putaways = material.SelectMany(l => l.Putaways).ToList();
             var allocated = putaways.Sum(p => p.SuggestedQuantityBoxes ?? p.QuantityBoxes);
             var entered = putaways.Sum(p => p.QuantityBoxes);
-            if (entered != allocated)
+            // Less than the system allocated is refused (record the missing boxes as shortage / damage / mismatch). More is fine up to what the inbound
+            // itself holds: the system may have found locations for only part of it, and the picker can find room for the rest on the floor.
+            var inbound = material.Sum(l => l.RequestedQuantityBoxes);
+            if (entered < allocated || entered > Math.Max(allocated, inbound))
             {
-                throw new InvalidOperationException(
-                    $"Qty cannot be {(entered < allocated ? "less" : "more")} than the {allocated:0.###} box(es) the system allocated for material {material.Key.MaterialNumber} on this GRN. Total entered is {entered:0.###}.");
+                throw new InvalidOperationException(entered < allocated
+                    ? $"Qty cannot be less than the {allocated:0.###} box(es) the system allocated for material {material.Key.MaterialNumber} on this GRN. Total entered is {entered:0.###}."
+                    : $"Qty cannot be more than the {Math.Max(allocated, inbound):0.###} box(es) on the inbound for material {material.Key.MaterialNumber} on this GRN. Total entered is {entered:0.###}.");
             }
         }
 

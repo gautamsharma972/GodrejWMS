@@ -88,6 +88,16 @@
                 </div>
             </div>
 
+            <label class="filter-field">
+                <span>Stock status</span>
+                <select class="form-select" @bind="_statusText" title="IN-STOCK: put-away confirmed. GIT-IN: inward uploaded, put-away not confirmed yet. GIT-OUT: pullout uploaded, pick not confirmed yet (already deducted).">
+                    <option value="">All statuses</option>
+                    <option value="IN-STOCK">IN-STOCK</option>
+                    <option value="GIT-IN">GIT-IN</option>
+                    <option value="GIT-OUT">GIT-OUT</option>
+                </select>
+            </label>
+
             <button type="button" class="btn btn-primary filter-apply" @onclick="LoadAsync" disabled="@_loading">
                 @if (_loading)
                 {
@@ -113,6 +123,9 @@
         <div><span>Materials</span><strong>@_rows.Select(row => row.MaterialCode).Distinct().Count().ToString("N0")</strong></div>
         <div><span>PKM periods</span><strong>@_rows.Select(row => row.Pkm).Distinct().Count().ToString("N0")</strong></div>
         <div class="summary-primary"><span>Total box quantity</span><strong>@_rows.Sum(row => row.BoxQuantity).ToString("N3")</strong></div>
+        <div><span>In stock (put-away confirmed)</span><strong>@_rows.Sum(row => row.InStockBoxes).ToString("N3")</strong></div>
+        <div><span>GIT-IN (inward, put-away pending)</span><strong>@_rows.Sum(row => row.GitInBoxes).ToString("N3")</strong></div>
+        <div><span>GIT-OUT (pick pending, not in total)</span><strong>@_rows.Sum(row => row.GitOutBoxes).ToString("N3")</strong></div>
     </div>
 
     <div class="panel material-report-panel">
@@ -147,6 +160,9 @@
                             <th><button class="sort-button" @onclick='() => SortBy("pkm")'>PKM @SortIcon("pkm")</button></th>
                             <th class="text-end"><button class="sort-button" @onclick='() => SortBy("mrp")'>MRP @SortIcon("mrp")</button></th>
                             <th class="text-end"><button class="sort-button" @onclick='() => SortBy("boxes")'>Box Qty @SortIcon("boxes")</button></th>
+                            <th class="text-end" title="Put-away confirmed">In-stock</th>
+                            <th class="text-end" title="Inward uploaded, put-away not confirmed yet (included in Box Qty)">GIT-IN</th>
+                            <th class="text-end" title="Pullout uploaded, pick not confirmed yet: already deducted, NOT in Box Qty">GIT-OUT</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -158,6 +174,9 @@
                                 <td><span class="status-pill neutral">@MfgMonthParser.Format(row.Pkm)</span></td>
                                 <td class="text-end">₹@row.Mrp.ToString("N2")</td>
                                 <td class="text-end"><strong>@row.BoxQuantity.ToString("N3")</strong></td>
+                                <td class="text-end">@row.InStockBoxes.ToString("N3")</td>
+                                <td class="text-end">@(row.GitInBoxes > 0 ? row.GitInBoxes.ToString("N3") : "-")</td>
+                                <td class="text-end">@(row.GitOutBoxes > 0 ? row.GitOutBoxes.ToString("N3") : "-")</td>
                             </tr>
                         }
                     </tbody>
@@ -182,8 +201,9 @@
     private string _maxBoxesText = string.Empty;
     private string _sortBy = "code";
     private bool _sortDescending;
+    private string _statusText = string.Empty;
 
-    private int ActiveFilterCount => new[] { _search, _warehouseText, _pkmFromText, _pkmToText, _minMrpText, _maxMrpText, _minBoxesText, _maxBoxesText }
+    private int ActiveFilterCount => new[] { _search, _warehouseText, _pkmFromText, _pkmToText, _minMrpText, _maxMrpText, _minBoxesText, _maxBoxesText, _statusText }
         .Count(value => !string.IsNullOrWhiteSpace(value));
 
     private IEnumerable<MaterialStockReportRowDto> SortedRows => (_sortBy, _sortDescending) switch
@@ -220,7 +240,8 @@
                 ParseDecimal(_minMrpText),
                 ParseDecimal(_maxMrpText),
                 ParseDecimal(_minBoxesText),
-                ParseDecimal(_maxBoxesText));
+                ParseDecimal(_maxBoxesText),
+                Null(_statusText));
             _rows = await Mediator.Send(new GetMaterialStockReportQuery(filter));
         }
         catch (Exception ex)
@@ -236,7 +257,7 @@
 
     private async Task ResetAsync()
     {
-        _search = _warehouseText = _pkmFromText = _pkmToText = _minMrpText = _maxMrpText = _minBoxesText = _maxBoxesText = string.Empty;
+        _search = _warehouseText = _pkmFromText = _pkmToText = _minMrpText = _maxMrpText = _minBoxesText = _maxBoxesText = _statusText = string.Empty;
         await LoadAsync();
     }
 
@@ -268,8 +289,11 @@
             Csv(row.MaterialDescription),
             Csv(MfgMonthParser.Format(row.Pkm)),
             row.Mrp.ToString("0.00", CultureInfo.InvariantCulture),
-            row.BoxQuantity.ToString("0.###", CultureInfo.InvariantCulture)));
-        var csv = "Material Code,Material Description,PKM,MRP,Box Qty\r\n" + string.Join("\r\n", lines);
+            row.BoxQuantity.ToString("0.###", CultureInfo.InvariantCulture),
+            row.InStockBoxes.ToString("0.###", CultureInfo.InvariantCulture),
+            row.GitInBoxes.ToString("0.###", CultureInfo.InvariantCulture),
+            row.GitOutBoxes.ToString("0.###", CultureInfo.InvariantCulture)));
+        var csv = "Material Code,Material Description,PKM,MRP,Box Qty,In-stock,GIT-IN,GIT-OUT\r\n" + string.Join("\r\n", lines);
         await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", "material-stock-report.csv",
             Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(csv)), "text/csv");
     }

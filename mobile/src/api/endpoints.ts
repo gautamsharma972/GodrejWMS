@@ -6,6 +6,13 @@ import type {
   ChangePulloutPickLocationRequest,
   ConfirmPickRequest,
   ConfirmPickResult,
+  CycleCountBatchDto,
+  CycleCountCardDto,
+  CycleCountCardsDto,
+  CycleCountFreezeDto,
+  CycleCountLocationDto,
+  CycleCountSubmitResultDto,
+  CycleCountSubmitSummaryDto,
   InwardDetailDto,
   InwardHistoryDto,
   InwardPalletChangeOptionDto,
@@ -275,4 +282,67 @@ export function addPulloutPick(
   request: { materialId: number; palletPositionId: number; quantityBoxes: number; overrideReason?: string | null },
 ): Promise<AddPulloutPickResult> {
   return apiRequest<AddPulloutPickResult>(`/api/pullout/${pulloutId}/add-pick`, { token, method: "POST", body: request });
+}
+
+
+// ---- Cycle Count (CycleCount.Perform / CycleCount.Submit)
+
+const cc = "/api/cycle-count";
+const rackPath = (batchId: number, rackCode: string) => `${cc}/batches/${batchId}/racks/${encodeURIComponent(rackCode)}`;
+
+export function getMyCycleCountBatches(token: string): Promise<CycleCountBatchDto[]> {
+  return apiRequest<CycleCountBatchDto[]>(`${cc}/my-batches`, { token });
+}
+
+export function startCycleCount(token: string, batchId: number): Promise<CycleCountBatchDto> {
+  return apiRequest<CycleCountBatchDto>(`${cc}/batches/${batchId}/start`, { token, method: "POST" });
+}
+
+export function getCycleCountLocations(token: string, batchId: number, rackCode: string): Promise<CycleCountLocationDto[]> {
+  return apiRequest<CycleCountLocationDto[]>(`${rackPath(batchId, rackCode)}/locations`, { token });
+}
+
+export function getCycleCountCards(token: string, batchId: number, rackCode: string, from?: string, to?: string, stockSubtypeId?: number): Promise<CycleCountCardsDto> {
+  return apiRequest<CycleCountCardsDto>(`${rackPath(batchId, rackCode)}/cards`, { token, query: { from, to, stockSubtypeId } });
+}
+
+export function getCycleCountSummary(token: string, batchId: number, rackCode: string): Promise<CycleCountSubmitSummaryDto> {
+  return apiRequest<CycleCountSubmitSummaryDto>(`${rackPath(batchId, rackCode)}/summary`, { token });
+}
+
+export function submitCycleCountRack(token: string, batchId: number, rackCode: string): Promise<CycleCountSubmitResultDto> {
+  return apiRequest<CycleCountSubmitResultDto>(`${rackPath(batchId, rackCode)}/submit`, { token, method: "POST" });
+}
+
+export function verifyCycleCountCard(token: string, cardId: number): Promise<CycleCountCardDto> {
+  return apiRequest<CycleCountCardDto>(`${cc}/cards/${cardId}/verify`, { token, method: "POST" });
+}
+
+export function correctCycleCountCard(
+  token: string,
+  cardId: number,
+  request: { materialNumber: number | null; mfgMonthText: string | null; physicalQuantityBoxes: number; stockSubtypeId?: number },
+): Promise<CycleCountCardDto> {
+  return apiRequest<CycleCountCardDto>(`${cc}/cards/${cardId}/correct`, { token, method: "POST", body: request });
+}
+
+export function addCycleCountFoundStock(
+  token: string,
+  batchId: number,
+  request: { palletPositionId: number; materialNumber: number; mfgMonthText: string; physicalQuantityBoxes: number; stockSubtypeId?: number },
+): Promise<CycleCountCardDto> {
+  return apiRequest<CycleCountCardDto>(`${cc}/batches/${batchId}/found-stock`, { token, method: "POST", body: request });
+}
+
+export function searchCycleCountMaterials(token: string, search: string, pageNumber = 1, pageSize = 15): Promise<PaginatedList<MaterialDto>> {
+  const query = `search=${encodeURIComponent(search)}&pageNumber=${pageNumber}&pageSize=${pageSize}`;
+  return apiRequest<PaginatedList<MaterialDto>>(`${cc}/materials?${query}`, { token });
+}
+
+export function getCycleCountFreeze(token: string, warehouseId: number): Promise<CycleCountFreezeDto> {
+  return apiRequest<CycleCountFreezeDto>(`${cc}/freeze`, { token, query: { warehouseId } });
+}
+
+export function enableCycleCountDamage(token: string, batchId: number, rackCode: string): Promise<number> {
+  return apiRequest<number>(`${rackPath(batchId, rackCode)}/damage`, { token, method: "POST" });
 }

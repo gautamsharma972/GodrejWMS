@@ -229,14 +229,35 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db, I
                 .Concat(parsedSources.Select(s => s.PalletPositionId)).Distinct().ToList();
             var tracked = await db.PalletPositions.Include(p => p.Rack)
                 .Where(p => positionIdsToPost.Contains(p.Id)).ToDictionaryAsync(p => p.Id, cancellationToken);
-            var changes = picksToReplace
-                .Select(p => new StockChange(line.MaterialId, p.MfgMonth, LocationSubtypeIds.Good, tracked[p.PalletPositionId], p.QuantityBoxes))
-                .Concat(parsedSources.Select(s => new StockChange(line.MaterialId, s.MfgMonth, LocationSubtypeIds.Good, tracked[s.PalletPositionId], -s.QuantityBoxes)))
-                .ToList();
+            var context = new StockPostingContext(StockLedgerEntryTypes.PickChange, "PICK", transaction.ReferenceNumber,
+                reason.Length == 0 ? "Pick location changed" : $"Pick location changed: {reason}");
+
+            // 1. The old source gets its boxes back: stock returns to the cell, and put-away rows of an inward GRN that this pick had reserved
+            //    (boxes still on the vehicle) open again for the picker - the boxes are not picked from there any more.
+            foreach (var replaced in picksToReplace)
+            {
+                await PutawayPickReservation.ReleaseShortfallAsync(
+                    db, transaction.ReferenceNumber, line.MaterialId, replaced.MfgMonth, replaced.PalletPositionId, replaced.QuantityBoxes, cancellationToken);
+            }
+
             await posting.ApplyAsync(
-                new StockPostingContext(StockLedgerEntryTypes.PickChange, "PICK", transaction.ReferenceNumber,
-                    reason.Length == 0 ? "Pick location changed" : $"Pick location changed: {reason}"),
-                changes, cancellationToken);
+                context,
+                picksToReplace.Select(p => new StockChange(line.MaterialId, p.MfgMonth, LocationSubtypeIds.Good, tracked[p.PalletPositionId], p.QuantityBoxes)).ToList(),
+                cancellationToken);
+
+            // 2. The new source is taken from: untouched put-away rows of a GRN still being unloaded there become reserved for this pullout
+            //    (read BEFORE the deduction, like on upload), then the boxes are deducted.
+            var probe = new PulloutTransactionLine { MaterialId = line.MaterialId };
+            foreach (var source in parsedSources)
+            {
+                probe.Picks.Add(new PulloutPick { PalletPositionId = source.PalletPositionId, MfgMonth = source.MfgMonth, QuantityBoxes = source.QuantityBoxes });
+            }
+
+            await PutawayPickReservation.ReserveAsync(db, transaction.ReferenceNumber, [probe], DateTimeOffset.UtcNow, cancellationToken);
+            await posting.ApplyAsync(
+                context,
+                parsedSources.Select(s => new StockChange(line.MaterialId, s.MfgMonth, LocationSubtypeIds.Good, tracked[s.PalletPositionId], -s.QuantityBoxes)).ToList(),
+                cancellationToken);
         }
 
         foreach (var pick in picksToReplace)
@@ -249,7 +270,7 @@ public sealed class ChangePulloutPickLocationHandler(IApplicationDbContext db, I
                 PalletPositionId = source.PalletPositionId,
                 MfgMonth = source.MfgMonth,
                 QuantityBoxes = source.QuantityBoxes,
-                OverrideReason = reason.Length == 0 ? null : reason
+                OverrideReason = reason.Length == 0 ? "Location changed" : reason
             });
         }
         line.PickedQuantityBoxes = newLineTotal;

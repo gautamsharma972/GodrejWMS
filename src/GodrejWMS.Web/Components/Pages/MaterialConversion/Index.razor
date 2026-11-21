@@ -1,0 +1,351 @@
+@page "/material-conversion"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.Menu.ViewMaterialConversion)]
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Features.MaterialConversions.Commands
+@using GodrejWMS.Application.Features.MaterialConversions.Dtos
+@using GodrejWMS.Application.Features.MaterialConversions.Queries
+@using GodrejWMS.Application.Features.Materials.Dtos
+@using GodrejWMS.Application.Features.Materials.Queries
+@using GodrejWMS.Domain.Entities
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+@inject ILogger<Index> Logger
+
+<PageTitle>Material Code Conversion - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Inventory Control</div>
+            <h1>Material Code Conversion</h1>
+            <p class="page-kicker">Convert stock held under an old material code into a new code - all of it or some boxes. The oldest PKM is taken first (FIFO); PKM and location stay the same. A reviewer approves before stock changes.</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-outline-secondary" href="/materials"><i class="bi bi-boxes" aria-hidden="true"></i> Material Master</a>
+        </div>
+    </div>
+
+    <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.ConvertMaterial">
+        <section class="panel mb-4" aria-labelledby="conversion-form-heading">
+            <h2 id="conversion-form-heading" class="panel-title">New conversion</h2>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Warehouse</label>
+                    <div><WarehouseSelect WarehouseId="_warehouseId" WarehouseIdChanged="OnWarehouseChanged" Placeholder="Select warehouse..." /></div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Old material code</label>
+                    <SearchableMaterialSelect Options="_allMaterials" @bind-Value="_fromId" @bind-Value:after="ClearProposal" Placeholder="Search the old code" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">New material code</label>
+                    <SearchableMaterialSelect Options="_activeMaterials" @bind-Value="_toId" @bind-Value:after="ClearProposal" Placeholder="Search the new code" />
+                </div>
+                <div class="col-md-1 d-grid">
+                    @if (_fromId > 0)
+                    {
+                        <a class="btn btn-outline-secondary" href="@($"/materials?copyFrom={_fromId}")" title="The new code does not exist yet? Create it as a copy of the old material" aria-label="Create the new code from the old material">
+                            <i class="bi bi-copy" aria-hidden="true"></i>
+                        </a>
+                    }
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">How much</label>
+                    <select class="form-select" @bind="_mode" @bind:after="ClearProposal">
+                        <option value="all">Convert all stock</option>
+                        <option value="boxes">Convert some boxes (oldest PKM first)</option>
+                    </select>
+                </div>
+                @if (_mode == "boxes")
+                {
+                    <div class="col-md-2">
+                        <label class="form-label">Boxes</label>
+                        <input type="number" class="form-control" min="1" step="1" @bind="_boxes" @bind:event="oninput" />
+                    </div>
+                }
+                <div class="col-md-3 d-grid">
+                    <button type="button" class="btn btn-primary" @onclick="ProposeAsync" disabled="@(_busy || _warehouseId is null || _fromId <= 0 || _toId <= 0 || (_mode == "boxes" && _boxes <= 0))">
+                        <i class="bi bi-list-check" aria-hidden="true"></i> @(_busy ? "Working..." : "Show proposal")
+                    </button>
+                </div>
+            </div>
+
+            @if (_error is not null)
+            {
+                <div class="alert alert-danger mt-3 mb-0" role="alert">@_error</div>
+            }
+
+            @if (_proposal is not null)
+            {
+                <hr />
+                <p class="mb-2">
+                    <strong>@_proposal.FromMaterialNumber</strong> @_proposal.FromDescription <i class="bi bi-arrow-right mx-1" aria-hidden="true"></i>
+                    <strong>@_proposal.ToMaterialNumber</strong> @_proposal.ToDescription
+                    &middot; good stock available <strong>@_proposal.AvailableBoxes.ToString("N0")</strong> box(es)
+                </p>
+                @if (_proposal.Warnings.Count > 0)
+                {
+                    <div class="alert alert-warning" role="status">
+                        <strong><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Please check before you submit</strong>
+                        <ul class="mb-0 mt-1">
+                            @foreach (var warning in _proposal.Warnings)
+                            {
+                                <li>@warning</li>
+                            }
+                        </ul>
+                    </div>
+                }
+
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-2">
+                        <thead>
+                            <tr><th style="width:2.5rem"></th><th>Location</th><th>PKM</th><th class="text-end">In stock</th><th class="text-end" style="width:9rem">Convert (boxes)</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _rows)
+                            {
+                                <tr>
+                                    <td><input type="checkbox" class="form-check-input" @bind="row.Selected" aria-label="@($"Include {row.Line.LocationCode}")" /></td>
+                                    <td><span class="record-code">@row.Line.LocationCode</span></td>
+                                    <td>@row.Line.MfgMonthLabel</td>
+                                    <td class="text-end">@row.Line.AvailableBoxes.ToString("N0")</td>
+                                    <td class="text-end"><input type="number" class="form-control form-control-sm text-end" min="1" max="@row.Line.AvailableBoxes" step="1" @bind="row.Quantity" @bind:event="oninput" disabled="@(!row.Selected)" /></td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr><th colspan="4" class="text-end">Total to convert</th><th class="text-end">@SelectedTotal.ToString("N0")</th></tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-9">
+                        <label class="form-label">Reason / remark (optional)</label>
+                        <input class="form-control" maxlength="500" @bind="_reason" @bind:event="oninput" placeholder="e.g. Re-coded to the new SKU" />
+                    </div>
+                    <div class="col-md-3 d-grid">
+                        <button type="button" class="btn btn-success" @onclick="SubmitAsync" disabled="@(_busy || SelectedTotal <= 0 || _rows.Any(r => r.Selected && (r.Quantity <= 0 || r.Quantity > r.Line.AvailableBoxes)))">
+                            <i class="bi bi-send-check" aria-hidden="true"></i> Submit conversion
+                        </button>
+                    </div>
+                </div>
+            }
+        </section>
+    </PermissionAuthorize>
+
+    <section class="panel" aria-labelledby="conversion-list-heading">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <h2 id="conversion-list-heading" class="panel-title mb-0">Conversion requests</h2>
+            <div class="toolbar-group">
+                <input class="form-control" style="min-width:16rem" placeholder="Search number or material code" @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+                <select class="form-select filter-control" @bind="_statusText" @bind:after="ReloadAsync">
+                    <option value="">All statuses</option>
+                    @foreach (var status in Enum.GetValues<MaterialConversionStatus>())
+                    {
+                        <option value="@status">@status</option>
+                    }
+                </select>
+            </div>
+        </div>
+        @if (_page is null)
+        {
+            <div class="loading-panel"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Loading...</div>
+        }
+        else if (_page.Items.Count == 0)
+        {
+            <div class="empty-state"><i class="bi bi-arrow-left-right" aria-hidden="true"></i><strong>No conversion requests</strong></div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead><tr><th>Request</th><th>Old code</th><th>New code</th><th class="text-end">Boxes</th><th>Status</th><th>Requested by</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var item in _page.Items)
+                        {
+                            <tr>
+                                <td><span class="record-code">@item.ConversionNumber</span><div class="small text-muted">@item.RequestedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</div></td>
+                                <td><strong>@item.FromMaterialNumber</strong><div class="small text-muted">@item.FromDescription</div></td>
+                                <td><strong>@item.ToMaterialNumber</strong><div class="small text-muted">@item.ToDescription</div></td>
+                                <td class="text-end">@item.TotalBoxes.ToString("N0")<div class="small text-muted">@item.LineCount location(s)</div></td>
+                                <td>
+                                    <span class="status-pill @StatusClass(item.Status)">@item.Status</span>
+                                    @if (!string.IsNullOrWhiteSpace(item.ReviewComment)) { <div class="small text-muted">@item.ReviewComment</div> }
+                                </td>
+                                <td>@item.RequestedByUserName</td>
+                                <td class="table-actions">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleLines(item.Id)" aria-label="Show lines"><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+                                    @if (item.Status == MaterialConversionStatus.PendingApproval)
+                                    {
+                                        <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Inventory.ApproveMaterialConversion">
+                                            <button type="button" class="btn btn-sm btn-success" @onclick="() => ApproveAsync(item.Id)" disabled="@_busy">Approve</button>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => RejectAsync(item.Id)" disabled="@_busy">Reject</button>
+                                        </PermissionAuthorize>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => CancelAsync(item.Id)" disabled="@_busy">Cancel</button>
+                                    }
+                                </td>
+                            </tr>
+                            @if (_openLines == item.Id)
+                            {
+                                <tr>
+                                    <td colspan="7" class="bg-light">
+                                        @foreach (var line in item.Lines)
+                                        {
+                                            <span class="status-pill info me-1 mb-1">@line.LocationCode [@line.MfgMonthLabel] -@line.QuantityBoxes.ToString("0.###")</span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(item.ReasonText)) { <div class="small mt-1">Reason: @item.ReasonText</div> }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <nav class="pagination-bar" aria-label="Conversion pagination">
+                <ul class="pagination mb-0">
+                    <li class="page-item @(_page.HasPreviousPage ? "" : "disabled")"><button class="page-link" @onclick="() => LoadAsync(_pageNumber - 1)">Previous</button></li>
+                    <li class="page-item disabled"><span class="page-link">Page @_page.PageNumber of @Math.Max(1, _page.TotalPages)</span></li>
+                    <li class="page-item @(_page.HasNextPage ? "" : "disabled")"><button class="page-link" @onclick="() => LoadAsync(_pageNumber + 1)">Next</button></li>
+                </ul>
+            </nav>
+        }
+    </section>
+</div>
+
+@code {
+    private sealed class LineRow { public ConversionProposalLineDto Line { get; init; } = null!; public bool Selected { get; set; } = true; public decimal Quantity { get; set; } }
+
+    private IReadOnlyList<MaterialDto> _allMaterials = [];
+    private IReadOnlyList<MaterialDto> _activeMaterials = [];
+    private int? _warehouseId;
+    private int _fromId;
+    private int _toId;
+    private string _mode = "all";
+    private decimal _boxes;
+    private string _reason = string.Empty;
+    private ConversionProposalDto? _proposal;
+    private List<LineRow> _rows = [];
+    private string? _error;
+    private bool _busy;
+
+    private PaginatedList<MaterialConversionDto>? _page;
+    private int _pageNumber = 1;
+    private string _search = string.Empty;
+    private string _statusText = string.Empty;
+    private int? _openLines;
+
+    private decimal SelectedTotal => _rows.Where(r => r.Selected).Sum(r => r.Quantity);
+
+    // Blazor Server shares one DbContext per circuit: never run two queries at once.
+    private readonly SemaphoreSlim _gate = new(1, 1);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            _allMaterials = (await Mediator.Send(new GetMaterialsQuery(PageSize: 5000))).Items;
+            _activeMaterials = _allMaterials.Where(m => m.IsActive).ToList();
+        }
+        finally { _gate.Release(); }
+
+        await LoadAsync(1);
+    }
+
+    private void OnWarehouseChanged(int? id) { _warehouseId = id; ClearProposal(); }
+
+    private void ClearProposal() { _proposal = null; _rows = []; _error = null; }
+
+    private async Task ProposeAsync()
+    {
+        if (_warehouseId is null) return;
+        _busy = true;
+        ClearProposal();
+        await _gate.WaitAsync();
+        try
+        {
+            _proposal = await Mediator.Send(new GetMaterialConversionProposalQuery(_fromId, _toId, _warehouseId.Value, _mode == "boxes" ? _boxes : null));
+            _rows = _proposal.Lines.Select(l => new LineRow { Line = l, Quantity = l.QuantityBoxes }).ToList();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _gate.Release(); _busy = false; }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_warehouseId is null || _proposal is null) return;
+        _busy = true;
+        _error = null;
+        await _gate.WaitAsync();
+        try
+        {
+            var lines = _rows.Where(r => r.Selected && r.Quantity > 0).Select(r => new ConversionLineInput(r.Line.StockBatchId, r.Quantity)).ToList();
+            var result = await Mediator.Send(new SubmitMaterialConversionCommand(_fromId, _toId, _warehouseId.Value, lines, _reason));
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast",
+                result.Status == MaterialConversionStatus.Approved ? $"{result.ConversionNumber} converted." : $"{result.ConversionNumber} submitted for approval.", "success");
+            ClearProposal();
+            _reason = string.Empty;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _gate.Release(); _busy = false; }
+
+        await LoadAsync(1);
+    }
+
+    private async Task ApproveAsync(int id) => await ActAsync(() => Mediator.Send(new ApproveMaterialConversionCommand(id)), "approved");
+
+    private async Task CancelAsync(int id) => await ActAsync(() => Mediator.Send(new CancelMaterialConversionCommand(id)), "cancelled");
+
+    private async Task RejectAsync(int id)
+    {
+        var reason = await JsRuntime.InvokeAsync<string?>("prompt", "Reason for rejecting this conversion:");
+        if (string.IsNullOrWhiteSpace(reason)) return;
+        await ActAsync(() => Mediator.Send(new RejectMaterialConversionCommand(id, reason)), "rejected");
+    }
+
+    private async Task ActAsync(Func<Task<MaterialConversionDto>> action, string verb)
+    {
+        _busy = true;
+        _error = null;
+        await _gate.WaitAsync();
+        try
+        {
+            var result = await action();
+            await JsRuntime.InvokeVoidAsync("godrejWms.showToast",
+                result.Status == MaterialConversionStatus.Conflict ? $"{result.ConversionNumber}: {result.ReviewComment}" : $"{result.ConversionNumber} {verb}.",
+                result.Status == MaterialConversionStatus.Conflict ? "warning" : "success");
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _gate.Release(); _busy = false; }
+
+        await LoadAsync(_pageNumber);
+    }
+
+    private void ToggleLines(int id) => _openLines = _openLines == id ? null : id;
+
+    private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadAsync(1);
+
+    private Task ReloadAsync() => LoadAsync(1);
+
+    private async Task LoadAsync(int page)
+    {
+        if (page < 1) return;
+        _pageNumber = page;
+        await _gate.WaitAsync();
+        try
+        {
+            _page = await Mediator.Send(new GetMaterialConversionsQuery(
+                _search, Enum.TryParse<MaterialConversionStatus>(_statusText, out var status) ? status : null, null, page, 15));
+        }
+        catch (Exception ex) { Logger.LogWarning(ex, "Unable to load material conversions"); _error = ex.Message; }
+        finally { _gate.Release(); }
+    }
+
+    private static string StatusClass(MaterialConversionStatus status) => status switch
+    {
+        MaterialConversionStatus.Approved => "success",
+        MaterialConversionStatus.PendingApproval => "warning",
+        MaterialConversionStatus.Conflict => "danger",
+        _ => "neutral"
+    };
+}

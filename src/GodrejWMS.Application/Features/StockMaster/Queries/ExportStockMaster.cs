@@ -14,39 +14,10 @@ public sealed class ExportStockMasterHandler(IApplicationDbContext db, IExcelSer
 {
     public async Task<byte[]> Handle(ExportStockMasterQuery request, CancellationToken cancellationToken)
     {
-        var query = db.StockBatches
-            .AsNoTracking()
-            .Where(b => b.QuantityBoxes > 0)
-            .Select(b => new
-            {
-                b.Material.MaterialNumber,
-                b.Material.Description,
-                b.Material.DesignType,
-                MovementTypeCode = b.Material.MovementType.Code,
-                MovementTypeName = b.Material.MovementType.DisplayName,
-                SeasonCode = b.Material.Season.Code,
-                SeasonName = b.Material.Season.DisplayName,
-                b.Material.IsActive,
-                b.QuantityBoxes,
-                b.MfgMonth,
-                b.PalletPosition.LocationCode,
-                RackCode = b.PalletPosition.Rack.Code
-            });
-
-        if (!string.IsNullOrWhiteSpace(request.RackCode))
-        {
-            query = query.Where(b => b.RackCode == request.RackCode);
-        }
-
-        var rows = await query
-            .OrderBy(b => b.MaterialNumber).ThenBy(b => b.MfgMonth).ThenBy(b => b.LocationCode)
-            .ToListAsync(cancellationToken);
-
-        var dtoRows = rows
-            .Select(b => new StockMasterRowDto(
-                b.MaterialNumber, b.Description, b.DesignType, b.QuantityBoxes,
-                MfgMonthParser.Format(b.MfgMonth), b.LocationCode, b.MovementTypeCode, b.MovementTypeName, b.SeasonCode, b.SeasonName, b.IsActive))
-            .ToList();
+        // Same rows as the Current Inventory grid, with the flow status of each (IN-STOCK / GIT-IN / GIT-OUT; GIT-OUT is not in the book stock).
+        var rows = await StockFlowRows.LoadAsync(
+            db, new GetStockMasterQuery(RackCode: string.IsNullOrWhiteSpace(request.RackCode) ? null : request.RackCode, WithFlowStatus: true), cancellationToken);
+        var dtoRows = StockFlowRows.Sort(rows, "material", false).Select(StockFlowRows.ToDto).ToList();
 
         return excel.WriteStockMaster(dtoRows);
     }

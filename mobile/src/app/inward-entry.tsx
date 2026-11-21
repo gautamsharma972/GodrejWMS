@@ -1,9 +1,9 @@
 import * as DocumentPicker from "expo-document-picker";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ApiError } from "../api/client";
-import { getSampleTemplate, importInwardWorkbook, submitInwardWithoutPkm } from "../api/endpoints";
+import { getCycleCountFreeze, getSampleTemplate, importInwardWorkbook, submitInwardWithoutPkm } from "../api/endpoints";
 import { useAuth } from "../auth/AuthContext";
 import { MaterialPickerModal } from "../components/MaterialPickerModal";
 import { Button } from "../components/ui/Button";
@@ -42,6 +42,16 @@ export default function InwardEntryScreen() {
 
   const [warehouse, setWarehouse] = useState<WarehouseOption | null>(warehouses[0] ?? null);
   const [showWarehousePicker, setShowWarehousePicker] = useState(false);
+  // While a cycle count is open for the warehouse, new inward requests are refused by the server; say so here and disable the buttons.
+  const [freezeMessage, setFreezeMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!token || !warehouse) return;
+    let cancelled = false;
+    getCycleCountFreeze(token, warehouse.id)
+      .then((f) => { if (!cancelled) setFreezeMessage(f.isFrozen ? f.message : null); })
+      .catch(() => { if (!cancelled) setFreezeMessage(null); });
+    return () => { cancelled = true; };
+  }, [token, warehouse]);
   const [lines, setLines] = useState<LineRow[]>([newLine()]);
   const [materialPickerKey, setMaterialPickerKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -140,6 +150,9 @@ export default function InwardEntryScreen() {
     try {
       const outcomes = await importInwardWorkbook(token, asset.uri, asset.name, warehouse.id);
       setImportOutcomes(outcomes);
+      // Say why nothing was created right here (for example: a cycle count is blocking new requests), not only inside the per-sheet cards below.
+      const failure = outcomes.find((o) => o.status === 6 && o.message);
+      if (failure && !outcomes.some((o) => o.status === 0)) setError(failure.message);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Unable to upload the workbook.");
     } finally {
@@ -214,7 +227,9 @@ export default function InwardEntryScreen() {
 
         {error && <View style={styles.errorBox}><AppIcon name="alert-circle-outline" size={17} color={colors.danger} /><Text style={styles.error}>{error}</Text></View>}
 
-        <Button title="Submit Inward" onPress={handleSubmit} loading={isSubmitting} size="lg" style={{ marginTop: spacing.sm }} />
+        {freezeMessage && <View style={styles.errorBox}><AppIcon name="snow-outline" size={17} color={colors.danger} /><Text style={styles.error}>{freezeMessage}</Text></View>}
+
+        <Button title="Submit Inward" onPress={handleSubmit} loading={isSubmitting} disabled={freezeMessage !== null} size="lg" style={{ marginTop: spacing.sm }} />
 
         <View style={styles.uploadCard}>
           <View style={styles.uploadTitleRow}>
@@ -225,7 +240,7 @@ export default function InwardEntryScreen() {
             </View>
           </View>
           <View style={styles.uploadRow}>
-            <Button title="Upload Excel" variant="outline" onPress={handleUpload} loading={isUploading} fullWidth={false} style={{ flex: 1 }} />
+            <Button title="Upload Excel" variant="outline" onPress={handleUpload} loading={isUploading} disabled={freezeMessage !== null} fullWidth={false} style={{ flex: 1 }} />
             <Button title="Template" variant="ghost" onPress={handleSampleDownload} fullWidth={false} style={{ flex: 1 }} />
           </View>
         </View>

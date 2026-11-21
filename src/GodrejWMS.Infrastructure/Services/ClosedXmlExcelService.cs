@@ -136,6 +136,29 @@ public class ClosedXmlExcelService : IExcelService
         workbook.SaveAs(stream);
         return stream.ToArray();
     }
+    public byte[] WriteTable(string title, IReadOnlyList<string> headers, IReadOnlyList<IReadOnlyList<string>> rows)
+    {
+        using var workbook = new XLWorkbook();
+        var sheet = workbook.Worksheets.Add(title.Length > 31 ? title[..31] : title);
+        for (var column = 0; column < headers.Count; column++)
+        {
+            var cell = sheet.Cell(1, column + 1);
+            cell.Value = headers[column];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#EAF2FF");
+        }
+
+        for (var row = 0; row < rows.Count; row++)
+            for (var column = 0; column < headers.Count && column < rows[row].Count; column++)
+                sheet.Cell(row + 2, column + 1).Value = rows[row][column];
+        sheet.SheetView.FreezeRows(1);
+        sheet.RangeUsed()?.SetAutoFilter();
+        sheet.Columns().AdjustToContents(8, 45);
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
     public IReadOnlyList<MaterialImportRow> ReadMaterialMaster(Stream fileStream)
     {
         using var workbook = LoadWorkbook(fileStream);
@@ -400,7 +423,7 @@ public class ClosedXmlExcelService : IExcelService
     public byte[] WriteLocationStockReport(IReadOnlyList<LocationStockReportRowDto> rows)
     {
         string[] headers =
-            ["Pallet Position", "Material Code", "Material Description", "AOP Description", "Design Type", "MFG Month", "Stock Qty", "Capacity"];
+            ["Pallet Position", "Material Code", "Material Description", "AOP Description", "Design Type", "MFG Month", "Stock Qty", "Capacity", "In-stock", "GIT-IN", "GIT-OUT"];
 
         using var workbook = new XLWorkbook();
         var ws = workbook.Worksheets.Add("Location Stock");
@@ -420,6 +443,9 @@ public class ClosedXmlExcelService : IExcelService
                 ws.Cell(rowNum, 7).Value = item.StockQty;
                 if (item.Capacity is int capacity)
                     ws.Cell(rowNum, 8).Value = capacity;
+                ws.Cell(rowNum, 9).Value = item.InStockQty;
+                ws.Cell(rowNum, 10).Value = item.GitInQty;
+                ws.Cell(rowNum, 11).Value = item.GitOutQty;
             }
             else
             {
@@ -1785,7 +1811,7 @@ public class ClosedXmlExcelService : IExcelService
 
     public byte[] WriteStockMaster(IReadOnlyList<StockMasterRowDto> rows)
     {
-        string[] headers = ["Material Code", "Material Desc.", "Design Type", "Velocity", "Season", "Active", "Total Stock in CFB", "Mfg Month", "Pallet Position"];
+        string[] headers = ["Material Code", "Material Desc.", "Design Type", "Velocity", "Season", "Active", "Total Stock in CFB", "Mfg Month", "Pallet Position", "Stock Type", "Stock Status"];
 
         return WriteRows("Inventory Master", headers, rows, (ws, r, i) =>
         {
@@ -1798,6 +1824,8 @@ public class ClosedXmlExcelService : IExcelService
             ws.Cell(r, 7).Value = i.QuantityBoxes;
             ws.Cell(r, 8).Value = i.MfgMonthLabel;
             ws.Cell(r, 9).Value = i.PalletPositionCode;
+            ws.Cell(r, 10).Value = i.StockSubtypeName;
+            ws.Cell(r, 11).Value = i.StockStatus;
         });
     }
 

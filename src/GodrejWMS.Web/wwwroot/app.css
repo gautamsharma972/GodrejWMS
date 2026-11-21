@@ -486,17 +486,28 @@ h2 {
     backdrop-filter: blur(12px);
 }
 
-/* Inventory Master follows the page scroll. Keep its column labels visible beneath the
-   application header until the final inventory row leaves the viewport. */
+/* Inventory Master scrolls inside its own panel: a table wider than the screen scrolls sideways here, never the whole
+   page (sidebar and application header stay put), and the column labels stay visible at the top of the panel while the rows scroll. */
 .table-responsive.panel-table.inventory-master-table {
     position: relative;
-    overflow: visible;
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: calc(100vh - 300px);
     isolation: isolate;
+}
+
+/* The filter row wraps onto a second line instead of pushing the page wider. */
+.master-list-filter {
+    flex-wrap: wrap;
+}
+
+.master-list-filter > .toolbar-group {
+    flex-wrap: wrap;
 }
 
 .inventory-master-table thead th {
     position: sticky;
-    top: 142px;
+    top: 0;
     z-index: 4;
     background: #f8fafc;
     box-shadow: 0 1px 0 var(--wms-border), 0 8px 14px -14px rgba(15, 23, 42, 0.65);
@@ -508,6 +519,10 @@ h2 {
 
 .inventory-master-table thead th:last-child {
     border-top-right-radius: 7px;
+}
+
+.inventory-master-table .status-pill {
+    white-space: nowrap;
 }
 
 .inventory-master-table .inventory-adjust-button {
@@ -528,6 +543,7 @@ h2 {
     .table-responsive.panel-table.inventory-master-table {
         overflow-x: auto;
         overflow-y: visible;
+        max-height: none;
     }
 
     .inventory-master-table table {
@@ -8353,4 +8369,16 @@ h2 {
 .print-overlay-frame { flex: 1; width: 100%; border: 0; background: #fff; }
 @media print {
     .print-overlay { display: none !important; }
+}
+
+/* A wider search box inside a report filter grid. */
+.filter-field-wide {
+    grid-column: span 2;
+    min-width: 16rem;
+}
+
+@media (max-width: 640px) {
+    .filter-field-wide {
+        grid-column: auto;
+    }
 }

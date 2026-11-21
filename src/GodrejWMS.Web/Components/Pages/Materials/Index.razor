@@ -138,9 +138,11 @@
             <section class="slide-over-panel" role="dialog" aria-modal="true" aria-labelledby="material-drawer-title" @onclick:stopPropagation="true">
                 <div class="slide-over-header">
                     <div>
-                        <div class="eyebrow">@(_editingId is null ? "New SKU" : "Edit SKU")</div>
-                        <h2 class="slide-over-title" id="material-drawer-title">@(_editingId is null ? "Create Material" : $"Edit Material {_form.MaterialNumber}")</h2>
-                        <p class="slide-over-subtitle">Keep dimensional and commercial attributes aligned with warehouse planning.</p>
+                        <div class="eyebrow">@(_copySourceNumber is not null ? "Copy SKU" : _editingId is null ? "New SKU" : "Edit SKU")</div>
+                        <h2 class="slide-over-title" id="material-drawer-title">@(_copySourceNumber is not null ? "Create Material from a copy" : _editingId is null ? "Create Material" : $"Edit Material {_form.MaterialNumber}")</h2>
+                        <p class="slide-over-subtitle">@(_copySourceNumber is not null
+                            ? $"Every attribute of {_copySourceNumber} is copied and every field below can be changed. Enter the new Material Number, adjust anything that differs for the new code, then save."
+                            : "Keep dimensional and commercial attributes aligned with warehouse planning.")</p>
                     </div>
                     <button type="button" class="slide-over-close" title="Close" aria-label="Close material editor" @onclick="CloseForm">
                         <i class="bi bi-x-lg" aria-hidden="true"></i>
@@ -358,6 +360,11 @@
                                         <i class="bi bi-pencil-square" aria-hidden="true"></i>
                                     </button>
                                 </PermissionAuthorize>
+                                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.Masters.Create">
+                                    <button class="btn btn-sm btn-outline-secondary" title="@($"Create a new material code from {m.MaterialNumber}")" aria-label="@($"Copy {m.MaterialNumber}")" @onclick="() => ShowForm(m, copy: true)">
+                                        <i class="bi bi-copy" aria-hidden="true"></i>
+                                    </button>
+                                </PermissionAuthorize>
                             </td>
                         </tr>
                     }
@@ -435,6 +442,15 @@ protected override async Task OnInitializedAsync()
     {
         await LoadReferenceDataAsync();
         await LoadPage(1);
+        if (CopyFrom is { } copyFromId)
+        {
+            // Opened from another page ("create the new code from this material").
+            var source = await Mediator.Send(new GetMaterialByIdQuery(copyFromId));
+            if (source is not null)
+            {
+                ShowForm(source, copy: true);
+            }
+        }
     }
 
     private async Task LoadReferenceDataAsync()
@@ -519,9 +535,15 @@ protected override async Task OnInitializedAsync()
         await LoadPage(1);
     }
 
-    private void ShowForm(MaterialDto? material)
+    // Set while the form is a copy of an existing material: every attribute is copied, the new Material Number must be entered.
+    private long? _copySourceNumber;
+
+    [SupplyParameterFromQuery(Name = "copyFrom")] public int? CopyFrom { get; set; }
+
+    private void ShowForm(MaterialDto? material, bool copy = false)
     {
         _formError = null;
+        _copySourceNumber = copy && material is not null ? material.MaterialNumber : null;
         if (material is null)
         {
             _editingId = null;
@@ -536,11 +558,11 @@ protected override async Task OnInitializedAsync()
         }
         else
         {
-            _editingId = material.Id;
-            _editMaterialNumber = material.MaterialNumber;
+            _editingId = copy ? null : material.Id;
+            _editMaterialNumber = copy ? 0 : material.MaterialNumber;
             _form = new MaterialFormModel
             {
-                MaterialNumber = material.MaterialNumber,
+                MaterialNumber = copy ? 0 : material.MaterialNumber,
                 Description = material.Description,
                 BrandId = material.BrandId ?? 0,
                 AopDescriptionId = material.AopDescriptionId ?? 0,
@@ -566,6 +588,7 @@ protected override async Task OnInitializedAsync()
 
     private void CloseForm()
     {
+        _copySourceNumber = null;
         _showForm = false;
         _formError = null;
     }
@@ -592,6 +615,7 @@ protected override async Task OnInitializedAsync()
             }
 
             _showForm = false;
+            _copySourceNumber = null;
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast", "Material saved.");
             await LoadPage(_pageNumber);
         }

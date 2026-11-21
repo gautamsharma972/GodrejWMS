@@ -176,8 +176,8 @@ export default function PulloutDetailScreen() {
               {picklistConfirmed
                 ? "This pick-list is confirmed."
                 : posted
-                  ? "Stock for this pullout was deducted when it was uploaded. Confirm each pick as you take it, then confirm the pick-list."
-                  : "This legacy pullout has allocated picks. Confirm each pick as you take it; inventory will be posted when you confirm the pick-list."}
+                  ? "Stock for this pullout was deducted when it was uploaded. Confirm each pick as you take it, then press Loading Completed."
+                  : "This legacy pullout has allocated picks. Confirm each pick as you take it; inventory will be posted when you press Loading Completed."}
             </Text>
           </View>
         )}
@@ -228,20 +228,25 @@ export default function PulloutDetailScreen() {
                             <AppIcon name={pick.pickedAt ? "checkmark" : "location"} size={18} color={pick.pickedAt ? colors.successText : colors.primary} />
                           </View>
                           <View style={styles.pickLocationCopy}>
-                            <Text style={styles.pickLocationLabel}>PICK FROM</Text>
+                            <Text style={styles.pickLocationLabel}>{(pick.onVehicleBoxes ?? 0) > 0 ? "STILL ON THE VEHICLE" : "PICK FROM"}</Text>
                             <View style={styles.pickLocationRow}>
-                              <Text style={[styles.pickLocationLarge, pick.pickedAt ? styles.pickLocationLargeDone : null]}>{pick.locationCode}</Text>
+                              <Text style={[styles.pickLocationLarge, pick.pickedAt ? styles.pickLocationLargeDone : null]}>{(pick.onVehicleBoxes ?? 0) > 0 ? "GIT" : pick.locationCode}</Text>
                               {pick.isVirtual && <Text style={styles.virtualTag}>Virtual</Text>}
                             </View>
                           </View>
                         </View>
                         <View style={[styles.statusBadge, pick.pickedAt ? styles.statusBadgeDone : styles.statusBadgeTodo]}>
                           <Text style={[styles.statusBadgeText, pick.pickedAt ? styles.statusBadgeTextDone : styles.statusBadgeTextTodo]} numberOfLines={1}>
-                            {pick.pickedAt ? "Picked" : "To pick"}
+                            {(pick.onVehicleBoxes ?? 0) > 0 ? pick.locationCode : pick.pickedAt ? "Picked" : "To pick"}
                           </Text>
                         </View>
                       </View>
                       <Text style={styles.pickMaterialDescription} numberOfLines={2}>{line.materialDescription}</Text>
+                      {(pick.onVehicleBoxes ?? 0) > 0 && (
+                        <Text style={styles.onVehicleText}>
+                          {pick.onVehicleBoxes} box(es) may still be on the inward vehicle, not yet put away at {pick.locationCode}. {pick.pickedAt ? "Picked." : "To pick."}
+                        </Text>
+                      )}
                       {pick.pickedAt && (
                         <Text style={styles.pickedDetailText}>
                           Picked {pick.pickedQuantityBoxes ?? pick.quantityBoxes}
@@ -407,7 +412,7 @@ export default function PulloutDetailScreen() {
         <View style={styles.picklistBar}>
           {picklistError && <Text style={styles.picklistError}>{picklistError}</Text>}
           <Button
-            title="Confirm pick-list"
+            title="Loading Completed"
             size="lg"
             loading={isConfirmingPicklist}
             disabled={picksDone < allPicks.length}
@@ -415,7 +420,7 @@ export default function PulloutDetailScreen() {
             icon={<AppIcon name="checkmark-done-outline" size={22} color={colors.textOnPrimary} />}
           />
           <Text style={styles.picklistHint}>
-            {picksDone < allPicks.length ? "Confirm every pick first, then confirm the pick-list." : "Every pick is confirmed."}
+            {picksDone < allPicks.length ? "Confirm every pick first, then press Loading Completed." : "Every pick is confirmed."}
           </Text>
         </View>
       )}
@@ -489,6 +494,7 @@ const styles = StyleSheet.create({
   pickLocationLabel: { fontSize: 9.5, lineHeight: 12, fontWeight: "800", letterSpacing: 0.8, color: colors.textMuted },
   pickLocationRow: { flexDirection: "row", alignItems: "center", flexShrink: 1 },
   pickLocationLarge: { fontSize: 22, lineHeight: 26, fontWeight: "800", color: colors.primary, letterSpacing: -0.3 },
+  onVehicleText: { fontSize: 12, lineHeight: 16, fontWeight: "600", color: colors.warningText, backgroundColor: colors.warningSoft, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 4, marginTop: spacing.xs },
   pickLocationLargeDone: { color: colors.successText },
   virtualTag: { fontSize: 10, color: colors.infoText, fontWeight: "800", backgroundColor: colors.infoSoft, borderRadius: radius.pill, paddingHorizontal: 7, paddingVertical: 2, marginLeft: spacing.sm },
   pickMaterialDescription: { ...typography.bodyStrong, color: colors.textPrimary, lineHeight: 19, marginTop: spacing.md },

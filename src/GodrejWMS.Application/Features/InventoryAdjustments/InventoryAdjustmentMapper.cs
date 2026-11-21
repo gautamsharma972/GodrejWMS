@@ -6,6 +6,14 @@ namespace GodrejWMS.Application.Features.InventoryAdjustments;
 
 internal static class InventoryAdjustmentMapper
 {
+    public static string? StockTypeName(int? subtypeId) => subtypeId switch
+    {
+        null => null,
+        LocationSubtypeIds.Good => "Good",
+        LocationSubtypeIds.Damage => "Damage",
+        var other => $"Stock type {other}"
+    };
+
     public static InventoryAdjustmentDetailDto ToDetail(InventoryAdjustment adjustment)
     {
         var line = adjustment.Lines.Single();
@@ -33,6 +41,8 @@ internal static class InventoryAdjustmentMapper
             adjustment.ReviewComment,
             line.ActualQuantityBeforePosting,
             line.ActualQuantityAfterPosting,
-            line.ActualPhysicalQuantityBeforePosting);
+            line.ActualPhysicalQuantityBeforePosting,
+            line.PhysicalMfgMonth is { } pm ? MfgMonthParser.Format(pm) : null,
+            StockTypeName(line.PhysicalStockSubtypeId));
     }
 }

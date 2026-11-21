@@ -66,8 +66,10 @@ public class RefreshPulloutPicksTests
             .Handle(new RefreshPulloutPicksCommand(pullout.ReferenceNumber), default);
 
         Assert.Equal(30, result.DroppedBoxes);
-        // Only the other GRN's remaining 10 boxes are left to allocate: the line is still 20 short.
-        Assert.Equal(10, result.AllocatedBoxes);
+        // The 20 boxes already picked from the other GRN were not submitted yet, so they are handed back and re-chosen along with the 10 that
+        // were still free: 30 allocated in total, the line is still 20 short.
+        Assert.Equal(20, result.RechosenBoxes);
+        Assert.Equal(30, result.AllocatedBoxes);
         Assert.Equal(20, result.StillShortBoxes);
         Assert.Empty(db.StockBatches.AsNoTracking().Where(b => b.QuantityBoxes < 0));
     }
@@ -120,6 +122,79 @@ public class RefreshPulloutPicksTests
         Assert.False(putaway.IsPickerPlaced);
         Assert.False(putaway.IsExcludedLocked);
         Assert.Equal(30, putaway.QuantityBoxes);
+    }
+
+    [Fact]
+    public async Task RefreshPick_RechoosesUnsubmittedPicks_WithTheCurrentStock_ButKeepsSubmittedOnes()
+    {
+        var (db, positions) = await SeedAsync();
+        using var _ = db;
+        var material = db.Materials.AsNoTracking().First();
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions[2].Id, MfgMonth = 202610, QuantityBoxes = 40 });
+        await db.SaveChangesAsync();
+        await PullOutAsync(db, 5);                                        // taken from A-03-01, the only stock
+        var pullout = db.PulloutTransactions.AsNoTracking().Single();
+        Assert.Equal(positions[2].Id, db.PulloutPicks.AsNoTracking().Single().PalletPositionId);
+
+        // Stock appears in a lower location (e.g. a put-away submitted meanwhile): the unsubmitted pick is re-chosen into it, as ONE location.
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions[0].Id, MfgMonth = 202610, QuantityBoxes = 10 });
+        await db.SaveChangesAsync();
+        Assert.True((await new GetPulloutDetailHandler(db).Handle(new GetPulloutDetailQuery(pullout.Id), default)).CanRefreshPick);
+
+        var refresh = new RefreshPulloutPicksHandler(db, new PulloutAllocationService(db), TestServices.Posting(db), TestServices.Uow(db), new SvcClock());
+        var result = await refresh.Handle(new RefreshPulloutPicksCommand(pullout.ReferenceNumber), default);
+
+        Assert.Equal(5, result.RechosenBoxes);
+        Assert.Equal(0, result.StillShortBoxes);
+        var pick = db.PulloutPicks.AsNoTracking().Single();
+        Assert.Equal(positions[0].Id, pick.PalletPositionId);
+        Assert.Equal(5, pick.QuantityBoxes);
+        Assert.Equal(45, db.StockBatches.AsNoTracking().Sum(b => b.QuantityBoxes)); // 40 + 10 stock - the 5 picked; nothing doubled or lost
+        Assert.Equal(40, db.StockBatches.AsNoTracking().Where(b => b.PalletPositionId == positions[2].Id).Sum(b => b.QuantityBoxes));
+
+        // A pick the picker has submitted is left alone.
+        var tracked = await db.PulloutPicks.SingleAsync();
+        tracked.PickedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions[1].Id, MfgMonth = 202610, QuantityBoxes = 20 });
+        await db.SaveChangesAsync();
+        var again = await refresh.Handle(new RefreshPulloutPicksCommand(pullout.ReferenceNumber), default);
+        Assert.Equal(0, again.RechosenBoxes);
+        Assert.Equal(positions[0].Id, db.PulloutPicks.AsNoTracking().Single().PalletPositionId);
+    }
+
+    [Fact]
+    public async Task ChangingAPickLocation_ReopensThePutawayAtTheOldCell_AndReservesAtTheNewOne()
+    {
+        var (db, positions) = await SeedAsync();
+        using var _ = db;
+        await UploadInwardAsync(db, 30, "OCT|2026");   // GRN 1: 30 boxes posted at the suggested location, still on the vehicle
+        var material = db.Materials.AsNoTracking().First();
+        var old = db.InwardPutaways.AsNoTracking().Include(p => p.PalletPosition).Single();
+        var other = positions.First(p => p.Id != old.PalletPositionId);
+        await PullOutAsync(db, 10);                    // takes 10 of the put-away: that part of the row becomes PICK-RESERVED (shows as GIT)
+        var pullout = db.PulloutTransactions.AsNoTracking().Single();
+        Assert.Contains(db.InwardPutaways.AsNoTracking().ToList(), p => p.ExcludedLocation == "PICK-RESERVED" && p.QuantityBoxes == 10);
+
+        // Detail: that pick is flagged as still on the vehicle.
+        var before = await new GetPulloutDetailHandler(db).Handle(new GetPulloutDetailQuery(pullout.Id), default);
+        Assert.Equal(10, before.Lines.Single().Picks.Single().OnVehicleBoxes);
+
+        // The boxes are not at that location, so the picker picks the 10 from another location that holds stock of the same PKM.
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = other.Id, MfgMonth = 202610, QuantityBoxes = 40 });
+        await db.SaveChangesAsync();
+        await new ChangePulloutPickLocationHandler(db, TestServices.Posting(db), TestServices.Uow(db)).Handle(
+            new ChangePulloutPickLocationCommand(pullout.ReferenceNumber, material.MaterialNumber, old.PalletPosition.LocationCode, "OCT|2026",
+                [new PulloutPickSource(other.Id, "OCT|2026", 10)], "Not at the location"), default);
+
+        // The old cell has its boxes back and its put-away row is open again (a normal row, not reserved any more) ...
+        Assert.DoesNotContain(db.InwardPutaways.AsNoTracking().ToList(), p => p.ExcludedLocation == "PICK-RESERVED");
+        Assert.Equal(30, db.InwardPutaways.AsNoTracking().Sum(p => p.QuantityBoxes));
+        Assert.Equal(30, db.StockBatches.AsNoTracking().Where(b => b.PalletPositionId == old.PalletPositionId).Sum(b => b.QuantityBoxes));
+        // ... and the new cell lost the 10 picked there.
+        Assert.Equal(30, db.StockBatches.AsNoTracking().Where(b => b.PalletPositionId == other.Id).Sum(b => b.QuantityBoxes));
+        var after = await new GetPulloutDetailHandler(db).Handle(new GetPulloutDetailQuery(pullout.Id), default);
+        Assert.Equal(0, after.Lines.Single().Picks.Single().OnVehicleBoxes);
     }
 }
 

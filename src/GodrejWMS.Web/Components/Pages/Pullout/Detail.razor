@@ -85,7 +85,7 @@
                 @if (_detail.IsConfirmed && !_detail.PickingConfirmed && _detail.CanRefreshPick)
                 {
                     <button type="button" class="btn btn-outline-primary" @onclick="RefreshPicksAsync" disabled="@(_saving || _rejecting || _refreshingPicks)"
-                            title="Re-allocates picks that sit on boxes of a rejected GRN, and any shortfall, from the stock available now">
+                            title="Re-chooses the locations of picks the picker has not submitted yet (and picks on boxes of a rejected GRN, and any shortfall) from the stock available now">
                         <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
                         @(_refreshingPicks ? "Refreshing..." : "Refresh Pick")
                     </button>
@@ -345,7 +345,7 @@
         {
             var result = await Mediator.Send(new RefreshPulloutPicksCommand(_detail.ReferenceNumber));
             _detail = await Mediator.Send(new GetPulloutDetailQuery(TransactionId));
-            var message = $"Pick refreshed: {result.DroppedBoxes:0.###} box(es) dropped, {result.AllocatedBoxes:0.###} allocated"
+            var message = $"Pick refreshed: {result.RechosenBoxes:0.###} box(es) of unsubmitted picks re-chosen, {result.DroppedBoxes:0.###} dropped, {result.AllocatedBoxes:0.###} allocated"
                 + (result.StillShortBoxes > 0 ? $", {result.StillShortBoxes:0.###} still short." : ".");
             await JsRuntime.InvokeVoidAsync("godrejWms.showToast", message);
         }

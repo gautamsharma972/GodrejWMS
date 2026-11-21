@@ -1,0 +1,247 @@
+@page "/cycle-count/review"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.Review)]
+@using GodrejWMS.Application.Common.Models
+@using GodrejWMS.Application.Features.CycleCount
+@using GodrejWMS.Application.Features.CycleCount.Commands
+@using GodrejWMS.Application.Features.CycleCount.Queries
+@using GodrejWMS.Domain.Entities
+@inject IMediator Mediator
+@inject ILogger<Review> Logger
+
+<PageTitle>Cycle Count Review - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Cycle Count</div>
+            <h1>Cycle Count Review</h1>
+            <p class="page-kicker">Submitted racks of your warehouses. System stock was already updated at submission; reviewing is the supervisor's check and audit step.</p>
+        </div>
+    </div>
+
+    @if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+    @if (_message is not null) { <div class="alert alert-success" role="status">@_message</div> }
+
+    @if (_detail is null)
+    {
+        <section class="panel" aria-labelledby="review-heading">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <h2 id="review-heading" class="panel-title mb-0">Submitted racks</h2>
+                <div class="toolbar-group">
+                    <input class="form-control" style="min-width:14rem" placeholder="Batch number or rack" @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+                    <select class="form-select filter-control" @bind="_statusText" @bind:after="ReloadAsync">
+                        <option value="">All</option>
+                        <option value="@CycleCountReviewStatus.PendingReview">Pending Review</option>
+                        <option value="@CycleCountReviewStatus.Reviewed">Reviewed</option>
+                    </select>
+                </div>
+            </div>
+            @if (_page is null)
+            {
+                <div class="loading-panel"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Loading...</div>
+            }
+            else if (_page.Items.Count == 0)
+            {
+                <div class="empty-state"><i class="bi bi-clipboard-check" aria-hidden="true"></i><strong>Nothing to review</strong></div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead><tr><th>Batch</th><th>Warehouse</th><th>Rack</th><th>Submitted by</th><th class="text-end">Cards</th><th class="text-end">Verified</th><th class="text-end">Corrected</th><th class="text-end">Net diff</th><th>Review</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var i in _page.Items)
+                            {
+                                <tr>
+                                    <td><span class="record-code">@i.BatchNumber</span></td>
+                                    <td>@i.WarehouseName</td>
+                                    <td>@i.RackCode</td>
+                                    <td>@i.SubmittedByUserName<div class="small text-muted">@i.SubmittedAt?.ToLocalTime().ToString("dd MMM yyyy HH:mm")</div></td>
+                                    <td class="text-end">@i.TotalCards</td>
+                                    <td class="text-end">@i.VerifiedCards</td>
+                                    <td class="text-end">@i.CorrectedCards</td>
+                                    <td class="text-end">@i.TotalDifferenceBoxes.ToString("+0.###;-0.###;0")</td>
+                                    <td><span class="status-pill @(i.ReviewStatus == CycleCountReviewStatus.Reviewed ? "success" : "warning")">@(i.ReviewStatus == CycleCountReviewStatus.Reviewed ? "Reviewed" : "Pending Review")</span></td>
+                                    <td class="table-actions"><button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => OpenAsync(i)">Open</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <nav class="pagination-bar" aria-label="Review pagination">
+                    <ul class="pagination mb-0">
+                        <li class="page-item @(_page.HasPreviousPage ? "" : "disabled")"><button class="page-link" @onclick="() => LoadAsync(_pageNumber - 1)">Previous</button></li>
+                        <li class="page-item disabled"><span class="page-link">Page @_page.PageNumber of @Math.Max(1, _page.TotalPages)</span></li>
+                        <li class="page-item @(_page.HasNextPage ? "" : "disabled")"><button class="page-link" @onclick="() => LoadAsync(_pageNumber + 1)">Next</button></li>
+                    </ul>
+                </nav>
+            }
+        </section>
+    }
+    else
+    {
+        var h = _detail.Header;
+        <section class="panel">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <h2 class="panel-title mb-0">@h.BatchNumber &middot; Rack @h.RackCode</h2>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Close">Back to list</button>
+            </div>
+            <div class="small text-muted mb-2">
+                Submitted by @h.SubmittedByUserName @h.SubmittedAt?.ToLocalTime().ToString("dd MMM yyyy HH:mm") &middot;
+                @h.TotalCards cards &middot; @h.VerifiedCards verified &middot; @h.CorrectedCards corrected &middot; net @h.TotalDifferenceBoxes.ToString("+0.###;-0.###;0") boxes
+            </div>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+                <div style="min-width:12rem;max-width:16rem"><SearchableReferenceSelect Options="_locationOptions" @bind-Value="_fLocation" Placeholder="Location" AriaLabel="Search location" /></div>
+                <div style="min-width:14rem;max-width:20rem"><SearchableReferenceSelect Options="_materialOptions" @bind-Value="_fMaterial" Placeholder="Material code" AriaLabel="Search material code" /></div>
+                <select class="form-select" style="max-width:12rem" @bind="_fStatus">
+                    <option value="">All counts</option>
+                    <option value="matched">Matched</option>
+                    <option value="discrepancy">Discrepancies</option>
+                </select>
+                <button type="button" class="btn btn-outline-primary" @onclick="ReloadDetailAsync">Filter</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead><tr><th>Location</th><th>Material</th><th>Stock</th><th>PKM</th><th class="text-end">System</th><th class="text-end">Physical</th><th class="text-end">Difference</th><th>Status</th><th>Counted by</th><th>Counted</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in _detail.Rows)
+                        {
+                            <tr class="@RowClass(r.Kind)">
+                                <td>@r.LocationCode</td>
+                                <td><strong>@r.MaterialNumber</strong><div class="small text-muted">@r.Description</div>@if (!string.IsNullOrEmpty(r.CountedAs)) { <div class="small">Counted as @r.CountedAs</div> }</td>
+                                <td>@r.StockType</td>
+                                <td>@r.Pkm</td>
+                                <td class="text-end">@r.SystemQuantityBoxes.ToString("0.###")</td>
+                                <td class="text-end">@r.PhysicalQuantityBoxes?.ToString("0.###")</td>
+                                <td class="text-end">@r.DifferenceBoxes?.ToString("+0.###;-0.###;0")</td>
+                                <td>@r.CountStatus</td>
+                                <td>@r.CountedByUserName</td>
+                                <td>@r.CountedAt?.ToLocalTime().ToString("dd MMM HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="small mt-2"><span class="status-pill success">Matched</span> <span class="status-pill danger">Discrepancy</span> <span class="status-pill warning">New material / PKM or changed</span></div>
+
+            <h3 class="h6 mt-4">History</h3>
+            <div class="small" style="max-height:14rem;overflow:auto">
+                @foreach (var x in _detail.History)
+                {
+                    <div class="border-bottom py-1">
+                        <strong>@x.Action.Replace('_', ' ')</strong> <span class="text-muted">&middot; @x.UserName &middot; @x.OccurredAt.ToLocalTime().ToString("dd MMM HH:mm")</span>
+                        @if (!string.IsNullOrWhiteSpace(x.PreviousValue) || !string.IsNullOrWhiteSpace(x.NewValue)) { <div>@x.PreviousValue @(string.IsNullOrWhiteSpace(x.PreviousValue) ? "" : "→") @x.NewValue</div> }
+                    </div>
+                }
+            </div>
+
+            @if (h.ReviewStatus == CycleCountReviewStatus.Reviewed)
+            {
+                <div class="alert alert-success mt-3 mb-0">Reviewed by @h.ReviewedByUserName on @h.ReviewedAt?.ToLocalTime().ToString("dd MMM yyyy HH:mm"). @h.ReviewRemarks</div>
+            }
+            else
+            {
+                <div class="mt-3">
+                    <label class="form-label">Review remarks</label>
+                    <input class="form-control" maxlength="1000" @bind="_remarks" @bind:event="oninput" />
+                    <button type="button" class="btn btn-success mt-2" @onclick="MarkReviewedAsync" disabled="@_busy"><i class="bi bi-check2-circle" aria-hidden="true"></i> Mark as reviewed</button>
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private PaginatedList<CycleCountReviewListItemDto>? _page;
+    private CycleCountReviewDetailDto? _detail;
+    private string? _search;
+    private string _statusText = string.Empty;
+    private int _pageNumber = 1;
+    private string? _error;
+    private string? _message;
+    private bool _busy;
+    private string? _remarks;
+    private string _fLocation = string.Empty;
+    private string _fMaterial = string.Empty;
+    private string _fStatus = string.Empty;
+    private IReadOnlyList<SearchableReferenceSelect.ReferenceOption> _locationOptions = [];
+    private IReadOnlyList<SearchableReferenceSelect.ReferenceOption> _materialOptions = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync(1);
+
+    private Task ReloadAsync() => LoadAsync(1);
+
+    private async Task OnSearchKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => await LoadAsync(1);
+
+    private async Task LoadAsync(int page)
+    {
+        if (page < 1) return;
+        _pageNumber = page;
+        try
+        {
+            _page = await Mediator.Send(new GetCycleCountReviewsQuery(null, Enum.TryParse<CycleCountReviewStatus>(_statusText, out var s) ? s : null, _search, page, 15));
+        }
+        catch (Exception ex) { Logger.LogWarning(ex, "Unable to load cycle count reviews"); _error = ex.Message; }
+    }
+
+    private async Task OpenAsync(CycleCountReviewListItemDto item)
+    {
+        _error = null;
+        _message = null;
+        _fLocation = _fMaterial = _fStatus = string.Empty;
+        _remarks = null;
+        try
+        {
+            _detail = await Mediator.Send(new GetCycleCountReviewDetailQuery(item.BatchId, item.RackCode));
+            var options = await Mediator.Send(new GetCycleCountFilterOptionsQuery(BatchId: item.BatchId, RackCode: item.RackCode));
+            _locationOptions = options.Locations.Select(l => new SearchableReferenceSelect.ReferenceOption(l.LocationCode)).ToList();
+            _materialOptions = options.Materials.Select(m => new SearchableReferenceSelect.ReferenceOption(m.MaterialNumber.ToString(), m.Description)).ToList();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task ReloadDetailAsync()
+    {
+        if (_detail is null) return;
+        try
+        {
+            _detail = await Mediator.Send(new GetCycleCountReviewDetailQuery(_detail.Header.BatchId, _detail.Header.RackCode,
+                string.IsNullOrWhiteSpace(_fLocation) ? null : _fLocation, long.TryParse(_fMaterial, out var m) ? m : null, string.IsNullOrEmpty(_fStatus) ? null : _fStatus));
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void Close() => _detail = null;
+
+    private async Task MarkReviewedAsync()
+    {
+        if (_busy || _detail is null) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var h = _detail.Header;
+            await Mediator.Send(new MarkCycleCountReviewedCommand(h.BatchId, h.RackCode, _remarks));
+            _message = $"{h.BatchNumber} rack {h.RackCode} marked as reviewed.";
+            try
+            {
+                // The last review closes the cycle count by itself, which also lifts the Inward / Pullout freeze.
+                var batch = (await Mediator.Send(new GetCycleCountBatchDetailQuery(h.BatchId))).Batch;
+                if (batch.Status == CycleCountBatchStatus.Closed)
+                    _message += " Every rack is reviewed, so the cycle count is now closed and Inward and Pullout entry and upload are allowed again.";
+            }
+            catch (Exception) { /* the confirmation above is enough when the batch cannot be read */ }
+            _detail = null;
+            await LoadAsync(_pageNumber);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private static string RowClass(CycleCountRowKind kind) => kind switch
+    {
+        CycleCountRowKind.Matched => "table-success",
+        CycleCountRowKind.Discrepancy => "table-danger",
+        _ => "table-warning"
+    };
+}

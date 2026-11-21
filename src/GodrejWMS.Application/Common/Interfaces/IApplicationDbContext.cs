@@ -74,6 +74,20 @@ public interface IApplicationDbContext : IAsyncDisposable
 
     DbSet<InventoryAdjustmentLine> InventoryAdjustmentLines { get; }
 
+    DbSet<CycleCountBatch> CycleCountBatches { get; }
+
+    DbSet<CycleCountBatchRack> CycleCountBatchRacks { get; }
+
+    DbSet<CycleCountCard> CycleCountCards { get; }
+
+    DbSet<CycleCountHistory> CycleCountHistory { get; }
+
+    DbSet<CycleCountReview> CycleCountReviews { get; }
+
+    DbSet<MaterialConversion> MaterialConversions { get; }
+
+    DbSet<MaterialConversionLine> MaterialConversionLines { get; }
+
     ChangeTracker ChangeTracker { get; }
 
     EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class;

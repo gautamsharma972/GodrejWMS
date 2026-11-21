@@ -65,6 +65,16 @@
                 </select>
             </label>
 
+            <label class="filter-field">
+                <span>Stock status</span>
+                <select class="form-select" @bind="_flowStatus" title="IN-STOCK: put-away confirmed. GIT-IN: inward uploaded, put-away not confirmed yet. GIT-OUT: pullout uploaded, pick not confirmed yet (already deducted).">
+                    <option value="">All statuses</option>
+                    <option value="IN-STOCK">IN-STOCK</option>
+                    <option value="GIT-IN">GIT-IN</option>
+                    <option value="GIT-OUT">GIT-OUT</option>
+                </select>
+            </label>
+
             <button type="button" class="btn btn-primary filter-apply" @onclick="LoadAsync" disabled="@_loading">
                 <i class="bi bi-funnel-fill" aria-hidden="true"></i>
                 <span>Apply filters</span>
@@ -82,6 +92,9 @@
         <div><span>Empty locations</span><strong>@VisibleRows.Count(r => r.MaterialCode is null).ToString("N0")</strong></div>
         <div><span>Materials</span><strong>@VisibleRows.Where(r => r.MaterialCode is not null).Select(r => r.MaterialCode).Distinct().Count().ToString("N0")</strong></div>
         <div class="summary-primary"><span>Total stock qty</span><strong>@VisibleRows.Sum(r => r.StockQty).ToString("N3")</strong></div>
+        <div><span>In stock</span><strong>@VisibleRows.Sum(r => r.InStockQty).ToString("N3")</strong></div>
+        <div><span>GIT-IN (put-away pending)</span><strong>@VisibleRows.Sum(r => r.GitInQty).ToString("N3")</strong></div>
+        <div><span>GIT-OUT (pick pending, not in total)</span><strong>@VisibleRows.Sum(r => r.GitOutQty).ToString("N3")</strong></div>
     </div>
 
     <div class="panel material-report-panel">
@@ -117,6 +130,9 @@
                             <th>Design Type</th>
                             <th>MFG Month</th>
                             <th class="text-end">Stock Qty</th>
+                            <th class="text-end" title="Put-away confirmed">In-stock</th>
+                            <th class="text-end" title="Inward uploaded, put-away not confirmed yet (included in Stock Qty)">GIT-IN</th>
+                            <th class="text-end" title="Pullout uploaded, pick not confirmed yet: already deducted, NOT in Stock Qty">GIT-OUT</th>
                             <th class="text-end">Capacity</th>
                         </tr>
                     </thead>
@@ -127,7 +143,7 @@
                                 <td><span class="record-code">@row.LocationCode</span></td>
                                 @if (row.MaterialCode is null)
                                 {
-                                    <td colspan="7"><span class="status-pill neutral">Empty</span></td>
+                                    <td colspan="10"><span class="status-pill neutral">Empty</span></td>
                                 }
                                 else
                                 {
@@ -137,6 +153,9 @@
                                     <td>@row.DesignType</td>
                                     <td><span class="status-pill neutral">@MfgMonthParser.Format(row.Pkm!.Value)</span></td>
                                     <td class="text-end"><strong>@row.StockQty.ToString("N3")</strong></td>
+                                    <td class="text-end">@row.InStockQty.ToString("N3")</td>
+                                    <td class="text-end">@(row.GitInQty > 0 ? row.GitInQty.ToString("N3") : "-")</td>
+                                    <td class="text-end">@(row.GitOutQty > 0 ? row.GitOutQty.ToString("N3") : "-")</td>
                                     <td class="text-end">@row.Capacity</td>
                                 }
                             </tr>
@@ -156,6 +175,7 @@
     private string _search = string.Empty;
     private string _warehouseText = string.Empty;
     private string _statusFilter = string.Empty;
+    private string _flowStatus = string.Empty;
 
     private IEnumerable<LocationStockReportRowDto> VisibleRows => _statusFilter switch
     {
@@ -178,7 +198,8 @@
         {
             var filter = new LocationStockReportFilter(
                 int.TryParse(_warehouseText, out var warehouseId) ? warehouseId : null,
-                string.IsNullOrWhiteSpace(_search) ? null : _search.Trim());
+                string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(),
+                string.IsNullOrWhiteSpace(_flowStatus) ? null : _flowStatus);
             _rows = await Mediator.Send(new GetLocationStockReportQuery(filter));
         }
         catch (Exception ex)
@@ -194,7 +215,7 @@
 
     private async Task ResetAsync()
     {
-        _search = _warehouseText = _statusFilter = string.Empty;
+        _search = _warehouseText = _statusFilter = _flowStatus = string.Empty;
         await LoadAsync();
     }
 

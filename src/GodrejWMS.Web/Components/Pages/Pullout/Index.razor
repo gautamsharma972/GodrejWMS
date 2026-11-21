@@ -38,6 +38,7 @@
             <WarehouseSelect @bind-WarehouseId="_warehouseId" />
         </div>
     </div>
+    <CycleCountFreezeBanner WarehouseId="_warehouseId" @bind-Frozen="_frozen" />
 
     <div class="transaction-grid picking-request-grid">
         <div class="panel picking-request-panel picking-manual-panel">
@@ -116,7 +117,7 @@
                         <i class="bi bi-plus-lg" aria-hidden="true"></i>
                         Add Line
                     </button>
-                    <button class="btn btn-primary" @onclick="SubmitAsync" disabled="@_submitting">
+                    <button class="btn btn-primary" @onclick="SubmitAsync" disabled="@(_submitting || _frozen)">
                         <i class="bi bi-check2-circle" aria-hidden="true"></i>
                         Generate Pick Result
                     </button>
@@ -155,9 +156,9 @@
                 </div>
             </div>
             <div class="panel-body upload-panel" data-tour="pullout-upload">
-                <InputFile id="pullout-excel-upload" OnChange="OnImportFileSelected" class="visually-hidden" />
+                <InputFile id="pullout-excel-upload" OnChange="OnImportFileSelected" class="visually-hidden" disabled="@_frozen" />
                 <div class="bulk-upload-actions">
-                    <label class="btn btn-outline-primary" for="pullout-excel-upload">
+                    <label class="btn btn-outline-primary @(_frozen ? "disabled" : "")" for="pullout-excel-upload" aria-disabled="@_frozen">
                         <i class="bi bi-upload" aria-hidden="true"></i>
                         Upload Excel
                     </label>
@@ -194,6 +195,15 @@
     @if (_workbookOutcomes is not null)
     {
         var created = _workbookOutcomes.Count(o => o.Status == PulloutSheetImportStatus.Created);
+        // A sheet that failed is explained here, not only inside the summary window (for example: a cycle count is blocking new requests).
+        var failures = _workbookOutcomes.Where(o => o.Status == PulloutSheetImportStatus.Error && !string.IsNullOrWhiteSpace(o.Message)).Select(o => o.Message!).Distinct().Take(3).ToList();
+        @if (failures.Count > 0)
+        {
+            <div class="alert alert-danger" role="alert">
+                <strong>@(created == 0 ? "Nothing was created." : "Some sheets were not created.")</strong>
+                @foreach (var failure in failures) { <div>@failure</div> }
+            </div>
+        }
         <div class="result-ready-bar">
             <div class="info-bar-icon">
                 <i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i>
@@ -491,6 +501,7 @@
     private string? _rejectError;
     private string? _error;
     private int? _warehouseId;
+    private bool _frozen;
     private PulloutResultDto? _result;
     private string _statusFilter = string.Empty;
     private bool _isResultModalOpen;

@@ -27,7 +27,7 @@ public sealed class GetPickerPendingInwardHandler(IApplicationDbContext db, IPer
         var transactions = reviewer
             // An open reservation, or - for an order posted on upload - a location that is not confirmed (locked) yet.
             ? open.Where(t => t.Lines.Any(l => l.Putaways.Any(p => p.QuantityBoxes > 0 && !p.IsExcludedLocked
-                && (!p.IsConfirmed || t.PostedAt != null || p.ExcludedLocation != null))))
+                && (!p.IsConfirmed || t.PostedAt != null || p.ExcludedLocation != null || p.IsPickerPlaced))))
             : open.Where(t => t.Lines.Any(l => l.Putaways.Any(p => p.QuantityBoxes > 0 && !p.IsExcludedLocked && !p.IsPickerPlaced && p.ExcludedLocation == null
                 && (!p.IsConfirmed || t.PostedAt != null))));
 

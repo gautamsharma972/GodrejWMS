@@ -16,6 +16,8 @@ public static class PermissionKeys
         public const string ViewPullout = "Menu.ViewPullout";
         public const string ViewInventoryMaster = "Menu.ViewInventoryMaster";
         public const string ViewInventoryAdjustments = "Menu.ViewInventoryAdjustments";
+        public const string ViewMaterialConversion = "Menu.ViewMaterialConversion";
+        public const string ViewCycleCount = "Menu.ViewCycleCount";
         public const string ViewRacks = "Menu.ViewRacks";
         public const string ViewLocations = "Menu.ViewLocations";
         public const string ViewMaterials = "Menu.ViewMaterials";
@@ -58,9 +60,21 @@ public static class PermissionKeys
         public const string Import = "Inventory.Import";
         public const string Adjust = "Inventory.Adjust";
         public const string ApproveAdjustment = "Inventory.ApproveAdjustment";
+        public const string ConvertMaterial = "Inventory.ConvertMaterial";
+        public const string ApproveMaterialConversion = "Inventory.ApproveMaterialConversion";
         public const string Move = "Inventory.Move";
         public const string ManageLocations = "Inventory.ManageLocations";
         public const string ManageRacks = "Inventory.ManageRacks";
+    }
+
+    public static class CycleCount
+    {
+        public const string Schedule = "CycleCount.Schedule";
+        public const string ManageSchedule = "CycleCount.ManageSchedule";
+        public const string Perform = "CycleCount.Perform";
+        public const string Submit = "CycleCount.Submit";
+        public const string Review = "CycleCount.Review";
+        public const string Reports = "CycleCount.Reports";
     }
 
     public static class Masters
@@ -97,13 +111,13 @@ public static class PermissionKeys
     /// <summary>Every key above, for seeding and for rendering the full matrix.</summary>
     public static readonly IReadOnlyList<string> All =
     [
-        Menu.ViewDashboard, Menu.ViewInward, Menu.ViewInwardNoPkm, Menu.ViewPullout, Menu.ViewInventoryMaster, Menu.ViewInventoryAdjustments,
-        Menu.ViewRacks, Menu.ViewLocations, Menu.ViewMaterials, Menu.ViewInventoryMovement,
-        Menu.ViewAuditTrail, Menu.ViewReports, Menu.ViewOrgMasters, Menu.ViewProductMasters, Menu.ViewUserManagement,
+        Menu.ViewDashboard, Menu.ViewInward, Menu.ViewInwardNoPkm, Menu.ViewPullout, Menu.ViewInventoryMaster, Menu.ViewInventoryAdjustments, Menu.ViewMaterialConversion,        Menu.ViewRacks, Menu.ViewLocations, Menu.ViewMaterials, Menu.ViewInventoryMovement,
+        Menu.ViewCycleCount, Menu.ViewAuditTrail, Menu.ViewReports, Menu.ViewOrgMasters, Menu.ViewProductMasters, Menu.ViewUserManagement,
         Inward.Create, Inward.View, Inward.Edit, Inward.Putaway, Inward.Confirm, Inward.Reject, Inward.Reallocate, Inward.AssignPkm, Inward.OverrideGroundFloor,
         Pullout.Create, Pullout.View, Pullout.Edit, Pullout.Pick, Pullout.Confirm, Pullout.Reject,
-        Inventory.View, Inventory.Import, Inventory.Adjust, Inventory.ApproveAdjustment, Inventory.Move, Inventory.ManageLocations, Inventory.ManageRacks,
+        Inventory.View, Inventory.Import, Inventory.Adjust, Inventory.ApproveAdjustment, Inventory.ConvertMaterial, Inventory.ApproveMaterialConversion, Inventory.Move, Inventory.ManageLocations, Inventory.ManageRacks,
         Masters.View, Masters.Create, Masters.Edit, Masters.Deactivate, Masters.Delete,
+        CycleCount.Schedule, CycleCount.ManageSchedule, CycleCount.Perform, CycleCount.Submit, CycleCount.Review, CycleCount.Reports,
         Reports.View, Reports.Export,
         AuditTrail.View,
         Users.View, Users.ManageAccounts, Users.Edit, Users.Delete, Users.AssignRoleAndScope, Users.ConfigurePermissions, Users.ResetPassword

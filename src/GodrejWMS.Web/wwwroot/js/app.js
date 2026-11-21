@@ -109,13 +109,34 @@ window.godrejWms = {
         });
     },
 
-    // Opens the camera, reads one QR code / barcode with the browser's BarcodeDetector and resolves with its text
-    // (null when cancelled). Needs Chrome / Edge and https or localhost; other browsers get a clear message.
+    // Loads the bundled jsQR decoder once (same origin, so the content-security policy allows it).
+    loadJsQr: function () {
+        if (window.jsQR) return Promise.resolve();
+        if (!godrejWms._jsQrLoading) {
+            godrejWms._jsQrLoading = new Promise((resolve, reject) => {
+                const script = document.createElement("script");
+                script.src = "/lib/jsqr/jsQR.js";
+                script.onload = () => resolve();
+                script.onerror = () => { godrejWms._jsQrLoading = null; reject(new Error("jsQR failed to load")); };
+                document.head.appendChild(script);
+            });
+        }
+        return godrejWms._jsQrLoading;
+    },
+
+    // Opens the camera and resolves with the text of the first QR code read (null when cancelled). Uses the browser's BarcodeDetector where it
+    // exists (Chrome / Edge / Android) and the bundled jsQR decoder everywhere else (iPhone / iPad Safari and the installed PWA, Firefox).
+    // Needs https or localhost for the camera.
     scanCode: function (title) {
         return new Promise(async (resolve, reject) => {
-            if (!("BarcodeDetector" in window)) {
-                reject(new Error("QR scanning is not supported in this browser. Use Chrome or Edge, or type the location."));
-                return;
+            const native = "BarcodeDetector" in window;
+            if (!native) {
+                try {
+                    await godrejWms.loadJsQr();
+                } catch (e) {
+                    reject(new Error("The QR scanner could not be loaded. Check the connection or type the location."));
+                    return;
+                }
             }
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 reject(new Error("The camera is only available on https or localhost."));
@@ -132,14 +153,16 @@ window.godrejWms = {
             overlay.style.cssText = "position:fixed;inset:0;z-index:3000;background:rgba(15,23,42,.85);display:flex;align-items:center;justify-content:center;padding:16px";
             overlay.innerHTML = '<div style="background:#fff;border-radius:14px;padding:16px;max-width:520px;width:100%">' +
                 '<div style="font-weight:700;margin-bottom:8px"></div>' +
-                '<video playsinline muted style="width:100%;border-radius:10px;background:#000"></video>' +
+                '<video playsinline webkit-playsinline autoplay muted style="width:100%;border-radius:10px;background:#000"></video>' +
                 '<div style="text-align:right;margin-top:10px"><button type="button" class="btn btn-outline-secondary">Cancel</button></div></div>';
             overlay.querySelector("div div").textContent = title || "Scan QR code";
             document.body.appendChild(overlay);
             const video = overlay.querySelector("video");
             video.srcObject = stream;
             await video.play().catch(() => { });
-            const detector = new BarcodeDetector({ formats: ["qr_code", "code_128", "code_39", "ean_13", "data_matrix"] });
+            const detector = native ? new BarcodeDetector({ formats: ["qr_code", "code_128", "code_39", "ean_13", "data_matrix"] }) : null;
+            const canvas = document.createElement("canvas");
+            const context = canvas.getContext("2d", { willReadFrequently: true });
             let done = false;
             const finish = (value) => {
                 if (done) return;
@@ -152,8 +175,19 @@ window.godrejWms = {
             const tick = async () => {
                 if (done) return;
                 try {
-                    const codes = await detector.detect(video);
-                    if (codes.length > 0 && codes[0].rawValue) { finish(codes[0].rawValue); return; }
+                    if (detector) {
+                        const codes = await detector.detect(video);
+                        if (codes.length > 0 && codes[0].rawValue) { finish(codes[0].rawValue); return; }
+                    } else if (video.videoWidth > 0) {
+                        // Scaled down so decoding stays quick on a phone.
+                        const scale = Math.min(1, 640 / video.videoWidth);
+                        canvas.width = Math.round(video.videoWidth * scale);
+                        canvas.height = Math.round(video.videoHeight * scale);
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        const image = context.getImageData(0, 0, canvas.width, canvas.height);
+                        const result = window.jsQR(image.data, image.width, image.height, { inversionAttempts: "dontInvert" });
+                        if (result && result.data) { finish(result.data); return; }
+                    }
                 } catch (e) { /* keep trying */ }
                 setTimeout(tick, 250);
             };

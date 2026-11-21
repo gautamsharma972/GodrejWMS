@@ -338,6 +338,8 @@ export interface PulloutPickDto {
   moveToPalletPositionId?: number | null;
   moveToLocationCode?: string | null;
   moveQuantityBoxes?: number | null;
+  /** Of quantityBoxes, boxes taken from an inward GRN still being unloaded / put away: they may not be on the shelf at locationCode yet. */
+  onVehicleBoxes?: number;
 }
 
 /** A posted pullout or legacy allocated draft with picks to confirm (GET /api/pullout/picker/queue). */
@@ -523,4 +525,124 @@ export interface PickerPlaceInwardPutawayRequest {
 export interface PickerPlaceInwardPutawayResult {
   saved: boolean;
   warning?: string | null;
+}
+
+
+// ---- Cycle Count (enums are serialised as numbers)
+
+export const CycleCountBatchStatus = { Scheduled: 1, InProgress: 2, Extended: 3, PartiallyClosed: 4, PendingReview: 5, Closed: 6, Dropped: 7 } as const;
+export const CycleCountRackStatus = { Open: 1, Submitted: 2, Excluded: 3 } as const;
+export const CycleCountCardState = { Pending: 1, Verified: 2, Corrected: 3 } as const;
+
+export interface CycleCountRackDto {
+  rackCode: string;
+  status: number;
+  totalCards: number;
+  completedCards: number;
+  pendingCards: number;
+  submittedByUserName: string | null;
+  submittedAt: string | null;
+  includesDamageStock: boolean;
+  rackName: string;
+  firstLocation: string | null;
+  lastLocation: string | null;
+}
+
+export interface CycleCountBatchDto {
+  id: number;
+  batchNumber: string;
+  warehouseId: number;
+  warehouseName: string;
+  scheduleFrom: string;
+  scheduleTo: string;
+  status: number;
+  cardsGenerated: boolean;
+  racks: CycleCountRackDto[];
+  totalLocations: number;
+  totalCards: number;
+  completedCards: number;
+  pendingCards: number;
+  completionPercent: number;
+}
+
+export interface CycleCountLocationDto {
+  palletPositionId: number;
+  locationCode: string;
+  totalCards: number;
+  pendingCards: number;
+}
+
+export interface CycleCountCardDto {
+  id: number;
+  rackCode: string;
+  palletPositionId: number;
+  locationCode: string;
+  systemMaterialId: number | null;
+  systemMaterialNumber: number | null;
+  systemDescription: string | null;
+  systemPkm: string | null;
+  systemQuantityBoxes: number;
+  systemStockSubtypeId: number;
+  physicalMaterialId: number | null;
+  physicalMaterialNumber: number | null;
+  physicalDescription: string | null;
+  physicalPkm: string | null;
+  physicalQuantityBoxes: number | null;
+  physicalStockSubtypeId: number | null;
+  differenceBoxes: number | null;
+  state: number;
+  isExtra: boolean;
+  isExcluded: boolean;
+  isSubmitted: boolean;
+  countedByUserName: string | null;
+  countedAt: string | null;
+  isCompleted: boolean;
+  isDiscrepancy: boolean;
+  stockType: string;
+}
+
+export interface CycleCountCardsDto {
+  batchId: number;
+  batchNumber: string;
+  rackCode: string;
+  batchStatus: number;
+  rackStatus: number;
+  cards: CycleCountCardDto[];
+  includesDamageStock: boolean;
+  totalCards: number;
+  completedCards: number;
+  pendingCards: number;
+  completionPercent: number;
+}
+
+export interface CycleCountSubmitSummaryDto {
+  batchId: number;
+  batchNumber: string;
+  warehouseName: string;
+  rackCode: string;
+  totalCards: number;
+  verifiedCards: number;
+  correctedCards: number;
+  pendingCards: number;
+  excludedCards: number;
+  totalDifferenceBoxes: number;
+  totalAbsoluteDifferenceBoxes: number;
+  canSubmit: boolean;
+  blocker: string | null;
+  uncountedDamageCards: number;
+}
+
+export interface CycleCountSubmitResultDto {
+  batchNumber: string;
+  rackCode: string;
+  alreadySubmitted: boolean;
+  verifiedCards: number;
+  correctedCards: number;
+  stockChanges: number;
+}
+
+export interface CycleCountFreezeDto {
+  isFrozen: boolean;
+  batchNumber: string | null;
+  message: string | null;
 }

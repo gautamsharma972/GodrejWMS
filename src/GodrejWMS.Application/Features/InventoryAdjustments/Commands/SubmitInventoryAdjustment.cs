@@ -14,7 +14,11 @@ public sealed record SubmitInventoryAdjustmentCommand(
     int CountedQuantity,
     string ReasonCode,
     string? ReasonText,
-    int? PhysicalMaterialId = null) : IRequest<InventoryAdjustmentDetailDto>;
+    int? PhysicalMaterialId = null,
+    /// <summary>The PKM (yyyyMM) physically found, when it differs from the system record's PKM.</summary>
+    int? PhysicalMfgMonth = null,
+    /// <summary>The stock type physically found (Good = 1, Damage = 2), when it differs from the system record's.</summary>
+    int? PhysicalStockSubtypeId = null) : IRequest<InventoryAdjustmentDetailDto>;
 
 public sealed class SubmitInventoryAdjustmentValidator : AbstractValidator<SubmitInventoryAdjustmentCommand>
 {
@@ -26,6 +30,20 @@ public sealed class SubmitInventoryAdjustmentValidator : AbstractValidator<Submi
             .When(x => x.PhysicalMaterialId.HasValue)
             .WithMessage("Physical quantity must be greater than zero when correcting the SKU.");
         RuleFor(x => x.PhysicalMaterialId).GreaterThan(0).When(x => x.PhysicalMaterialId.HasValue);
+        RuleFor(x => x.PhysicalMfgMonth)
+            .Must(m => m is >= 190001 and <= 999912 && m % 100 is >= 1 and <= 12)
+            .When(x => x.PhysicalMfgMonth.HasValue)
+            .WithMessage("The PKM must be a valid month.");
+        RuleFor(x => x.CountedQuantity).GreaterThan(0)
+            .When(x => x.PhysicalMfgMonth.HasValue)
+            .WithMessage("Physical quantity must be greater than zero when correcting the PKM.");
+        RuleFor(x => x.PhysicalStockSubtypeId)
+            .Must(t => t is LocationSubtypeIds.Good or LocationSubtypeIds.Damage)
+            .When(x => x.PhysicalStockSubtypeId.HasValue)
+            .WithMessage("The stock type must be Good or Damage.");
+        RuleFor(x => x.CountedQuantity).GreaterThan(0)
+            .When(x => x.PhysicalStockSubtypeId.HasValue)
+            .WithMessage("Physical quantity must be greater than zero when correcting the stock type.");
         RuleFor(x => x.ReasonCode)
             .Must(InventoryAdjustmentReasonCodes.All.ContainsKey)
             .WithMessage("Select a valid adjustment reason.");
@@ -60,21 +78,32 @@ public sealed class SubmitInventoryAdjustmentHandler(
             ?? throw new InvalidOperationException("The selected inventory batch was not found.");
 
         var physicalMaterialId = request.PhysicalMaterialId == batch.MaterialId ? null : request.PhysicalMaterialId;
+        var physicalMfgMonth = request.PhysicalMfgMonth == batch.MfgMonth ? null : request.PhysicalMfgMonth;
+        var physicalSubtypeId = request.PhysicalStockSubtypeId == batch.StockSubtypeId ? null : request.PhysicalStockSubtypeId;
         Material? physicalMaterial = null;
         StockBatch? physicalBatch = null;
+        // A different SKU and / or a different PKM than the system record: the system batch is replaced by what was physically found.
+        var isReplacement = physicalMaterialId.HasValue || physicalMfgMonth.HasValue || physicalSubtypeId.HasValue;
         if (physicalMaterialId.HasValue)
         {
             physicalMaterial = await db.Materials.FirstOrDefaultAsync(
                 m => m.Id == physicalMaterialId.Value && m.IsActive, cancellationToken)
                 ?? throw new InvalidOperationException("The physically counted SKU was not found or is inactive.");
-            physicalBatch = await db.StockBatches.FirstOrDefaultAsync(b =>
-                b.MaterialId == physicalMaterialId.Value &&
-                b.PalletPositionId == batch.PalletPositionId &&
-                b.MfgMonth == batch.MfgMonth &&
-                b.StockSubtypeId == batch.StockSubtypeId, cancellationToken);
         }
 
-        if (!physicalMaterialId.HasValue && batch.QuantityBoxes == request.CountedQuantity)
+        if (isReplacement)
+        {
+            var foundMaterialId = physicalMaterialId ?? batch.MaterialId;
+            var foundMfgMonth = physicalMfgMonth ?? batch.MfgMonth;
+            var foundSubtypeId = physicalSubtypeId ?? batch.StockSubtypeId;
+            physicalBatch = await db.StockBatches.FirstOrDefaultAsync(b =>
+                b.MaterialId == foundMaterialId &&
+                b.PalletPositionId == batch.PalletPositionId &&
+                b.MfgMonth == foundMfgMonth &&
+                b.StockSubtypeId == foundSubtypeId, cancellationToken);
+        }
+
+        if (!isReplacement && batch.QuantityBoxes == request.CountedQuantity)
         {
             throw new InvalidOperationException("The physical quantity matches the system quantity; no adjustment is required.");
         }
@@ -90,7 +119,7 @@ public sealed class SubmitInventoryAdjustmentHandler(
                 l.StockBatchId == physicalBatch.Id &&
                 l.InventoryAdjustment.Status == InventoryAdjustmentStatus.PendingApproval, cancellationToken))
         {
-            throw new InvalidOperationException("A pending adjustment already exists for the physically counted SKU in this location.");
+            throw new InvalidOperationException("A pending adjustment already exists for the physically counted SKU, PKM and stock type in this location.");
         }
 
         var now = clock.UtcNow;
@@ -112,6 +141,8 @@ public sealed class SubmitInventoryAdjustmentHandler(
             StockBatchId = batch.Id,
             MaterialId = batch.MaterialId,
             PhysicalMaterialId = physicalMaterialId,
+            PhysicalMfgMonth = physicalMfgMonth,
+            PhysicalStockSubtypeId = physicalSubtypeId,
             PalletPositionId = batch.PalletPositionId,
             MfgMonth = batch.MfgMonth,
             StockSubtypeId = batch.StockSubtypeId,

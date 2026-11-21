@@ -98,6 +98,20 @@ public class AppDbContext(
 
     public DbSet<InventoryAdjustmentLine> InventoryAdjustmentLines => Set<InventoryAdjustmentLine>();
 
+    public DbSet<MaterialConversion> MaterialConversions => Set<MaterialConversion>();
+
+    public DbSet<MaterialConversionLine> MaterialConversionLines => Set<MaterialConversionLine>();
+
+    public DbSet<CycleCountBatch> CycleCountBatches => Set<CycleCountBatch>();
+
+    public DbSet<CycleCountBatchRack> CycleCountBatchRacks => Set<CycleCountBatchRack>();
+
+    public DbSet<CycleCountCard> CycleCountCards => Set<CycleCountCard>();
+
+    public DbSet<CycleCountHistory> CycleCountHistory => Set<CycleCountHistory>();
+
+    public DbSet<CycleCountReview> CycleCountReviews => Set<CycleCountReview>();
+
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
 
     public DbSet<OrganizationSettings> OrganizationSettings => Set<OrganizationSettings>();
@@ -157,6 +171,27 @@ public class AppDbContext(
         builder.Entity<InventoryAdjustment>().HasQueryFilter(a => HasAllWarehouses
             || UserWarehouses.Any(uw => uw.UserId == AccessUserId && uw.WarehouseId == a.WarehouseId)
             || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == a.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<MaterialConversion>().HasQueryFilter(c => HasAllWarehouses
+            || UserWarehouses.Any(uw => uw.UserId == AccessUserId && uw.WarehouseId == c.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == c.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<MaterialConversionLine>().HasQueryFilter(l => HasAllWarehouses
+            || UserWarehouses.Any(uw => uw.UserId == AccessUserId && uw.WarehouseId == l.MaterialConversion.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == l.MaterialConversion.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<CycleCountBatch>().HasQueryFilter(b => HasAllWarehouses
+            || UserWarehouses.Any(uw => uw.UserId == AccessUserId && uw.WarehouseId == b.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == b.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<CycleCountBatchRack>().HasQueryFilter(r => HasAllWarehouses
+            || UserWarehouses.Any(uw => uw.UserId == AccessUserId && uw.WarehouseId == r.CycleCountBatch.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == r.CycleCountBatch.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<CycleCountCard>().HasQueryFilter(c => HasAllWarehouses
+            || UserWarehouses.Any(uw => uw.UserId == AccessUserId && uw.WarehouseId == c.CycleCountBatch.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == c.CycleCountBatch.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<CycleCountHistory>().HasQueryFilter(h => HasAllWarehouses
+            || UserWarehouses.Any(uw => uw.UserId == AccessUserId && uw.WarehouseId == h.CycleCountBatch.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == h.CycleCountBatch.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
+        builder.Entity<CycleCountReview>().HasQueryFilter(r => HasAllWarehouses
+            || UserWarehouses.Any(uw => uw.UserId == AccessUserId && uw.WarehouseId == r.CycleCountBatch.WarehouseId)
+            || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == r.CycleCountBatch.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
         builder.Entity<InventoryAdjustmentLine>().HasQueryFilter(l => HasAllWarehouses
             || UserWarehouses.Any(uw => uw.UserId == AccessUserId && uw.WarehouseId == l.InventoryAdjustment.WarehouseId)
             || UserRegions.Any(rg => rg.UserId == AccessUserId && Warehouses.Any(w => w.Id == l.InventoryAdjustment.WarehouseId && w.City != null && w.City.State.RegionId == rg.RegionId)));
@@ -250,6 +285,10 @@ public class AppDbContext(
         InwardTransaction t => t.WarehouseId,
         PulloutTransaction t => t.WarehouseId,
         InventoryAdjustment a => a.WarehouseId,
+        MaterialConversion c => c.WarehouseId,
+        CycleCountBatch b => b.WarehouseId,
+        CycleCountCard c => c.CycleCountBatch?.WarehouseId,
+        MaterialConversionLine l => l.MaterialConversion?.WarehouseId,
         PalletPosition p => p.Rack?.WarehouseId,
         StockBatch b => b.PalletPosition?.Rack?.WarehouseId,
         InwardTransactionLine l => l.InwardTransaction?.WarehouseId,

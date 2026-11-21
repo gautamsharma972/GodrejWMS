@@ -58,4 +58,6 @@ public static class StockLedgerEntryTypes
     public const string DamageReclass = "DAMAGE_RECLASS";
     public const string VarianceWriteOff = "VARIANCE_WRITE_OFF";
     public const string ExcessReceived = "EXCESS_RECEIVED";
+    public const string MaterialConversion = "MATERIAL_CONVERSION";
+    public const string CycleCount = "CYCLE_COUNT";
 }

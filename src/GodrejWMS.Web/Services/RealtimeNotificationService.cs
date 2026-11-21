@@ -17,12 +17,17 @@ public sealed class RealtimeNotificationService : IRealtimeNotificationService
         return new SubscriptionHandle(() => _subscriptions.TryRemove(id, out _));
     }
 
-    public async Task PublishAsync(RealtimeNotification notification, CancellationToken cancellationToken = default)
+    /// <summary>Hands the notification to every matching subscriber and returns at once. Delivery runs in the background on purpose: a subscriber's
+    /// handler works on its own circuit (toast, bell), and when the publisher is itself running inside that same circuit (the user who just clicked
+    /// Submit / Approve is also a recipient) waiting for it would stall the very action that published, leaving the page on "Submitting...".</summary>
+    public Task PublishAsync(RealtimeNotification notification, CancellationToken cancellationToken = default)
     {
-        var deliveries = _subscriptions.Values
-            .Where(subscription => Matches(subscription, notification))
-            .Select(subscription => DeliverSafelyAsync(subscription.Handler, notification, cancellationToken));
-        await Task.WhenAll(deliveries);
+        foreach (var subscription in _subscriptions.Values.Where(subscription => Matches(subscription, notification)).ToList())
+        {
+            _ = Task.Run(() => DeliverSafelyAsync(subscription.Handler, notification), CancellationToken.None);
+        }
+
+        return Task.CompletedTask;
     }
 
     private static bool Matches(Subscription subscription, RealtimeNotification notification)
@@ -49,10 +54,8 @@ public sealed class RealtimeNotificationService : IRealtimeNotificationService
 
     private static async Task DeliverSafelyAsync(
         Func<RealtimeNotification, Task> handler,
-        RealtimeNotification notification,
-        CancellationToken cancellationToken)
+        RealtimeNotification notification)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             await handler(notification);
@@ -64,6 +67,10 @@ public sealed class RealtimeNotificationService : IRealtimeNotificationService
         catch (InvalidOperationException)
         {
             // The circuit is no longer available; its subscription is removed during disposal.
+        }
+        catch (Exception)
+        {
+            // Nobody waits for a delivery any more: a closed or disconnected circuit (JS interop cancelled) must not surface as an unobserved error.
         }
     }
 

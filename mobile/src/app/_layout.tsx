@@ -53,6 +53,8 @@ function RootNavigator() {
       <Stack.Screen name="inward-putaway/[id]" options={{ title: "Confirm Putaway" }} />
       <Stack.Screen name="pullout-queue" options={{ title: "Pullout Queue" }} />
       <Stack.Screen name="pullout/[id]" options={{ title: "Confirm Pullout" }} />
+      <Stack.Screen name="cycle-count-queue" options={{ title: "Cycle Count" }} />
+      <Stack.Screen name="cycle-count/[id]" options={{ title: "Cycle Count" }} />
     </Stack>
   );
 }

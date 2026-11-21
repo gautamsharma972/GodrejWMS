@@ -86,6 +86,7 @@ public class AuthorizationBehaviourTests
         [
             // in the handler, through IPermissionService
             "ApproveInventoryAdjustmentCommand", "RejectInventoryAdjustmentCommand", "CancelInventoryAdjustmentCommand", "SubmitInventoryAdjustmentCommand",
+            "SubmitMaterialConversionCommand", "ApproveMaterialConversionCommand", "RejectMaterialConversionCommand", "CancelMaterialConversionCommand",
             "AssignInwardPutawayPkmCommand", "ConfirmInwardPutawayCommand", "ConfirmPickerPutawayCommand", "ConfirmSingleInwardPutawayCommand",
             "PickerPlaceInwardPutawayCommand", "ConfirmPulloutCommand", "ConfirmPulloutPickCommand", "ConfirmPulloutPicklistCommand",
             "ImportStockMasterFromExcelCommand", "DeleteUserCommand", "UpdateUserCommand",

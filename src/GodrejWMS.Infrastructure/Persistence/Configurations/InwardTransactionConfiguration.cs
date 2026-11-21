@@ -80,6 +80,7 @@ public class InwardLineVarianceConfiguration : IEntityTypeConfiguration<InwardLi
         builder.ToTable("InwardLineVariances");
 
         builder.Property(v => v.QuantityBoxes).HasPrecision(14, 3);
+        builder.Property(v => v.FromRemainderBoxes).HasPrecision(14, 3);
         builder.Property(v => v.Remarks).HasMaxLength(500).IsRequired();
         builder.Property(v => v.CreatedByUserId).HasMaxLength(450);
         builder.Property(v => v.CreatedByUserName).HasMaxLength(256);

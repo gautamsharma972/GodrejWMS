@@ -34,7 +34,7 @@ public sealed class ImportStockMasterFromExcelValidator : AbstractValidator<Impo
 
 public sealed class ImportStockMasterFromExcelHandler(
     IApplicationDbContext db, IExcelService excel, IDateTimeProvider clock, ICurrentUserService currentUser, IPermissionService permissions,
-    IWarehouseAccessService warehouseAccess)
+    IWarehouseAccessService warehouseAccess, IStockPostingService posting)
     : IRequestHandler<ImportStockMasterFromExcelCommand, ImportStockMasterResult>
 {
     public async Task<ImportStockMasterResult> Handle(ImportStockMasterFromExcelCommand request, CancellationToken cancellationToken)
@@ -74,6 +74,10 @@ public sealed class ImportStockMasterFromExcelHandler(
         var positions = await db.PalletPositions
             .Select(p => new { p.Id, p.LocationCode, p.MaxPallets, p.Rack.WarehouseId })
             .ToDictionaryAsync(p => p.LocationCode, StringComparer.OrdinalIgnoreCase, cancellationToken);
+        var positionEntities = await db.PalletPositions
+            .Include(p => p.Rack)
+            .Where(p => p.Rack.WarehouseId == warehouseId.Value)
+            .ToDictionaryAsync(p => p.Id, cancellationToken);
         var existingBatches = await db.StockBatches
             .Where(b => b.PalletPosition.Rack.WarehouseId == warehouseId.Value)
             .ToListAsync(cancellationToken);
@@ -148,47 +152,53 @@ public sealed class ImportStockMasterFromExcelHandler(
         }
 
         // Replace, don't merge: at every location the file lists, batches the file does not list go to zero.
+        // Every change goes through the shared posting service, so each zeroed / changed / new cell leaves a ledger entry
+        // (who, when, which import) and the ledger keeps matching inventory.
         var now = clock.UtcNow;
         var cleared = 0;
+        var changes = new List<StockChange>();
+        var touched = new List<StockBatch>();
         var listedPositions = valid.Select(v => v.PositionId).ToHashSet();
         foreach (var batch in goodBatches.Where(b => b.QuantityBoxes > 0 && listedPositions.Contains(b.PalletPositionId)
                      && !rowOfKey.ContainsKey((b.MaterialId, b.PalletPositionId, b.MfgMonth))))
         {
-            batch.QuantityBoxes = 0;
-            batch.RowVersion++;
-            batch.UpdatedAt = now;
-            batch.UpdatedByUserId = currentUser.UserId;
+            changes.Add(new StockChange(batch.MaterialId, batch.MfgMonth, LocationSubtypeIds.Good, positionEntities[batch.PalletPositionId], -batch.QuantityBoxes));
+            touched.Add(batch);
             cleared++;
         }
 
         int created = 0, updated = 0;
-        var allBatches = new List<StockBatch>(existingBatches);
         foreach (var entry in valid)
         {
+            var position = positionEntities[entry.PositionId];
             if (batchesByKey.TryGetValue((entry.MaterialId, entry.PositionId, entry.MfgMonth), out var batch))
             {
-                batch.QuantityBoxes = entry.Quantity;
-                batch.RowVersion++;
-                batch.UpdatedAt = now;
-                batch.UpdatedByUserId = currentUser.UserId;
+                changes.Add(new StockChange(entry.MaterialId, entry.MfgMonth, LocationSubtypeIds.Good, position, entry.Quantity - batch.QuantityBoxes));
+                touched.Add(batch);
                 updated++;
             }
             else
             {
-                var newBatch = new StockBatch
-                {
-                    MaterialId = entry.MaterialId,
-                    PalletPositionId = entry.PositionId,
-                    MfgMonth = entry.MfgMonth,
-                    QuantityBoxes = entry.Quantity,
-                    CreatedAt = now,
-                    CreatedByUserId = currentUser.UserId
-                };
-                db.StockBatches.Add(newBatch);
-                allBatches.Add(newBatch);
+                changes.Add(new StockChange(entry.MaterialId, entry.MfgMonth, LocationSubtypeIds.Good, position, entry.Quantity));
                 created++;
             }
         }
+
+        if (changes.Count > 0)
+        {
+            await posting.ApplyAsync(
+                new StockPostingContext(StockLedgerEntryTypes.StockImport, "STOCK_IMPORT", $"SIMP-{now:yyyyMMdd-HHmmss}", "Stock Master import (replace)"),
+                changes, cancellationToken);
+        }
+
+        foreach (var batch in touched)
+        {
+            batch.UpdatedAt = now;
+            batch.UpdatedByUserId = currentUser.UserId;
+        }
+
+        var allBatches = new List<StockBatch>(existingBatches);
+        allBatches.AddRange(db.ChangeTracker.Entries<StockBatch>().Where(e => e.State == EntityState.Added).Select(e => e.Entity));
 
         // A location holding several materials is only as roomy as its smallest pallet. Stock that already exists
         // physically is still loaded; an over-full location is reported as a warning instead of rejecting rows.

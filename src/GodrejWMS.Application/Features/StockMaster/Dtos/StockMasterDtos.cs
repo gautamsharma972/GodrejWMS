@@ -31,7 +31,10 @@ public sealed record StockMasterRowDto(
     int PalletPositionId = 0,
     int MfgMonth = 0,
     string StockSubtypeName = "Good",
-    bool IsVirtualLocation = false);
+    bool IsVirtualLocation = false,
+    int StockSubtypeId = 1,
+    /// <summary>IN-STOCK / GIT-IN / GIT-OUT (see <c>StockFlowStatus</c>); IN-STOCK unless the grid asked for flow status.</summary>
+    string StockStatus = "IN-STOCK");
 
 public sealed record StockSummaryDto(
     int TotalRacks,

@@ -15,12 +15,15 @@ namespace GodrejWMS.Application.Features.Pullout.Commands;
 
 /// <summary>Refresh Pick: for a pullout whose pick-list is not confirmed yet. Picks that were taken from PICK-RESERVED boxes of an inward
 /// GRN that has since been rejected point at stock that never existed, so they are dropped (nothing to return - the GRN's rejection
-/// skipped them) and the missing quantity - plus any earlier shortfall - is allocated again from the stock available now. Picks that are
-/// still valid, including ones the picker already submitted, are left alone.</summary>
+/// skipped them) and the missing quantity - plus any earlier shortfall - is allocated again from the stock available now. Picks the picker has
+/// NOT submitted yet are also handed back (their boxes return to the pick cells) and the whole quantity is allocated again, so the locations
+/// are re-chosen with today's stock and rules. Picks the picker already submitted, and picks a user chose by hand (Add material / Change
+/// location), are left alone.</summary>
 [RequiresPermission(PermissionKeys.Pullout.Edit)]
 public sealed record RefreshPulloutPicksCommand(string ReferenceNumber) : IRequest<RefreshPulloutPicksResult>;
 
-public sealed record RefreshPulloutPicksResult(string ReferenceNumber, decimal DroppedBoxes, decimal AllocatedBoxes, decimal StillShortBoxes);
+/// <param name="RechosenBoxes">Boxes of picks the picker had not submitted yet that were handed back and allocated again with the current rules.</param>
+public sealed record RefreshPulloutPicksResult(string ReferenceNumber, decimal DroppedBoxes, decimal AllocatedBoxes, decimal StillShortBoxes, decimal RechosenBoxes = 0);
 
 public sealed class RefreshPulloutPicksValidator : AbstractValidator<RefreshPulloutPicksCommand>
 {
@@ -56,6 +59,12 @@ public sealed class RefreshPulloutPicksHandler(
 
         return result;
     }
+
+    /// <summary>A pick Refresh Pick may hand back and allocate again: not submitted by the picker, and chosen by the allocator (not by a user).</summary>
+    public static bool IsRechoosable(PulloutPick pick) =>
+        pick.PickedAt is null && (pick.OverrideReason is null || pick.OverrideReason == RefreshedReason);
+
+    public const string RefreshedReason = "Pick refreshed";
 
     /// <summary>Rewrites the saved preview JSON from the current lines and picks (lines need Material, picks need PalletPosition loaded).</summary>
     public static void RebuildPreview(PulloutTransaction transaction)
@@ -127,6 +136,32 @@ public sealed class RefreshPulloutPicksHandler(
             }
         }
 
+        // Picks the picker has not submitted yet: hand the boxes back (stock returns to the pick cell; PICK-RESERVED put-aways of a GRN become
+        // normal unplaced rows again) so the allocation below re-chooses the locations from the stock available now.
+        var rechosen = 0m;
+        var handedBack = new List<StockChange>();
+        foreach (var line in transaction.Lines)
+        {
+            foreach (var pick in line.Picks.Where(IsRechoosable).ToList())
+            {
+                handedBack.Add(new StockChange(line.MaterialId, pick.MfgMonth, LocationSubtypeIds.Good, pick.PalletPosition, pick.QuantityBoxes));
+                await PutawayPickReservation.ReleaseShortfallAsync(
+                    db, transaction.ReferenceNumber, line.MaterialId, pick.MfgMonth, pick.PalletPositionId, pick.QuantityBoxes, cancellationToken);
+                line.PickedQuantityBoxes -= pick.QuantityBoxes;
+                rechosen += pick.QuantityBoxes;
+                line.Picks.Remove(pick);
+                db.PulloutPicks.Remove(pick);
+            }
+        }
+
+        if (handedBack.Count > 0)
+        {
+            await posting.ApplyAsync(
+                new StockPostingContext(StockLedgerEntryTypes.Reversal, "PICK", transaction.ReferenceNumber, "Pick refreshed - unsubmitted picks handed back"),
+                handedBack, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         // The rows of the rejected GRN stay as history but are no longer this pullout's live reservations.
         var reason = PutawayPickReservation.ReasonFor(transaction.ReferenceNumber);
         var released = await db.InwardPutaways
@@ -157,7 +192,7 @@ public sealed class RefreshPulloutPicksHandler(
                     newPicks.Add(new PulloutPick
                     {
                         PalletPosition = position, PalletPositionId = position.Id, MfgMonth = pick.MfgMonth,
-                        QuantityBoxes = pick.QuantityBoxes, OverrideReason = "Pick refreshed"
+                        QuantityBoxes = pick.QuantityBoxes, OverrideReason = RefreshedReason
                     });
                 }
 
@@ -200,6 +235,6 @@ public sealed class RefreshPulloutPicksHandler(
 
         transaction.RowVersion++;
         await db.SaveChangesAsync(cancellationToken);
-        return new RefreshPulloutPicksResult(transaction.ReferenceNumber, dropped, allocated, stillShort);
+        return new RefreshPulloutPicksResult(transaction.ReferenceNumber, dropped, allocated, stillShort, rechosen);
     }
 }

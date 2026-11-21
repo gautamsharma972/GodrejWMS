@@ -95,10 +95,11 @@ public sealed class PickerPlaceInwardPutawayHandler(
             throw new InvalidOperationException("This GRN has been rejected.");
         }
 
-        // Stock posted on upload sits at the suggested location until the picker confirms or changes it; an order still pending
-        // from before posting on upload only has a reservation, which a supervisor confirms later.
+        // Stock posted on upload sits at the suggested location until the picker confirms or changes it. An order that was NOT posted on upload
+        // (Inward without PKM) only has reservations: each location posts its own stock the moment it is submitted (below), so it shows in
+        // Current Inventory and can be picked straight away; a row that was submitted stays editable until the supervisor confirms the GRN.
         var postedOrder = transaction.PostedAt is not null;
-        if (putaway.IsConfirmed && putaway.ExcludedLocation is null && !postedOrder)
+        if (putaway.IsConfirmed && putaway.ExcludedLocation is null && !postedOrder && !putaway.IsPickerPlaced)
         {
             throw new InvalidOperationException($"{putaway.PalletPosition.LocationCode} is already confirmed and can no longer be changed.");
         }
@@ -163,29 +164,24 @@ public sealed class PickerPlaceInwardPutawayHandler(
             }
         }
 
-        // The put-away of a material + PKM can never exceed what the inbound asked for: boxes found beyond it are recorded as excess material, not put away.
-        // For an "Inward without PKM" GRN the PKM is only assigned by this very submit: the material's unassigned lines are then part of the same
-        // inbound, so the cap holds from the first submit (not only once a line carries the PKM).
-        var capLines = transaction.Lines
-            .Where(l => l.MaterialId == line.MaterialId && (l.MfgMonth == pkm || (line.MfgMonth is null && l.MfgMonth is null)))
-            .ToList();
-        if (capLines.Count > 0)
+        // The put-away of a material can never exceed what the inbound asked for: boxes found beyond it are recorded as excess material, not put away.
+        // The limit is on the MATERIAL of the GRN, not on its PKM: the PKM written in the inward order and the PKM of the boxes that physically arrive
+        // can differ, so the picker may move boxes between PKMs of the same material as long as the material's total stays within the inbound.
+        var capLines = transaction.Lines.Where(l => l.MaterialId == line.MaterialId).ToList();
+        var inboundQuantity = capLines.Sum(l => l.RequestedQuantityBoxes);
+        var recorded = (await InwardVariances.AccountedAsync(db, transaction.Id, cancellationToken)).Where(r => r.Key.MaterialId == line.MaterialId).Sum(r => r.Value);
+        var otherRows = capLines.SelectMany(l => l.Putaways).Where(p => p != putaway).Sum(p => p.QuantityBoxes) + recorded;
+        if (otherRows + request.QuantityBoxes > inboundQuantity)
         {
-            var inboundQuantity = capLines.Sum(l => l.RequestedQuantityBoxes);
-            var recorded = (await InwardVariances.AccountedAsync(db, transaction.Id, cancellationToken)).GetValueOrDefault((line.MaterialId, pkm ?? 0));
-            var otherRows = capLines.SelectMany(l => l.Putaways).Where(p => p != putaway).Sum(p => p.QuantityBoxes) + recorded;
-            if (otherRows + request.QuantityBoxes > inboundQuantity)
-            {
-                throw new InvalidOperationException(
-                    $"The put-away of material {line.Material.MaterialNumber} would total {otherRows + request.QuantityBoxes:0.###} box(es), more than the {inboundQuantity:0.###} box(es) on the inbound. "
-                    + $"At most {Math.Max(0, inboundQuantity - otherRows):0.###} can be entered here; record any extra boxes as excess material.");
-            }
+            throw new InvalidOperationException(
+                $"The put-away of material {line.Material.MaterialNumber} would total {otherRows + request.QuantityBoxes:0.###} box(es), more than the {inboundQuantity:0.###} box(es) on the inbound. "
+                + $"At most {Math.Max(0, inboundQuantity - otherRows):0.###} can be entered here; record any extra boxes as excess material.");
         }
 
         // Quantity actually put away: only the line's allocated total follows it. The requested quantity is the inward
         // order's own figure (the GRN's inbound volume) and is never changed by the picker.
         var originalQuantity = putaway.QuantityBoxes;
-        var hadStock = postedOrder && putaway.IsConfirmed && putaway.ExcludedLocation != PickerExcludedLocations.NoRack && line.MfgMonth is not null;
+        var hadStock = putaway.IsConfirmed && putaway.ExcludedLocation != PickerExcludedLocations.NoRack && line.MfgMonth is not null;
         var oldPkm = line.MfgMonth;
         var oldStockPosition = putaway.PalletPosition;
         // Remembered so the supervisor's Confirm can check the entries still add up to what the system allocated.
@@ -201,14 +197,40 @@ public sealed class PickerPlaceInwardPutawayHandler(
         }
 
         var accountedByRecords = await InwardVariances.AccountedAsync(db, transaction.Id, cancellationToken);
-        foreach (var touched in transaction.Lines.Where(l => l == line || l == putaway.InwardTransactionLine).ToList())
+        decimal AccountedOf(InwardTransactionLine l) => l.MfgMonth is { } m ? accountedByRecords.GetValueOrDefault((l.MaterialId, m)) : 0m;
+
+        // Ordered quantity follows the boxes between the PKM lines of the material: a line that now holds more than it ordered takes the unused ordered
+        // quantity of the material's other lines (their total never changes), so each PKM line stays consistent and nothing looks short or over.
+        var materialLines = transaction.Lines.Where(l => l.MaterialId == line.MaterialId).ToList();
+        foreach (var receiving in materialLines.ToList())
         {
-            InwardVariances.RefreshLineStatus(touched, touched.MfgMonth is { } m ? accountedByRecords.GetValueOrDefault((touched.MaterialId, m)) : 0m);
+            var over = receiving.AllocatedQuantityBoxes + AccountedOf(receiving) - receiving.RequestedQuantityBoxes;
+            foreach (var donor in materialLines.Where(l => l != receiving).OrderBy(l => l.Id))
+            {
+                if (over <= 0)
+                {
+                    break;
+                }
+
+                var unused = donor.RequestedQuantityBoxes - donor.AllocatedQuantityBoxes - AccountedOf(donor);
+                var moved = Math.Min(over, unused);
+                if (moved > 0)
+                {
+                    donor.RequestedQuantityBoxes -= moved;
+                    receiving.RequestedQuantityBoxes += moved;
+                    over -= moved;
+                }
+            }
         }
 
-        // Posted stock follows the picker's decision through the shared posting service: out of the old cell, into the new one
+        foreach (var touched in materialLines)
+        {
+            InwardVariances.RefreshLineStatus(touched, AccountedOf(touched));
+        }
+
+        // Stock follows the picker's decision through the shared posting service: out of the old cell, into the new one
         // (a GIT / NO RACK entry takes the stock out of inventory; correcting it back to a real location puts it in again).
-        if (postedOrder)
+        // For an order not posted on upload this is where a submitted location first reaches inventory.
         {
             var changes = new List<StockChange>();
             var removeQuantity = originalQuantity;
@@ -263,25 +285,13 @@ public sealed class PickerPlaceInwardPutawayHandler(
         }
         else
         {
-            // A pending order goes back to waiting for the supervisor's confirmation; a posted one stays posted.
-            // This now applies to GIT too (it tracks a real, confirmable location, unlike NO RACK above) - a
-            // pending order's GIT stock is only actually posted once the supervisor confirms the GRN
-            // (see InwardPutawayConfirmationLogic.ConfirmAsync), so it must stay unconfirmed until then.
+            // The submitted location is in inventory now (posted above), for a posted order and a pending one alike; the supervisor's Confirm
+            // only locks it.
             putaway.ExcludedLocation = excluded;
-            if (postedOrder)
-            {
-                putaway.IsConfirmed = true;
-                putaway.ConfirmedAt = clock.UtcNow;
-                putaway.ConfirmedByUserId = currentUser.UserId;
-                putaway.ConfirmedByUserName = currentUser.UserName;
-            }
-            else
-            {
-                putaway.IsConfirmed = false;
-                putaway.ConfirmedAt = null;
-                putaway.ConfirmedByUserId = null;
-                putaway.ConfirmedByUserName = null;
-            }
+            putaway.IsConfirmed = true;
+            putaway.ConfirmedAt = clock.UtcNow;
+            putaway.ConfirmedByUserId = currentUser.UserId;
+            putaway.ConfirmedByUserName = currentUser.UserName;
 
             putaway.IsPickerPlaced = true;
             putaway.OverrideReason = excluded is null ? "Location set by picker" : $"Set aside as {excluded} by picker";

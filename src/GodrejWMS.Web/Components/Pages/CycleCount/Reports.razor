@@ -1,0 +1,196 @@
+@page "/reports/cycle-count"
+@page "/cycle-count/reports"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.Reports)]
+@using GodrejWMS.Application.Common.Interfaces
+@using GodrejWMS.Application.Features.CycleCount
+@using GodrejWMS.Application.Features.CycleCount.Queries
+@using GodrejWMS.Domain.Entities
+@inject IMediator Mediator
+@inject IJSRuntime JsRuntime
+@inject IExcelService ExcelService
+@inject IWarehouseAccessService WarehouseAccess
+@inject ILogger<Reports> Logger
+
+<PageTitle>Cycle Count Reports - Godrej WMS</PageTitle>
+
+<div class="page-shell report-page">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Reports / Cycle Count</div>
+            <h1>Cycle Count Reports</h1>
+            <p class="page-kicker">Batch progress, location-wise counts, stock discrepancies and counter performance.</p>
+        </div>
+        <div class="toolbar-group">
+            <button type="button" class="btn btn-outline-primary" @onclick="ExportAsync" disabled="@(_loading || RowCount == 0)"><i class="bi bi-file-earmark-excel" aria-hidden="true"></i> Export Excel</button>
+            <button type="button" class="btn btn-outline-secondary" @onclick="PrintAsync" disabled="@(_loading || RowCount == 0)"><i class="bi bi-printer" aria-hidden="true"></i> Print / Save as PDF</button>
+        </div>
+    </div>
+
+    <ul class="nav nav-pills mb-3">
+        @foreach (var (key, title) in Tabs)
+        {
+            <li class="nav-item"><button type="button" class="nav-link @(_tab == key ? "active" : "")" @onclick="() => SelectTabAsync(key)">@title</button></li>
+        }
+    </ul>
+
+    <section class="report-filter-card" aria-labelledby="cc-report-filters">
+        <div class="report-filter-heading"><h2 id="cc-report-filters"><i class="bi bi-funnel" aria-hidden="true"></i> Filters</h2></div>
+        <div class="material-filter-grid" @onkeydown="OnKeyDown">
+            <label class="filter-field"><span>Date from</span><input type="date" class="form-control" @bind="_from" /></label>
+            <label class="filter-field"><span>Date to</span><input type="date" class="form-control" @bind="_to" /></label>
+            <label class="filter-field"><span>Warehouse</span>
+                <select class="form-select" @bind="_warehouseText" @bind:after="LoadOptionsAsync">
+                    <option value="">All assigned warehouses</option>
+                    @foreach (var w in _warehouses) { <option value="@w.Id">@w.Code — @w.Name</option> }
+                </select>
+            </label>
+            <label class="filter-field"><span>Batch number</span><input class="form-control" @bind="_batch" /></label>
+            <label class="filter-field"><span>Rack</span><input class="form-control" @bind="_rack" /></label>
+            @if (_tab is "location" or "discrepancy")
+            {
+                <div class="filter-field"><span>Location</span><SearchableReferenceSelect Options="_locationOptions" @bind-Value="_location" Placeholder="Search location" AriaLabel="Search location" /></div>
+                <div class="filter-field"><span>Material code</span><SearchableReferenceSelect Options="_materialOptions" @bind-Value="_material" Placeholder="Search material code" AriaLabel="Search material code" /></div>
+            }
+            @if (_tab == "location")
+            {
+                <label class="filter-field"><span>Count status</span>
+                    <select class="form-select" @bind="_countStatus">
+                        <option value="">All</option><option value="matched">Matched</option><option value="discrepancy">Discrepancy</option><option value="pending">Pending</option>
+                    </select>
+                </label>
+            }
+            <label class="filter-field"><span>Review status</span>
+                <select class="form-select" @bind="_reviewText">
+                    <option value="">All</option><option value="@CycleCountReviewStatus.PendingReview">Pending Review</option><option value="@CycleCountReviewStatus.Reviewed">Reviewed</option>
+                </select>
+            </label>
+            <label class="filter-field"><span>Counted by</span><input class="form-control" @bind="_countedBy" /></label>
+        </div>
+        <div class="mt-2"><button type="button" class="btn btn-primary" @onclick="LoadAsync" disabled="@_loading">Apply</button></div>
+    </section>
+
+    @if (_error is not null) { <div class="alert alert-danger mt-3">@_error</div> }
+
+    <section class="panel mt-3">
+        <h2 class="panel-title">@Tabs.First(t => t.Key == _tab).Title <span class="small text-muted">(@RowCount row(s))</span></h2>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead><tr>@foreach (var h in Headers) { <th>@h</th> }</tr></thead>
+                <tbody>
+                    @foreach (var r in TableRows)
+                    {
+                        <tr>@foreach (var c in r) { <td>@c</td> }</tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (_tab == "user") { <div class="small text-muted">Assigned = all cards of the rack; Completed = cards this user counted; Pending = cards of the rack still not counted.</div> }
+    </section>
+</div>
+
+@code {
+    private static readonly (string Key, string Title)[] Tabs =
+    [
+        ("summary", "Batch Summary"), ("location", "Location-wise"), ("discrepancy", "Inventory Discrepancy"), ("user", "User-wise")
+    ];
+
+    private string _tab = "summary";
+    private DateTime? _from;
+    private DateTime? _to;
+    private string _warehouseText = string.Empty;
+    private string? _batch, _rack, _location, _material, _countStatus, _countedBy;
+    private string _reviewText = string.Empty;
+    private IReadOnlyList<WarehouseOption> _warehouses = [];
+    private bool _loading;
+    private string? _error;
+    private IReadOnlyList<CycleCountBatchSummaryRowDto> _summary = [];
+    private IReadOnlyList<CycleCountRowDto> _rows = [];
+    private IReadOnlyList<CycleCountUserRowDto> _users = [];
+    private IReadOnlyList<SearchableReferenceSelect.ReferenceOption> _locationOptions = [];
+    private IReadOnlyList<SearchableReferenceSelect.ReferenceOption> _materialOptions = [];
+
+    private static string D(DateTimeOffset? v) => v?.ToLocalTime().ToString("dd MMM yyyy HH:mm") ?? "";
+    private static string N(decimal? v) => v?.ToString("0.###") ?? "";
+
+    private string[] Headers => _tab switch
+    {
+        "summary" => ["Batch", "Warehouse", "Scheduled from", "Scheduled to", "Actual start", "Actual end", "Racks", "Locations", "Cards", "Completed", "Pending", "Verified", "Corrected", "Completion %", "Submitted by", "Reviewed by", "Status"],
+        "user" => ["User", "Batch", "Warehouse", "Rack", "Assigned cards", "Completed", "Pending", "Corrected", "Submitted", "Completion %"],
+        "discrepancy" => ["Batch", "Warehouse", "Rack", "Location", "Material", "Description", "Stock type", "PKM", "System qty", "Physical qty", "Difference", "Counted as", "Counted by", "Submitted"],
+        _ => ["Batch", "Rack", "Location", "Material", "Description", "Stock type", "PKM", "System qty", "Physical qty", "Difference", "Count status", "Counted as", "Counted by", "Counted"]
+    };
+
+    private IEnumerable<string[]> TableRows => _tab switch
+    {
+        "summary" => _summary.Select(r => new[] { r.BatchNumber, r.WarehouseName, D(r.ScheduleFrom), D(r.ScheduleTo), D(r.ActualStartAt), D(r.ActualEndAt), r.Racks, r.TotalLocations.ToString(), r.TotalCards.ToString(), r.CompletedCards.ToString(), r.PendingCards.ToString(), r.VerifiedCards.ToString(), r.CorrectedCards.ToString(), r.CompletionPercent.ToString("0.#"), r.SubmittedBy ?? "", r.ReviewedBy ?? "", r.Status.ToString() }),
+        "user" => _users.Select(r => new[] { r.UserName, r.BatchNumber, r.WarehouseName, r.RackCode, r.AssignedCards.ToString(), r.CompletedCards.ToString(), r.PendingCards.ToString(), r.CorrectedCards.ToString(), D(r.SubmittedAt), r.CompletionPercent.ToString("0.#") }),
+        "discrepancy" => _rows.Select(r => new[] { r.BatchNumber, r.WarehouseName, r.RackCode, r.LocationCode, r.MaterialNumber?.ToString() ?? "", r.Description ?? "", r.StockType, r.Pkm ?? "", N(r.SystemQuantityBoxes), N(r.PhysicalQuantityBoxes), N(r.DifferenceBoxes), r.CountedAs, r.CountedByUserName ?? "", D(r.SubmittedAt) }),
+        _ => _rows.Select(r => new[] { r.BatchNumber, r.RackCode, r.LocationCode, r.MaterialNumber?.ToString() ?? "", r.Description ?? "", r.StockType, r.Pkm ?? "", N(r.SystemQuantityBoxes), N(r.PhysicalQuantityBoxes), N(r.DifferenceBoxes), r.CountStatus, r.CountedAs, r.CountedByUserName ?? "", D(r.CountedAt) })
+    };
+
+    private int RowCount => _tab switch { "summary" => _summary.Count, "user" => _users.Count, _ => _rows.Count };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _warehouses = await WarehouseAccess.GetAccessibleWarehousesAsync();
+        await LoadOptionsAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadOptionsAsync()
+    {
+        try
+        {
+            var options = await Mediator.Send(new GetCycleCountFilterOptionsQuery(int.TryParse(_warehouseText, out var w) ? w : null));
+            _locationOptions = options.Locations.Select(l => new SearchableReferenceSelect.ReferenceOption(l.LocationCode, $"Rack {l.RackCode}")).ToList();
+            _materialOptions = options.Materials.Select(m => new SearchableReferenceSelect.ReferenceOption(m.MaterialNumber.ToString(), m.Description)).ToList();
+        }
+        catch (Exception ex) { Logger.LogWarning(ex, "Unable to load the cycle count filter lists"); }
+    }
+
+    private async Task SelectTabAsync(string key) { _tab = key; await LoadAsync(); }
+
+    private async Task OnKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) { if (e.Key == "Enter") await LoadAsync(); }
+
+    private CycleCountReportFilter Filter() => new(
+        _from is { } f ? new DateTimeOffset(DateTime.SpecifyKind(f.Date, DateTimeKind.Local)) : null,
+        _to is { } t ? new DateTimeOffset(DateTime.SpecifyKind(t.Date.AddDays(1).AddTicks(-1), DateTimeKind.Local)) : null,
+        int.TryParse(_warehouseText, out var w) ? w : null, Blank(_batch), Blank(_rack), Blank(_location),
+        long.TryParse(_material, out var m) ? m : null, Blank(_countStatus),
+        Enum.TryParse<CycleCountReviewStatus>(_reviewText, out var rs) ? rs : null, Blank(_countedBy));
+
+    private static string? Blank(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var f = Filter();
+            switch (_tab)
+            {
+                case "summary": _summary = await Mediator.Send(new GetCycleCountBatchSummaryReportQuery(f)); break;
+                case "user": _users = await Mediator.Send(new GetCycleCountUserReportQuery(f)); break;
+                case "discrepancy": _rows = await Mediator.Send(new GetCycleCountLocationReportQuery(f, true)); break;
+                default: _rows = await Mediator.Send(new GetCycleCountLocationReportQuery(f)); break;
+            }
+        }
+        catch (Exception ex) { Logger.LogWarning(ex, "Unable to load the cycle count report"); _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task ExportAsync()
+    {
+        try
+        {
+            var title = Tabs.First(t => t.Key == _tab).Title;
+            var bytes = ExcelService.WriteTable(title, Headers, TableRows.Select(r => (IReadOnlyList<string>)r).ToList());
+            await JsRuntime.InvokeVoidAsync("godrejWms.downloadFile", $"cycle-count-{_tab}-{DateTime.Today:yyyyMMdd}.xlsx",
+                Convert.ToBase64String(bytes), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private Task PrintAsync() => JsRuntime.InvokeVoidAsync("print").AsTask();
+}

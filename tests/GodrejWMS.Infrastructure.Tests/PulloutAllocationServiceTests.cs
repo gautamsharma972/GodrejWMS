@@ -386,7 +386,7 @@ public class PulloutAllocationServiceTests
     }
 
     [Fact]
-    public async Task AllocateAsync_PrefersPartialPalletLocations_WhenRequirementStaysBelowOnePallet()
+    public async Task AllocateAsync_UsesOneLocation_WhenASingleLocationCanCoverTheWholeQuantity()
     {
         var (db, material, positions) = await SeedRackAsync(columns: 3, levels: 1);
         // One full pallet and two partials; the pallet capacity is 40.
@@ -395,13 +395,45 @@ public class PulloutAllocationServiceTests
         db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-03-01"].Id, MfgMonth = 202606, QuantityBoxes = 3 });
         await db.SaveChangesAsync();
 
-        // 6 needed: remaining is always below capacity(40), so both picks come from the partial
-        // locations in column order, and the full pallet A-01-01 is never touched.
+        // 6 needed: neither partial (5, 3) covers it alone but the full pallet does, so the pick is NOT split over A-02-01 + A-03-01.
         var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 6, warehouseId: 1, preview: true);
 
         Assert.Equal(AllocationStatus.Fulfilled, result.Status);
-        Assert.Equal(["A-02-01", "A-03-01"], result.Picks.Select(p => p.LocationCode).ToArray());
-        Assert.Equal([5m, 1m], result.Picks.Select(p => p.QuantityBoxes).ToArray());
+        Assert.Equal(["A-01-01"], result.Picks.Select(p => p.LocationCode).ToArray());
+        Assert.Equal([6m], result.Picks.Select(p => p.QuantityBoxes).ToArray());
+    }
+
+    [Fact]
+    public async Task AllocateAsync_PrefersAPartialPallet_WhenItAloneCoversTheQuantity()
+    {
+        var (db, material, positions) = await SeedRackAsync(columns: 3, levels: 1);
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-01-01"].Id, MfgMonth = 202606, QuantityBoxes = 40 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-02-01"].Id, MfgMonth = 202606, QuantityBoxes = 9 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-03-01"].Id, MfgMonth = 202606, QuantityBoxes = 3 });
+        await db.SaveChangesAsync();
+
+        // 6 needed: A-02-01 (partial, 9) covers it alone, so the full pallet is untouched and nothing is split.
+        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 6, warehouseId: 1, preview: true);
+
+        Assert.Equal(["A-02-01"], result.Picks.Select(p => p.LocationCode).ToArray());
+        Assert.Equal([6m], result.Picks.Select(p => p.QuantityBoxes).ToArray());
+    }
+
+    [Fact]
+    public async Task AllocateAsync_SplitsOnlyWhenNoSingleLocationCoversIt_FifoFirstThenLowerLocations()
+    {
+        var (db, material, positions) = await SeedRackAsync(columns: 3, levels: 1);
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-01-01"].Id, MfgMonth = 202606, QuantityBoxes = 3 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-02-01"].Id, MfgMonth = 202606, QuantityBoxes = 2 });
+        db.StockBatches.Add(new StockBatch { MaterialId = material.Id, PalletPositionId = positions["A-03-01"].Id, MfgMonth = 202609, QuantityBoxes = 40 });
+        await db.SaveChangesAsync();
+
+        // 5 needed: the older PKM has 3 + 2 and no single location of it covers 5, so it is drained first (FIFO) in location order;
+        // the newer PKM's single location that could cover it is not used.
+        var result = await new PulloutAllocationService(db).AllocateAsync(material.Id, 5, warehouseId: 1, preview: true);
+
+        Assert.Equal(["A-01-01", "A-02-01"], result.Picks.Select(p => p.LocationCode).ToArray());
+        Assert.Equal([3m, 2m], result.Picks.Select(p => p.QuantityBoxes).ToArray());
     }
 
     [Fact]

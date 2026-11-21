@@ -1,3 +1,4 @@
+using GodrejWMS.Application.Features.CycleCount;
 using GodrejWMS.Application.Common.Permissions;
 using FluentValidation;
 using GodrejWMS.Application.Common;
@@ -70,6 +71,7 @@ public sealed class SubmitInwardWithoutPkmHandler(
 
     private async Task<InwardResultDto> RunAsync(SubmitInwardWithoutPkmCommand request, List<SubmitInwardWithoutPkmLine> requestLines, CancellationToken cancellationToken)
     {
+        await CycleCountFreeze.EnsureNotFrozenAsync(db, clock, request.WarehouseId, cancellationToken);
         var materialCodes = requestLines.Select(l => l.MaterialCode).ToList();
         var materialsByCode = await db.Materials
             .Where(m => m.IsActive && materialCodes.Contains(m.MaterialNumber))

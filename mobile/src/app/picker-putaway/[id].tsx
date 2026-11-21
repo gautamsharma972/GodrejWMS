@@ -231,7 +231,7 @@ export default function PickerPutawayDetailScreen() {
             contentContainerStyle={{ paddingBottom: 24 }}
             ListFooterComponent={
               <>
-              {canConfirm && detail?.postedAt && (
+              {canConfirm && (
                 <SupervisorPutawayReview token={token} detail={detail} locationOptions={locationOptions} onChanged={load} />
               )}
               {rows.some((r) => !r.putaway.isExcludedLocked) && !canConfirm ? (
@@ -246,7 +246,7 @@ export default function PickerPutawayDetailScreen() {
                 <View style={styles.confirmFooter}>
                   {confirmError && <Text style={styles.confirmError}>{confirmError}</Text>}
                   <Button
-                    title="Confirm put-away"
+                    title="Unloading Completed"
                     size="lg"
                     loading={isConfirmingGrn}
                     disabled={rows.some((r) => !r.done)}
@@ -268,7 +268,7 @@ export default function PickerPutawayDetailScreen() {
                   />
                   <Text style={styles.confirmHint}>
                     {rows.some((r) => !r.done)
-                      ? "Submit every location first, then confirm. Until you confirm you can still change a location, its PKM or GIT / NO RACK."
+                      ? "Submit every location first, then press Unloading Completed. Until you do you can still change a location, its PKM or GIT / NO RACK."
                       : "Until you confirm you can still change any location, its PKM or GIT / NO RACK."}
                   </Text>
                 </View>
@@ -278,7 +278,7 @@ export default function PickerPutawayDetailScreen() {
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={[styles.row, item.done && styles.rowDone]}
-                disabled={item.putaway.isExcludedLocked || (!detail?.postedAt && item.putaway.isConfirmed && !item.putaway.excludedLocation)}
+                disabled={item.putaway.isExcludedLocked || (!detail?.postedAt && item.putaway.isConfirmed && !item.putaway.isPickerPlaced && !item.putaway.excludedLocation)}
                 onPress={() => selectRow(item)}
               >
                 <View style={[styles.locationIcon, item.done && styles.locationIconDone]}>

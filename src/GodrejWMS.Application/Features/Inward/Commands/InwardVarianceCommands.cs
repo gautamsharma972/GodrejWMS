@@ -66,13 +66,33 @@ public sealed class RecordInwardVarianceHandler(
             throw new InvalidOperationException("Assign the PKM before recording damage, shortage or mismatch.");
         }
 
-        if (request.QuantityBoxes > putaway.QuantityBoxes)
+        // Boxes the picker did not put away (the row was entered below what the system allocated) are not in stock, but they are still part of the
+        // inbound and can be recorded - as shortage, damage or mismatch - so the GRN can be reconciled and confirmed. They are used first.
+        var recordedOnRow = await db.InwardLineVariances.AsNoTracking()
+            .Where(x => x.InwardPutawayId == putaway.Id && x.Type != InwardVarianceType.Excess)
+            .SumAsync(x => (decimal?)x.QuantityBoxes, cancellationToken) ?? 0m;
+        var notPutAway = Math.Max(0m, (putaway.SuggestedQuantityBoxes ?? putaway.QuantityBoxes) - putaway.QuantityBoxes - recordedOnRow);
+        if (request.QuantityBoxes > putaway.QuantityBoxes + notPutAway)
         {
             throw new InvalidOperationException(
-                $"Only {putaway.QuantityBoxes:0.###} box(es) are put away at {putaway.PalletPosition.LocationCode}; {request.QuantityBoxes:0.###} cannot be recorded.");
+                $"Only {putaway.QuantityBoxes + notPutAway:0.###} box(es) can be recorded against {putaway.PalletPosition.LocationCode} ({putaway.QuantityBoxes:0.###} put away"
+                + (notPutAway > 0 ? $" and {notPutAway:0.###} not put away" : "") + $"); {request.QuantityBoxes:0.###} cannot be recorded.");
         }
 
+        var fromRemainder = Math.Min(notPutAway, request.QuantityBoxes);
+        var fromStock = request.QuantityBoxes - fromRemainder;
+
         var position = putaway.PalletPosition;
+        if (transaction.PostedAt is null && !putaway.IsConfirmed)
+        {
+            if (!putaway.IsPickerPlaced)
+            {
+                throw new InvalidOperationException($"Submit {position.LocationCode} first: its stock reaches inventory when the location is submitted, and only then can damage, shortage or mismatch be recorded against it.");
+            }
+
+            // Submitted before locations were posted on submit: its stock is posted now, so the record has stock to work on.
+            await InwardPutawayConfirmationLogic.ConfirmAsync(db, posting, line, putaway, clock, currentUser, cancellationToken);
+        }
 
         // Damage and Mismatch boxes may be put in another location (default: they stay in the put-away's own cell).
         PalletPosition? destination = null;
@@ -105,7 +125,11 @@ public sealed class RecordInwardVarianceHandler(
         }
 
         var landing = destination ?? position;
-        var changes = new List<StockChange> { new(line.MaterialId, mfgMonth, LocationSubtypeIds.Good, position, -request.QuantityBoxes) };
+        var changes = new List<StockChange>();
+        if (fromStock > 0)
+        {
+            changes.Add(new StockChange(line.MaterialId, mfgMonth, LocationSubtypeIds.Good, position, -fromStock));
+        }
         if (request.Type == InwardVarianceType.Damage)
         {
             // The damaged boxes are Damage stock in inventory - in the same cell, or in the location the supervisor chose.
@@ -117,16 +141,21 @@ public sealed class RecordInwardVarianceHandler(
             changes.Add(new StockChange(actualMaterial!.Id, actualMfgMonth, LocationSubtypeIds.Good, landing, request.QuantityBoxes));
         }
 
-        await posting.ApplyAsync(
-            new StockPostingContext(
-                request.Type == InwardVarianceType.Damage ? StockLedgerEntryTypes.DamageReclass : StockLedgerEntryTypes.VarianceWriteOff,
-                InwardVariances.LedgerReferenceType, transaction.ReferenceNumber, $"{request.Type} recorded: {request.Remarks.Trim()}"),
-            changes, cancellationToken);
+        if (changes.Count > 0)
+        {
+            await posting.ApplyAsync(
+                new StockPostingContext(
+                    request.Type == InwardVarianceType.Damage ? StockLedgerEntryTypes.DamageReclass : StockLedgerEntryTypes.VarianceWriteOff,
+                    InwardVariances.LedgerReferenceType, transaction.ReferenceNumber, $"{request.Type} recorded: {request.Remarks.Trim()}"),
+                changes, cancellationToken);
+        }
 
         // The row shrinks; an empty row is removed. Recording is NOT a submit: the put-away still has to be placed (by the picker, or by the
         // supervisor in the picker's absence) before the GRN can be confirmed, so the row stays in the picker's list.
-        putaway.QuantityBoxes -= request.QuantityBoxes;
-        line.AllocatedQuantityBoxes -= request.QuantityBoxes;
+        // The row remembers what the system allocated, so the supervisor's Confirm can tell recorded boxes from a short put-away.
+        putaway.SuggestedQuantityBoxes ??= putaway.QuantityBoxes;
+        putaway.QuantityBoxes -= fromStock;
+        line.AllocatedQuantityBoxes -= fromStock;
         putaway.RowVersion++;
         if (putaway.QuantityBoxes <= 0)
         {
@@ -147,6 +176,7 @@ public sealed class RecordInwardVarianceHandler(
             ActualMaterialId = actualMaterial?.Id,
             ActualMfgMonth = actualMaterial is null ? null : actualMfgMonth,
             QuantityBoxes = request.QuantityBoxes,
+            FromRemainderBoxes = fromRemainder,
             Remarks = request.Remarks.Trim(),
             CreatedAt = clock.UtcNow,
             CreatedByUserId = currentUser.UserId,
@@ -195,29 +225,38 @@ public sealed class RemoveInwardVarianceHandler(
                 break;
             case InwardVarianceType.Damage:
                 changes.Add(new StockChange(variance.MaterialId, variance.MfgMonth, LocationSubtypeIds.Damage, variance.DestinationPalletPosition ?? variance.PalletPosition, -variance.QuantityBoxes));
-                changes.Add(new StockChange(variance.MaterialId, variance.MfgMonth, LocationSubtypeIds.Good, variance.PalletPosition, variance.QuantityBoxes));
                 break;
             case InwardVarianceType.Mismatch when variance.ActualMaterialId is { } actualId && variance.ActualMfgMonth is { } actualMonth:
                 changes.Add(new StockChange(actualId, actualMonth, LocationSubtypeIds.Good, variance.DestinationPalletPosition ?? variance.PalletPosition, -variance.QuantityBoxes));
-                changes.Add(new StockChange(variance.MaterialId, variance.MfgMonth, LocationSubtypeIds.Good, variance.PalletPosition, variance.QuantityBoxes));
-                break;
-            default:
-                changes.Add(new StockChange(variance.MaterialId, variance.MfgMonth, LocationSubtypeIds.Good, variance.PalletPosition, variance.QuantityBoxes));
                 break;
         }
 
-        await posting.ApplyAsync(
-            new StockPostingContext(StockLedgerEntryTypes.Reversal, InwardVariances.LedgerReferenceType, transaction.ReferenceNumber, $"{variance.Type} record removed"),
-            changes, cancellationToken);
+        // Only the boxes that came out of the row's stock go back into it; boxes the picker never put away had no stock.
+        var stockPart = variance.Type == InwardVarianceType.Excess ? 0m : variance.QuantityBoxes - variance.FromRemainderBoxes;
+        if (stockPart > 0)
+        {
+            changes.Add(new StockChange(variance.MaterialId, variance.MfgMonth, LocationSubtypeIds.Good, variance.PalletPosition, stockPart));
+        }
+
+        if (changes.Count > 0)
+        {
+            await posting.ApplyAsync(
+                new StockPostingContext(StockLedgerEntryTypes.Reversal, InwardVariances.LedgerReferenceType, transaction.ReferenceNumber, $"{variance.Type} record removed"),
+                changes, cancellationToken);
+        }
 
         if (variance.Type != InwardVarianceType.Excess)
         {
             var line = transaction.Lines.First(l => l.Id == variance.InwardTransactionLineId);
             var row = line.Putaways.FirstOrDefault(p => p.Id == variance.InwardPutawayId)
                 ?? line.Putaways.FirstOrDefault(p => p.PalletPositionId == variance.PalletPositionId && p.ExcludedLocation == null);
-            if (row is not null)
+            if (stockPart <= 0)
             {
-                row.QuantityBoxes += variance.QuantityBoxes;
+                // Nothing came out of the row for this record, so there is nothing to give back.
+            }
+            else if (row is not null)
+            {
+                row.QuantityBoxes += stockPart;
                 row.RowVersion++;
             }
             else
@@ -225,7 +264,7 @@ public sealed class RemoveInwardVarianceHandler(
                 line.Putaways.Add(new InwardPutaway
                 {
                     PalletPositionId = variance.PalletPositionId,
-                    QuantityBoxes = variance.QuantityBoxes,
+                    QuantityBoxes = stockPart,
                     AllocationReason = "Restored when a record was removed",
                     IsConfirmed = true,
                     ConfirmedAt = clock.UtcNow,
@@ -234,7 +273,7 @@ public sealed class RemoveInwardVarianceHandler(
                 });
             }
 
-            line.AllocatedQuantityBoxes += variance.QuantityBoxes;
+            line.AllocatedQuantityBoxes += stockPart;
         }
 
         db.InwardLineVariances.Remove(variance);
@@ -377,17 +416,13 @@ public sealed class RecordExcessMaterialHandler(
 
 internal static class InwardVarianceRules
 {
-    /// <summary>Records can be added or removed only on a posted, non-rejected GRN whose put-away the supervisor has not confirmed (locked) yet.</summary>
+    /// <summary>Records can be added or removed only on a non-rejected GRN whose put-away the supervisor has not confirmed (locked) yet. For a GRN that
+    /// was not posted on upload (Inward without PKM) a record needs the location to be submitted first - that is what puts its stock in inventory.</summary>
     public static void EnsureOpenForReview(InwardTransaction transaction)
     {
         if (transaction.IsRejected)
         {
             throw new InvalidOperationException("This GRN has been rejected.");
-        }
-
-        if (transaction.PostedAt is null)
-        {
-            throw new InvalidOperationException("This GRN has not been posted to inventory, so damage, shortage, mismatch and excess cannot be recorded against it.");
         }
 
         // PICK-RESERVED rows are closed (locked) by a pullout, not by a confirmation: only the other rows say whether the GRN is confirmed.

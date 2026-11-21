@@ -81,13 +81,18 @@ public sealed class ApproveInventoryAdjustmentHandler(
         }
 
         StockBatch? physicalBatch = null;
-        if (line.PhysicalMaterialId.HasValue)
+        // A different SKU and / or PKM than the system record: the system batch is replaced by what was physically found.
+        var isReplacement = line.PhysicalMaterialId.HasValue || line.PhysicalMfgMonth.HasValue || line.PhysicalStockSubtypeId.HasValue;
+        var foundMaterialId = line.PhysicalMaterialId ?? line.MaterialId;
+        var foundMfgMonth = line.PhysicalMfgMonth ?? line.MfgMonth;
+        var foundSubtypeId = line.PhysicalStockSubtypeId ?? line.StockSubtypeId;
+        if (isReplacement)
         {
             physicalBatch = await db.StockBatches.FirstOrDefaultAsync(b =>
-                b.MaterialId == line.PhysicalMaterialId.Value &&
+                b.MaterialId == foundMaterialId &&
                 b.PalletPositionId == line.PalletPositionId &&
-                b.MfgMonth == line.MfgMonth &&
-                b.StockSubtypeId == line.StockSubtypeId, cancellationToken);
+                b.MfgMonth == foundMfgMonth &&
+                b.StockSubtypeId == foundSubtypeId, cancellationToken);
 
             var physicalBatchChanged = line.PhysicalStockBatchIdAtCount.HasValue
                 ? physicalBatch is null ||
@@ -122,7 +127,7 @@ public sealed class ApproveInventoryAdjustmentHandler(
         var ledgerPosition = await db.PalletPositions.AsNoTracking().Include(p => p.Rack)
             .FirstAsync(p => p.Id == line.PalletPositionId, cancellationToken);
         var postingNumber = $"PST-{clock.UtcNow:yyyyMMdd-HHmmssfff}-{Guid.NewGuid().ToString("N")[..8]}";
-        void WriteLedger(int materialId, int stockSubtypeId, decimal delta, decimal balanceAfter)
+        void WriteLedger(int materialId, int mfgMonth, int stockSubtypeId, decimal delta, decimal balanceAfter)
         {
             if (delta == 0)
             {
@@ -135,7 +140,7 @@ public sealed class ApproveInventoryAdjustmentHandler(
                 EntryType = StockLedgerEntryTypes.Adjustment,
                 WarehouseId = ledgerPosition.Rack.WarehouseId,
                 MaterialId = materialId,
-                MfgMonth = line.MfgMonth,
+                MfgMonth = mfgMonth,
                 StockSubtypeId = stockSubtypeId,
                 PalletPositionId = ledgerPosition.Id,
                 QuantityBoxes = delta,
@@ -149,17 +154,17 @@ public sealed class ApproveInventoryAdjustmentHandler(
             });
         }
 
-        if (line.PhysicalMaterialId.HasValue)
+        if (isReplacement)
         {
-            WriteLedger(batch.MaterialId, batch.StockSubtypeId, -batch.QuantityBoxes, 0);
-            WriteLedger(line.PhysicalMaterialId.Value, line.StockSubtypeId, line.CountedQuantity - (physicalBatch?.QuantityBoxes ?? 0), line.CountedQuantity);
+            WriteLedger(batch.MaterialId, batch.MfgMonth, batch.StockSubtypeId, -batch.QuantityBoxes, 0);
+            WriteLedger(foundMaterialId, foundMfgMonth, foundSubtypeId, line.CountedQuantity - (physicalBatch?.QuantityBoxes ?? 0), line.CountedQuantity);
         }
         else
         {
-            WriteLedger(batch.MaterialId, batch.StockSubtypeId, line.CountedQuantity - batch.QuantityBoxes, line.CountedQuantity);
+            WriteLedger(batch.MaterialId, batch.MfgMonth, batch.StockSubtypeId, line.CountedQuantity - batch.QuantityBoxes, line.CountedQuantity);
         }
 
-        if (line.PhysicalMaterialId.HasValue)
+        if (isReplacement)
         {
             // The system batch is wrong for this position. Approval removes it and records the
             // physically verified SKU at the same location, PKM and stock subtype.
@@ -172,10 +177,10 @@ public sealed class ApproveInventoryAdjustmentHandler(
             {
                 db.StockBatches.Add(new StockBatch
                 {
-                    MaterialId = line.PhysicalMaterialId.Value,
+                    MaterialId = foundMaterialId,
                     PalletPositionId = line.PalletPositionId,
-                    MfgMonth = line.MfgMonth,
-                    StockSubtypeId = line.StockSubtypeId,
+                    MfgMonth = foundMfgMonth,
+                    StockSubtypeId = foundSubtypeId,
                     QuantityBoxes = line.CountedQuantity,
                     RowVersion = 1
                 });

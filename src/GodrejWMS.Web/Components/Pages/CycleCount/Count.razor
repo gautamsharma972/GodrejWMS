@@ -1,0 +1,452 @@
+@page "/cycle-count/count"
+@attribute [Authorize(Policy = "Permission:" + GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.Perform)]
+@using GodrejWMS.Application.Features.CycleCount
+@using GodrejWMS.Application.Features.CycleCount.Commands
+@using GodrejWMS.Application.Features.CycleCount.Queries
+@using GodrejWMS.Application.Features.Materials.Dtos
+@using GodrejWMS.Application.Features.Materials.Queries
+@using GodrejWMS.Domain.Entities
+@inject IMediator Mediator
+@inject GodrejWMS.Application.Common.Permissions.IPermissionService PermissionService
+@inject ILogger<Count> Logger
+
+<PageTitle>Cycle Count - Godrej WMS</PageTitle>
+
+<div class="page-shell">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Cycle Count</div>
+            <h1>Count stock</h1>
+            <p class="page-kicker">Pick a batch and a rack, then go location by location: press OK when the physical stock matches the system, otherwise open the card and enter what you found. Stock changes only when the rack is submitted.</p>
+        </div>
+    </div>
+
+    @if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+    @if (_message is not null) { <div class="alert alert-success" role="status">@_message</div> }
+
+    @if (_batch is null)
+    {
+        <section class="panel" aria-labelledby="cc-batches-heading">
+            <h2 id="cc-batches-heading" class="panel-title">Active cycle counts</h2>
+            @if (_batches is null)
+            {
+                <div class="loading-panel"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Loading...</div>
+            }
+            else if (_batches.Count == 0)
+            {
+                <div class="empty-state"><i class="bi bi-clipboard2-check" aria-hidden="true"></i><strong>No active cycle count for your warehouses</strong></div>
+            }
+            else
+            {
+                <div class="row g-3">
+                    @foreach (var b in _batches)
+                    {
+                        <div class="col-md-6 col-xl-4">
+                            <button type="button" class="card w-100 text-start p-3" @onclick="() => OpenBatchAsync(b)">
+                                <div class="d-flex justify-content-between"><strong>@b.BatchNumber</strong><span class="status-pill info">@b.Status</span></div>
+                                <div class="small text-muted">@b.WarehouseName &middot; @b.ScheduleFrom.ToLocalTime().ToString("dd MMM HH:mm") &ndash; @b.ScheduleTo.ToLocalTime().ToString("dd MMM HH:mm")</div>
+                                <div class="progress my-2" style="height:.7rem" role="progressbar" aria-valuenow="@b.CompletionPercent" aria-valuemin="0" aria-valuemax="100">
+                                    <div class="progress-bar bg-success" style="width:@(b.CompletionPercent.ToString(System.Globalization.CultureInfo.InvariantCulture))%"></div>
+                                </div>
+                                <div class="small">@b.CompletionPercent.ToString("0.#")% &middot; @b.PendingCards pending card(s) &middot; racks: @string.Join(", ", b.Racks.Where(r => r.Status == CycleCountRackStatus.Open).Select(r => r.RackCode))</div>
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    }
+    else if (_rack is null)
+    {
+        <section class="panel">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h2 class="panel-title mb-0">@_batch.BatchNumber &middot; choose a rack</h2>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="BackToBatches">Back</button>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                @foreach (var r in _batch.Racks)
+                {
+                    <button type="button" class="btn @(r.Status == CycleCountRackStatus.Open ? "btn-outline-primary" : "btn-outline-secondary")" disabled="@(r.Status != CycleCountRackStatus.Open)" @onclick="() => OpenRackAsync(r.RackCode)">
+                        Rack @r.RackCode <span class="small">(@r.CompletedCards/@r.TotalCards)</span>
+                        @if (!string.IsNullOrEmpty(r.FirstLocation)) { <span class="small d-block text-muted">@r.FirstLocation &ndash; @r.LastLocation</span> }
+                        @if (r.Status != CycleCountRackStatus.Open) { <span class="small"> - @r.Status</span> }
+                    </button>
+                }
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="panel mb-3">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h2 class="panel-title mb-0">@_batch.BatchNumber &middot; Rack @_rack</h2>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="BackToRacks">Change rack</button>
+            </div>
+            <div class="row g-2 align-items-end mt-1">
+                <div class="col-md-3">
+                    <label class="form-label">From Location</label>
+                    <SearchableReferenceSelect Options="LocationOptions" @bind-Value="_from" Placeholder="First location" AriaLabel="Search from location" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">To Location</label>
+                    <SearchableReferenceSelect Options="LocationOptions" @bind-Value="_to" Placeholder="Last location" AriaLabel="Search to location" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Stock type</label>
+                    <select class="form-select" @bind="_stockType" @bind:after="LoadCardsAsync">
+                        <option value="0">Both (Good + Damage)</option>
+                        <option value="1">Good</option>
+                        <option value="2">Damage</option>
+                    </select>
+                </div>
+                <div class="col-md-2 d-grid"><button type="button" class="btn btn-primary" @onclick="LoadCardsAsync">Show</button></div>
+            </div>
+        </section>
+
+        @if (_cards is not null)
+        {
+            <div class="d-flex align-items-center gap-3 mb-2 flex-wrap">
+                <div class="progress flex-grow-1" style="height:.9rem" role="progressbar" aria-valuenow="@_cards.CompletionPercent" aria-valuemin="0" aria-valuemax="100">
+                    <div class="progress-bar bg-success" style="width:@(_cards.CompletionPercent.ToString(System.Globalization.CultureInfo.InvariantCulture))%"></div>
+                </div>
+                <span class="small">@_cards.CompletedCards of @_cards.TotalCards counted (@_cards.CompletionPercent.ToString("0.#")%)</span>
+                <PermissionAuthorize Permission="@GodrejWMS.Application.Common.Permissions.PermissionKeys.CycleCount.Submit">
+                    <button type="button" class="btn btn-success" @onclick="OpenSubmitAsync" disabled="@_busy"><i class="bi bi-send-check" aria-hidden="true"></i> Submit rack</button>
+                </PermissionAuthorize>
+            </div>
+
+            <div class="row g-3">
+                @foreach (var c in _cards.Cards)
+                {
+                    <div class="col-md-6 col-xl-4" @key="c.Id">
+                        <div class="card h-100 @(c.IsCompleted ? "border-success bg-success-subtle" : "")">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between">
+                                    <strong>@c.LocationCode</strong>
+                                    @if (c.IsCompleted) { <span class="status-pill success">@(c.IsDiscrepancy ? "Corrected" : "OK")</span> }
+                                    @if (c.IsExtra) { <span class="status-pill warning ms-1">Found</span> }
+                                    @if (c.StockType == "Damage") { <span class="status-pill danger ms-1">Damage</span> }
+                                </div>
+                                @if (c.SystemMaterialNumber is null)
+                                {
+                                    <div class="text-muted">Empty in the system</div>
+                                }
+                                else
+                                {
+                                    <div><strong>@c.SystemMaterialNumber</strong> <span class="small text-muted">@c.SystemDescription</span></div>
+                                    <div class="small">PKM @c.SystemPkm &middot; System qty <strong>@c.SystemQuantityBoxes.ToString("0.###")</strong></div>
+                                }
+                                @if (c.IsDiscrepancy)
+                                {
+                                    <div class="small mt-1">Physical: @(c.PhysicalMaterialNumber?.ToString() ?? "-") @c.PhysicalPkm &times; <strong>@c.PhysicalQuantityBoxes?.ToString("0.###")</strong>
+                                        (<span class="@(c.DifferenceBoxes < 0 ? "text-danger" : "text-success")">@(c.DifferenceBoxes > 0 ? "+" : "")@c.DifferenceBoxes?.ToString("0.###")</span>)</div>
+                                }
+                            </div>
+                            <div class="card-footer d-flex gap-2">
+                                @if (!c.IsExtra)
+                                {
+                                    <button type="button" class="btn btn-success flex-grow-1" @onclick="() => OkAsync(c)" disabled="@_busy">OK</button>
+                                }
+                                <button type="button" class="btn btn-outline-primary @(c.IsExtra ? "flex-grow-1" : "")" @onclick="() => OpenEdit(c)" disabled="@_busy">@(c.IsCompleted ? "Edit" : "Correct")</button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="mt-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="OpenFound"><i class="bi bi-plus-lg" aria-hidden="true"></i> Add stock found in a location</button>
+            </div>
+        }
+    }
+
+    @if (_edit is not null)
+    {
+        <div class="slide-over-backdrop" role="dialog" aria-modal="true" aria-label="Physical count">
+            <div class="slide-over-panel p-3">
+                <h2 class="panel-title">@(_edit.Id == 0 ? "Stock found" : $"Physical count \u00b7 {_edit.LocationCode}")</h2>
+                @if (_edit.SystemMaterialNumber is not null)
+                {
+                    <div class="small text-muted mb-2">System: @_edit.SystemMaterialNumber @_edit.SystemPkm &times; @_edit.SystemQuantity.ToString("0.###")</div>
+                }
+                <div class="mb-2">
+                    <label class="form-label">Location</label>
+                    @if (_edit.Id == 0)
+                    {
+                        <SearchableReferenceSelect Options="LocationOptions" Value="@_edit.LocationCode" ValueChanged="OnFoundLocationChanged" Placeholder="Search location" AriaLabel="Search the location of the stock found" />
+                    }
+                    else
+                    {
+                        <input class="form-control" value="@_edit.LocationCode" disabled />
+                    }
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Material code</label>
+                    <SearchableMaterialSelect Options="_materials" @bind-Value="_edit.MaterialId" Placeholder="Search material code or description" />
+                    @if (SelectedMaterial is { } sm) { <div class="small text-muted">@sm.Description</div> }
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Stock type</label>
+                    <select class="form-select" @bind="_edit.StockSubtype">
+                        <option value="1">Good</option>
+                        <option value="2">Damage</option>
+                    </select>
+                </div>
+                <div class="row g-2 mb-2">
+                    <fieldset class="col-6">
+                        <legend class="form-label fs-6">PKM</legend>
+                        <div class="d-flex gap-2">
+                            <select class="form-select" title="PKM year" aria-label="PKM year" @bind="_edit.PkmYear">
+                                <option value="0">Year</option>
+                                @foreach (var year in YearOptions(_edit.PkmYear)) { <option value="@year">@year</option> }
+                            </select>
+                            <select class="form-select" title="PKM month" aria-label="PKM month" @bind="_edit.PkmMonth">
+                                <option value="0">Month</option>
+                                @for (var m = 1; m <= 12; m++) { <option value="@m">@MonthLabels[m - 1]</option> }
+                            </select>
+                        </div>
+                    </fieldset>
+                    <div class="col-6">
+                        <label class="form-label">Physical quantity (boxes)</label>
+                        <input type="number" class="form-control" min="0" step="1" @bind="_edit.Quantity" @bind:event="oninput" />
+                    </div>
+                </div>
+                @if (_editError is not null) { <div class="alert alert-danger">@_editError</div> }
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-primary" @onclick="SaveEditAsync" disabled="@_busy">OK</button>
+                    <button type="button" class="btn btn-outline-secondary" @onclick="() => _edit = null" disabled="@_busy">Cancel</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_summary is not null)
+    {
+        <div class="slide-over-backdrop" role="dialog" aria-modal="true" aria-label="Submit cycle count">
+            <div class="slide-over-panel p-3">
+                <h2 class="panel-title">Submit rack @_summary.RackCode</h2>
+                <table class="table table-sm">
+                    <tbody>
+                        <tr><th>Batch</th><td>@_summary.BatchNumber</td></tr>
+                        <tr><th>Warehouse</th><td>@_summary.WarehouseName</td></tr>
+                        <tr><th>Total count cards</th><td>@_summary.TotalCards</td></tr>
+                        <tr><th>Verified (OK)</th><td>@_summary.VerifiedCards</td></tr>
+                        <tr><th>Corrected</th><td>@_summary.CorrectedCards</td></tr>
+                        <tr><th>Net quantity difference</th><td>@_summary.TotalDifferenceBoxes.ToString("+0.###;-0.###;0") (@_summary.TotalAbsoluteDifferenceBoxes.ToString("0.###") boxes in total)</td></tr>
+                        <tr><th>Pending</th><td>@_summary.PendingCards</td></tr>
+                        @if (_summary.UncountedDamageCards > 0)
+                        {
+                            <tr><th>Damage cards not counted</th><td>@_summary.UncountedDamageCards <span class="small text-muted">(damaged stock stays unchanged)</span></td></tr>
+                        }
+                    </tbody>
+                </table>
+                @if (_summary.Blocker is not null) { <div class="alert alert-warning">@_summary.Blocker</div> }
+                else { <div class="alert alert-info">Submitting updates the system stock to what you counted. It cannot be changed afterwards.</div> }
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-success" @onclick="SubmitAsync" disabled="@(_busy || !_summary.CanSubmit)">Confirm and submit</button>
+                    <button type="button" class="btn btn-outline-secondary" @onclick="() => _summary = null" disabled="@_busy">Cancel</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private sealed class EditModel
+    {
+        public int Id;
+        public int PalletPositionId;
+        public string LocationCode = string.Empty;
+        public long? SystemMaterialNumber;
+        public string? SystemPkm;
+        public decimal SystemQuantity;
+        public int MaterialId;
+        public int PkmYear;
+        public int PkmMonth;
+        public decimal Quantity;
+        public int StockSubtype = 1;
+    }
+
+    private IReadOnlyList<CycleCountBatchDto>? _batches;
+    private CycleCountBatchDto? _batch;
+    private string? _rack;
+    private List<CycleCountLocationDto> _locations = [];
+    private string _from = string.Empty;
+    private string _to = string.Empty;
+    private int _stockType; // 0 = Both (default), 1 = Good, 2 = Damage
+    private CycleCountCardsDto? _cards;
+    private EditModel? _edit;
+    private string? _editError;
+    private CycleCountSubmitSummaryDto? _summary;
+    private IReadOnlyList<MaterialDto> _materials = [];
+    private bool _busy;
+    private string? _error;
+    private string? _message;
+
+    private static readonly string[] MonthLabels = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+    private static IEnumerable<int> YearOptions(int selected)
+    {
+        var years = Enumerable.Range(DateTime.Today.Year - 3, 5).ToList();
+        if (selected > 0 && !years.Contains(selected)) years.Add(selected);
+        return years.OrderBy(y => y);
+    }
+
+    /// <summary>"SEP|2026" to (2026, 9); (0, 0) when there is no PKM.</summary>
+    private static (int Year, int Month) PkmOf(string? text)
+    {
+        if (text is null) return (0, 0);
+        var parts = text.Split('|');
+        var month = parts.Length == 2 ? Array.IndexOf(MonthLabels, parts[0].Trim().ToUpperInvariant()) + 1 : 0;
+        return month > 0 && int.TryParse(parts[1], out var year) ? (year, month) : (0, 0);
+    }
+
+    private static string PkmText(EditModel e) => e.PkmYear > 0 && e.PkmMonth > 0 ? $"{MonthLabels[e.PkmMonth - 1]}|{e.PkmYear}" : string.Empty;
+
+    private IReadOnlyList<SearchableReferenceSelect.ReferenceOption> LocationOptions =>
+        _locations.Select(l => new SearchableReferenceSelect.ReferenceOption(l.LocationCode, l.PendingCards > 0 ? $"{l.PendingCards} pending" : null)).ToList();
+
+    private void OnFoundLocationChanged(string code)
+    {
+        if (_edit is null) return;
+        _edit.LocationCode = code;
+        var match = _locations.FirstOrDefault(l => string.Equals(l.LocationCode, code?.Trim(), StringComparison.OrdinalIgnoreCase));
+        _edit.PalletPositionId = match?.PalletPositionId ?? 0;
+    }
+
+    private MaterialDto? SelectedMaterial => _edit is { MaterialId: > 0 } ? _materials.FirstOrDefault(m => m.Id == _edit.MaterialId) : null;
+
+    protected override Task OnInitializedAsync() => LoadBatchesAsync();
+
+    private async Task LoadBatchesAsync()
+    {
+        try { _batches = await Mediator.Send(new GetMyCycleCountBatchesQuery()); }
+        catch (Exception ex) { Logger.LogWarning(ex, "Unable to load cycle counts"); _error = ex.Message; }
+    }
+
+    private async Task OpenBatchAsync(CycleCountBatchDto batch)
+    {
+        _error = null;
+        _message = null;
+        try
+        {
+            _batch = await Mediator.Send(new StartCycleCountCommand(batch.Id)); // generates the count cards the first time
+            if (_materials.Count == 0) _materials = (await Mediator.Send(new GetMaterialsQuery(IsActive: true, PageSize: 5000))).Items;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void BackToBatches() { _batch = null; _rack = null; _cards = null; }
+
+    private void BackToRacks() { _rack = null; _cards = null; }
+
+    private async Task OpenRackAsync(string rack)
+    {
+        _error = null;
+        _rack = rack;
+        _from = _to = string.Empty;
+        _stockType = 0;
+        _cards = null;
+        try
+        {
+            _locations = (await Mediator.Send(new GetCycleCountLocationsQuery(_batch!.Id, rack))).ToList();
+            await LoadCardsAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task LoadCardsAsync()
+    {
+        _error = null;
+        try
+        {
+            _cards = await Mediator.Send(new GetCycleCountCardsQuery(_batch!.Id, _rack!, string.IsNullOrEmpty(_from) ? null : _from, string.IsNullOrEmpty(_to) ? null : _to, _stockType == 0 ? null : _stockType));
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task OkAsync(CycleCountCardDto card)
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try { await Mediator.Send(new VerifyCycleCountCardCommand(card.Id)); await LoadCardsAsync(); }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private void OpenEdit(CycleCountCardDto c)
+    {
+        _editError = null;
+        _edit = new EditModel
+        {
+            Id = c.Id, PalletPositionId = c.PalletPositionId, LocationCode = c.LocationCode,
+            SystemMaterialNumber = c.SystemMaterialNumber, SystemPkm = c.SystemPkm, SystemQuantity = c.SystemQuantityBoxes,
+            MaterialId = c.PhysicalMaterialId ?? c.SystemMaterialId ?? 0,
+            PkmYear = PkmOf(c.PhysicalPkm ?? c.SystemPkm).Year,
+            PkmMonth = PkmOf(c.PhysicalPkm ?? c.SystemPkm).Month,
+            Quantity = c.PhysicalQuantityBoxes ?? c.SystemQuantityBoxes,
+            StockSubtype = c.PhysicalStockSubtypeId ?? c.SystemStockSubtypeId
+        };
+    }
+
+    private void OpenFound()
+    {
+        _editError = null;
+        var first = _cards?.Cards.FirstOrDefault();
+        _edit = new EditModel { Id = 0, PalletPositionId = 0, LocationCode = string.Empty };
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (_busy || _edit is null) return;
+        _busy = true;
+        _editError = null;
+        try
+        {
+            var number = SelectedMaterial?.MaterialNumber;
+            if (_edit.Id == 0)
+            {
+                if (_edit.PalletPositionId == 0) throw new InvalidOperationException("Select the location where the stock was found.");
+                await Mediator.Send(new AddCycleCountFoundStockCommand(_batch!.Id, _edit.PalletPositionId, number ?? 0, PkmText(_edit), _edit.Quantity, _edit.StockSubtype));
+            }
+            else
+            {
+                await Mediator.Send(new CorrectCycleCountCardCommand(_edit.Id, number, PkmText(_edit) is { Length: > 0 } pt ? pt : null, _edit.Quantity, _edit.StockSubtype));
+            }
+
+            _edit = null;
+            await LoadCardsAsync();
+        }
+        catch (GodrejWMS.Application.Common.Exceptions.ValidationException ex) { _editError = string.Join(" ", ex.Errors.SelectMany(e => e.Value)); }
+        catch (Exception ex) { _editError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task OpenSubmitAsync()
+    {
+        _error = null;
+        try { _summary = await Mediator.Send(new GetCycleCountSubmitSummaryQuery(_batch!.Id, _rack!)); }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var result = await Mediator.Send(new SubmitCycleCountRackCommand(_batch!.Id, _rack!));
+            _message = result.AlreadySubmitted
+                ? $"Rack {result.RackCode} of {result.BatchNumber} was already submitted."
+                : $"Rack {result.RackCode} of {result.BatchNumber} submitted: {result.VerifiedCards} OK, {result.CorrectedCards} corrected, {result.StockChanges} stock change(s) applied.";
+            _summary = null;
+            _rack = null;
+            _cards = null;
+            _batch = null;
+            await LoadBatchesAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; _summary = null; }
+        finally { _busy = false; }
+    }
+}
